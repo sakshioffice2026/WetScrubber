@@ -508,12 +508,6 @@ namespace WetScrubber.Controllers
                 return RedirectToAction("Index", "Project");
             }
 
-            if (!source.IsLocked)
-            {
-                TempData["Error"] = "Only an approved, locked design can be redesigned into a new revision.";
-                return RedirectToAction(nameof(DesignDetail), new { id });
-            }
-
             var revision = new ScrubberDesign
             {
                 ProjectId = source.ProjectId,
