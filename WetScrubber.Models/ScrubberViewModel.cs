@@ -217,6 +217,14 @@ namespace WetScrubber.Models
         public bool IsLocked { get; set; }
         public int? PreviousDesignId { get; set; }
         public int RevisionNumber { get; set; } = 1;
+
+        // Report status — drives the shared Generate Report / Redesign /
+        // Compare action bar on the Results page. HasReport is true as
+        // soon as a report row exists (template-only counts); Redesign
+        // and Compare stay locked behind it so there's always something
+        // concrete to redesign or compare against.
+        public bool HasReport { get; set; }
+        public int? ReportId { get; set; }
     }
 
     // ============================================================
