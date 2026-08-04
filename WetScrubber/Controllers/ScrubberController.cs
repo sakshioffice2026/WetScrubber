@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using WetScrubber.Business.AI;
 using WetScrubber.Business.Diagnostics;
 using WetScrubber.Database;
 using WetScrubber.Database.Enums;
@@ -18,18 +19,21 @@ namespace WetScrubber.Controllers
         private readonly ScrubberCalculationEngine _engine;
         private readonly IDesignDiagnosticsEngine _diagnosticsEngine;
         private readonly IDesignReportRepository _reportRepository;
+        private readonly IChemistryPredictionClient _chemistryPredictor;
 
         public ScrubberController(
             ApplicationDbContext dbContext,
             ILogger<ScrubberController> logger,
             IDesignDiagnosticsEngine diagnosticsEngine,
-            IDesignReportRepository reportRepository)
+            IDesignReportRepository reportRepository,
+            IChemistryPredictionClient chemistryPredictor)
         {
             _dbContext = dbContext;
             _logger = logger;
             _engine = new ScrubberCalculationEngine();
             _diagnosticsEngine = diagnosticsEngine;
             _reportRepository = reportRepository;
+            _chemistryPredictor = chemistryPredictor;
         }
 
         private int? GetUserId() => HttpContext.Session.GetInt32("UserId");
@@ -449,6 +453,49 @@ namespace WetScrubber.Controllers
             ViewBag.CalcResult = calcResult;
 
             return View();
+        }
+
+        // ── POST /Scrubber/PredictChemistry ──────────────────────
+        // Called from Create/Edit when a pollutant + liquid pair is picked.
+        // If a curated ChemicalReaction already exists, tells the caller so
+        // (nothing to predict — real data wins). Otherwise asks the
+        // chemistry predictor service and returns its estimate + confidence
+        // band. Never writes anything — purely advisory, same review-gate
+        // principle as the AI narrative and the redesign flow.
+        [HttpPost]
+        public async Task<IActionResult> PredictChemistry(int pollutantId, int liquidId, CancellationToken ct)
+        {
+            var redirect = RedirectIfNotLoggedIn();
+            if (redirect != null) return Json(new { status = "unauthorized" });
+
+            var hasCurated = await _dbContext.ChemicalReactions
+                .AnyAsync(r => r.PollutantId == pollutantId && r.ScrubbingLiquidId == liquidId && r.IsActive, ct);
+
+            if (hasCurated)
+                return Json(new { status = "curated" });
+
+            var pollutant = await _dbContext.Pollutants.FindAsync(new object?[] { pollutantId }, ct);
+            var liquid = await _dbContext.ScrubbingLiquids.FindAsync(new object?[] { liquidId }, ct);
+            if (pollutant == null || liquid == null)
+                return Json(new { status = "unknown" });
+
+            var prediction = await _chemistryPredictor.PredictAsync(
+                pollutant.DisplayName, pollutant.DefaultMolecularWeight, liquid.DisplayName, ct);
+
+            if (prediction == null)
+                return Json(new { status = "unavailable" });
+
+            return Json(new
+            {
+                status = "predicted",
+                henrysLawConstant = prediction.HenrysLawConstant,
+                maxRemovalEfficiency = prediction.MaxRemovalEfficiency,
+                stoichiometricRatio = prediction.StoichiometricRatio,
+                minOperatingPh = prediction.MinOperatingPh,
+                maxOperatingPh = prediction.MaxOperatingPh,
+                confidenceBand = prediction.ConfidenceBand,
+                nearestMatches = prediction.NearestMatches
+            });
         }
 
         // ── GET /Scrubber/ChemicalReactions ──────────────────────

@@ -56,6 +56,18 @@ builder.Services.AddSession(options =>
     options.Cookie.IsEssential = true;
 });
 
+// Paste this directly above builder.Build(); in the main WetScrubber Web project Program.cs
+
+builder.Services.Configure<WetScrubber.Business.AI.ChemistryPredictionOptions>(
+    builder.Configuration.GetSection("ChemistryPrediction"));
+
+builder.Services.AddHttpClient<WetScrubber.Business.AI.IChemistryPredictionClient, WetScrubber.Business.AI.ChemistryPredictionClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WetScrubber.Business.AI.ChemistryPredictionOptions>>().Value;
+    client.BaseAddress = new Uri(string.IsNullOrEmpty(options.BaseUrl) ? "http://localhost:8500/" : options.BaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
+
 
 
 builder.Services.AddScoped<IAiPromptBuilder, AiPromptBuilder>();
