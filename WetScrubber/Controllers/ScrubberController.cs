@@ -327,7 +327,8 @@ namespace WetScrubber.Controllers
                 return RedirectToAction("Index", "Project");
             }
 
-            var vm = BuildDetailViewModel(design);
+            var report = await _reportRepository.GetByDesignIdAsync(id);
+            var vm = BuildDetailViewModel(design, report);
             vm.Diagnostics = BuildDiagnosticsViewModels(design);
             return View(vm);
         }
@@ -443,7 +444,8 @@ namespace WetScrubber.Controllers
                 return RedirectToAction(nameof(DesignDetail), new { id });
             }
 
-            ViewBag.Design = BuildDetailViewModel(design);
+            var report = await _reportRepository.GetByDesignIdAsync(id);
+            ViewBag.Design = BuildDetailViewModel(design, report);
             ViewBag.CalcResult = calcResult;
 
             return View();
@@ -487,13 +489,13 @@ namespace WetScrubber.Controllers
         }
 
         // ── POST /Scrubber/CreateRevision/{id} ─────────────────────
-        // "Redesign as per AI narrative": only reachable once a design is
-        // locked (report Approved). Clones inputs — gas stream, pollutants,
-        // liquid spec — into a brand-new, unlocked Draft design so the
-        // engineer can act on the AI narrative's suggestions without
-        // mutating the signed-off original. Results/geometry are NOT
-        // copied — they're stale until RunCalculation is executed again
-        // on the new revision.
+        // "Redesign as per AI narrative": only reachable once a report has
+        // been generated for the design (Generate Report first). Clones
+        // inputs — gas stream, pollutants, liquid spec — into a brand-new
+        // Draft design so the engineer can act on the report's findings
+        // without mutating the original. Results/geometry are NOT copied
+        // — they're stale until RunCalculation is executed again on the
+        // new revision.
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> CreateRevision(int id)
@@ -506,6 +508,13 @@ namespace WetScrubber.Controllers
             {
                 TempData["Error"] = "Design not found.";
                 return RedirectToAction("Index", "Project");
+            }
+
+            var existingReport = await _reportRepository.GetByDesignIdAsync(id);
+            if (existingReport == null)
+            {
+                TempData["Error"] = "Generate a report for this design before redesigning.";
+                return RedirectToAction(nameof(DesignDetail), new { id });
             }
 
             var revision = new ScrubberDesign
@@ -633,9 +642,16 @@ namespace WetScrubber.Controllers
             var oldReport = await _reportRepository.GetByDesignIdAsync(oldDesign.DesignId);
             var newReport = await _reportRepository.GetByDesignIdAsync(newDesign.DesignId);
 
-            vm.OldApprovedNarrative = oldReport?.ApprovedNarrative;
+            // Approved narrative no longer exists as a step in the flow —
+            // fall back through AI-drafted to the deterministic template so
+            // this panel isn't blank just because nobody approved anything.
+            vm.OldApprovedNarrative = oldReport?.ApprovedNarrative
+                ?? oldReport?.AiNarrative
+                ?? oldReport?.TemplateNarrative;
             vm.NewAiNarrative = newReport?.AiNarrative;
-            vm.NewApprovedNarrative = newReport?.ApprovedNarrative;
+            vm.NewApprovedNarrative = newReport?.ApprovedNarrative
+                ?? newReport?.AiNarrative
+                ?? newReport?.TemplateNarrative;
             vm.NewReportStatus = newReport?.Status.ToString() ?? "Not started";
 
             return View(vm);
@@ -713,7 +729,7 @@ namespace WetScrubber.Controllers
                                           d.Project.CreatedByUserId == userId);
         }
 
-        private DesignDetailViewModel BuildDetailViewModel(ScrubberDesign d) => new()
+        private DesignDetailViewModel BuildDetailViewModel(ScrubberDesign d, DesignReport? report = null) => new()
         {
             DesignId = d.DesignId,
             ProjectId = d.ProjectId,
@@ -752,7 +768,9 @@ namespace WetScrubber.Controllers
             RemovalEfficiency = d.Geometry?.RemovalEfficiency ?? 0,
             IsLocked = d.IsLocked,
             PreviousDesignId = d.PreviousDesignId,
-            RevisionNumber = d.RevisionNumber
+            RevisionNumber = d.RevisionNumber,
+            HasReport = report != null,
+            ReportId = report?.ReportId
         };
 
         // Runs the deterministic diagnostics rule table against a loaded

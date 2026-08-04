@@ -3,10 +3,6 @@
     ViewData["Title"] = "Report Review";
     ViewData["ActivePage"] = "ExportReports";
 
-    var startingText = Model.ApprovedNarrative
-        ?? Model.AiNarrative
-        ?? Model.TemplateNarrative;
-
     var statusBadgeClass = Model.Status switch
     {
         WetScrubber.Database.Enums.ReportStatus.Approved => "badge-completed",
@@ -85,7 +81,7 @@
 {
     <div class="report-warning">
         AI drafting failed: @Model.AiDraftError
-        <br />The template-only report below is unaffected and can still be approved.
+        <br />The template-only report below is unaffected — you can still use it as-is.
     </div>
 }
 
@@ -127,30 +123,7 @@
 
 </div>
 
-<div class="form-card form-page-wrap" style="max-width:100%;">
-    <div class="form-card-header">
-        <div class="form-card-title">Final text for approval</div>
-    </div>
-    <div class="form-card-body">
-        <form asp-controller="Report" asp-action="Approve" method="post">
-            @Html.AntiForgeryToken()
-            <input type="hidden" name="reportId" value="@Model.ReportId" />
-
-            <div class="form-row full">
-                <div class="form-group">
-                    <label>Edit as needed — this is what gets exported, not the panels above</label>
-                    <textarea name="approvedText" rows="14" style="height:260px;">@startingText</textarea>
-                </div>
-            </div>
-
-            <div class="form-row full">
-                <div class="form-group">
-                    <label>Reviewer comments (optional)</label>
-                    <input type="text" name="reviewerComments" value="@Model.ReviewerComments" />
-                </div>
-            </div>
-
-            <button type="submit" class="btn-save">Approve and lock</button>
-        </form>
-    </div>
+<div style="font-size:12.5px;color:#999;padding:4px 2px;">
+    Done reviewing? Head back to the design's <strong>Results</strong> page to generate/update
+    the report, redesign per this narrative, or compare with the previous revision.
 </div>

@@ -43,13 +43,6 @@
         </div>
     </div>
     <div class="results-header-actions">
-        <a asp-controller="Report" asp-action="Generate"
-           asp-route-designId="@design.DesignId"
-           class="btn-cancel"
-           style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;gap:6px;">
-            <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 2h7l3 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.3" /><path d="M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" /></svg>
-            Generate Report
-        </a>
         <form asp-controller="Scrubber" asp-action="RunCalculation"
               asp-route-id="@design.DesignId" method="post" style="margin:0;">
             @Html.AntiForgeryToken()
@@ -60,6 +53,9 @@
         </form>
     </div>
 </div>
+
+<!-- ── Report / Redesign / Compare — single action bar ──────────── -->
+<partial name="_DesignActionBar" model="design" />
 
 <!-- ── KPI result cells ───────────────────────────────────────── -->
 <div class="results-kpi-grid">
