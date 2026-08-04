@@ -1,0 +1,76 @@
+﻿@model List<WetScrubber.Database.ScrubbingLiquid>
+@{
+    ViewData["Title"] = "Scrubbing Liquids";
+    ViewData["ActivePage"] = "Chemistry";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+}
+
+<div class="breadcrumb">
+    <a asp-controller="Chemistry" asp-action="Index">Chemistry</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Scrubbing Liquids</span>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="flash-toast success">@TempData["Success"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="flash-toast error">@TempData["Error"]</div>
+}
+
+<div class="proj-table-card">
+    <div class="proj-table-header">
+        <div class="proj-table-title">Scrubbing Liquids</div>
+        <a asp-action="Create" class="btn-save" style="text-decoration:none;">
+            <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" /></svg>
+            Add Liquid
+        </a>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table class="proj-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Formula</th>
+                    <th>Reagent MW</th>
+                    <th>Default pH</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var l in Model)
+                {
+                    <tr>
+                        <td><span class="proj-number">@l.Code</span></td>
+                        <td><span class="proj-name">@l.DisplayName</span></td>
+                        <td>@Html.Raw(l.Formula)</td>
+                        <td>@l.ReagentMolecularWeight</td>
+                        <td>@l.DefaultPH</td>
+                        <td><span class="status-badge @(l.IsActive ? "badge-completed" : "badge-draft")">@(l.IsActive ? "Active" : "Inactive")</span></td>
+                        <td>
+                            <div class="action-btns">
+                                <a asp-action="Edit" asp-route-id="@l.Id" class="action-btn" title="Edit">
+                                    <svg viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10z" /></svg>
+                                </a>
+                                <form asp-action="Delete" asp-route-id="@l.Id" method="post"
+                                      onsubmit="return confirm('Deactivate @l.DisplayName?');" style="display:inline;">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="action-btn" title="Deactivate">
+                                        <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm5.5.5a.5.5 0 00-1 0v6a.5.5 0 001 0V6zM14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 010-2h4a1 1 0 011-1h2a1 1 0 011 1h4a1 1 0 011 1z" /></svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

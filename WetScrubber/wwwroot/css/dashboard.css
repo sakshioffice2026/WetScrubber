@@ -1,0 +1,812 @@
+/* ============================================================
+   dashboard.css  —  Dashboard layout & components
+   WetScrubber Pro | ASP.NET Core MVC
+   ============================================================ */
+
+/* ── Reset & Base ────────────────────────────────────────────── */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    background: #f5f6fa;
+    min-height: 100vh;
+    display: flex;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+/* ============================================================
+   SHELL — full page flex container
+   ============================================================ */
+.shell {
+    display: flex;
+    width: 100%;
+    min-height: 100vh;
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+.sb {
+    width: 220px;
+    background: #0b1120;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 100;
+    transition: width 0.25s ease;
+    overflow: hidden;
+}
+
+    .sb.collapsed {
+        width: 56px;
+    }
+
+/* ── Logo ──────────────────────────────────────────────────── */
+.sb-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 14px 16px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+    flex-shrink: 0;
+}
+
+.sb-logo-icon {
+    width: 28px;
+    height: 28px;
+    background: #00d28c;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+    .sb-logo-icon svg {
+        width: 14px;
+        height: 14px;
+    }
+
+.sb-logo-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+    .sb-logo-text span {
+        color: #00d28c;
+    }
+
+.sb.collapsed .sb-logo-text {
+    opacity: 0;
+}
+
+/* ── Toggle button ─────────────────────────────────────────── */
+.sb-toggle {
+    position: absolute;
+    right: -11px;
+    top: 20px;
+    width: 22px;
+    height: 22px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 101;
+    transition: background 0.15s;
+}
+
+    .sb-toggle:hover {
+        background: #f5f5f5;
+    }
+
+    .sb-toggle svg {
+        width: 10px;
+        height: 10px;
+        fill: none;
+        stroke: #888;
+        stroke-width: 1.5px;
+        stroke-linecap: round;
+        transition: transform 0.25s;
+    }
+
+.sb.collapsed .sb-toggle svg {
+    transform: rotate(180deg);
+}
+
+/* ── Nav sections ──────────────────────────────────────────── */
+.sb-nav {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 8px 0;
+}
+
+.sb-section {
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.25);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 14px 18px 5px;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.sb.collapsed .sb-section {
+    opacity: 0;
+}
+
+/* ── Nav items ─────────────────────────────────────────────── */
+.sb-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-left: 2px solid transparent;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+    .sb-item:hover {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .sb-item.active {
+        color: #ffffff;
+        background: rgba(0, 210, 140, 0.10);
+        border-left-color: #00d28c;
+    }
+
+    .sb-item svg {
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        fill: currentColor;
+    }
+
+.sb-item-label {
+    opacity: 1;
+    transition: opacity 0.2s;
+    overflow: hidden;
+}
+
+.sb.collapsed .sb-item-label {
+    opacity: 0;
+    width: 0;
+}
+
+/* ── Sidebar bottom — user info + logout ───────────────────── */
+.sb-bottom {
+    margin-top: auto;
+    border-top: 0.5px solid rgba(255, 255, 255, 0.07);
+    padding: 10px 0;
+    flex-shrink: 0;
+}
+
+.sb-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+}
+
+.sb-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #00d28c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #0b1120;
+    flex-shrink: 0;
+}
+
+.sb-user-info {
+    opacity: 1;
+    transition: opacity 0.2s;
+    overflow: hidden;
+}
+
+.sb.collapsed .sb-user-info {
+    opacity: 0;
+    width: 0;
+}
+
+.sb-user-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+}
+
+.sb-user-role {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.sb-logout {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 16px;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.15s;
+    background: none;
+    border: none;
+    width: 100%;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+    .sb-logout:hover {
+        color: #ff6b6b;
+    }
+
+    .sb-logout svg {
+        width: 15px;
+        height: 15px;
+        fill: currentColor;
+        flex-shrink: 0;
+    }
+
+.sb-logout-label {
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.sb.collapsed .sb-logout-label {
+    opacity: 0;
+    width: 0;
+}
+
+/* ============================================================
+   MAIN CONTENT AREA
+   ============================================================ */
+.main {
+    margin-left: 220px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    transition: margin-left 0.25s ease;
+}
+
+    .main.expanded {
+        margin-left: 56px;
+    }
+
+/* ── Topbar ─────────────────────────────────────────────────── */
+.topbar {
+    background: #ffffff;
+    border-bottom: 0.5px solid #e8e8e8;
+    padding: 0 28px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.topbar-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0b1120;
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-new {
+    height: 34px;
+    padding: 0 16px;
+    background: #00d28c;
+    color: #0b1120;
+    border: none;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    text-decoration: none;
+    transition: background 0.15s;
+}
+
+    .btn-new:hover {
+        background: #00b87a;
+    }
+
+    .btn-new svg {
+        width: 13px;
+        height: 13px;
+        fill: #0b1120;
+    }
+
+.topbar-icon-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #eee;
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: #fff;
+    transition: background 0.15s;
+}
+
+    .topbar-icon-btn:hover {
+        background: #f5f5f5;
+    }
+
+    .topbar-icon-btn svg {
+        width: 15px;
+        height: 15px;
+        fill: #888;
+    }
+
+/* ── Page body ──────────────────────────────────────────────── */
+.page-body {
+    padding: 24px 28px;
+    flex: 1;
+}
+
+/* ============================================================
+   WELCOME BANNER
+   ============================================================ */
+.welcome-banner {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.welcome-text h3 {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0b1120;
+    margin-bottom: 3px;
+}
+
+.welcome-text p {
+    font-size: 12px;
+    color: #888;
+}
+
+.welcome-role-badge {
+    background: #f0fdf8;
+    border: 0.5px solid #bbf7e0;
+    border-radius: 20px;
+    padding: 5px 14px;
+    font-size: 11px;
+    color: #059669;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* ============================================================
+   KPI CARDS
+   ============================================================ */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.kpi-card {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+    .kpi-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        border-radius: 2px 2px 0 0;
+    }
+
+    .kpi-card.green::before {
+        background: #00d28c;
+    }
+
+    .kpi-card.amber::before {
+        background: #f59e0b;
+    }
+
+    .kpi-card.blue::before {
+        background: #3b82f6;
+    }
+
+.kpi-icon-box {
+    position: absolute;
+    right: 16px;
+    top: 18px;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #f5f6fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+    .kpi-icon-box svg {
+        width: 16px;
+        height: 16px;
+        fill: #ccc;
+    }
+
+.kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #aaa;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.kpi-value {
+    font-size: 30px;
+    font-weight: 700;
+    color: #0b1120;
+    letter-spacing: -0.5px;
+    line-height: 1;
+}
+
+    .kpi-value.sm {
+        font-size: 17px;
+        padding-top: 8px;
+    }
+
+.kpi-hint {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 6px;
+}
+
+/* ============================================================
+   CHART + TYPES ROW
+   ============================================================ */
+.two-col {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+/* ── Card (shared) ─────────────────────────────────────────── */
+.dash-card {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 20px 22px;
+}
+
+.dash-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 18px;
+}
+
+.dash-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0b1120;
+}
+
+.dash-card-sub {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 2px;
+}
+
+/* ── Bar chart ─────────────────────────────────────────────── */
+.bar-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    height: 140px;
+    padding-top: 8px;
+}
+
+.bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    height: 100%;
+    justify-content: flex-end;
+}
+
+.bar-rect {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    background: #e8f8f1;
+    transition: background 0.2s;
+    min-height: 4px;
+}
+
+    .bar-rect.active {
+        background: #00d28c;
+    }
+
+    .bar-rect:hover {
+        background: #00d28c;
+    }
+
+.bar-month {
+    font-size: 9px;
+    color: #bbb;
+    text-align: center;
+}
+
+/* ── Scrubber type breakdown ───────────────────────────────── */
+.type-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.type-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.type-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.type-name {
+    font-size: 12px;
+    color: #555;
+    flex: 1;
+}
+
+.type-bar-bg {
+    width: 80px;
+    height: 6px;
+    background: #f0f0f0;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.type-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.type-pct {
+    font-size: 11px;
+    color: #aaa;
+    min-width: 30px;
+    text-align: right;
+    font-weight: 500;
+}
+
+/* ============================================================
+   PROJECTS TABLE
+   ============================================================ */
+.projects-table-wrap {
+    overflow-x: auto;
+}
+
+.projects-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+    .projects-table th {
+        font-size: 10px;
+        font-weight: 600;
+        color: #aaa;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        padding: 0 12px 10px;
+        border-bottom: 1px solid #f0f0f0;
+        text-align: left;
+        white-space: nowrap;
+    }
+
+    .projects-table td {
+        padding: 12px 12px;
+        border-bottom: 0.5px solid #f8f8f8;
+        color: #555;
+        vertical-align: middle;
+    }
+
+    .projects-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .projects-table tr:hover td {
+        background: #fafafa;
+    }
+
+.proj-number {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #00d28c;
+    font-weight: 600;
+}
+
+.proj-name {
+    font-weight: 600;
+    color: #0b1120;
+}
+
+.proj-client {
+    color: #888;
+}
+
+.proj-count {
+    text-align: center;
+    font-weight: 600;
+    color: #0b1120;
+}
+
+/* Status badges */
+.status-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.badge-completed {
+    background: #f0fdf8;
+    color: #059669;
+}
+
+.badge-inprogress {
+    background: #fffbeb;
+    color: #d97706;
+}
+
+.badge-draft {
+    background: #f5f5f5;
+    color: #888;
+}
+
+.proj-date {
+    color: #aaa;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.view-all-link {
+    font-size: 11px;
+    color: #00d28c;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+    .view-all-link:hover {
+        text-decoration: underline;
+    }
+
+/* ── Empty state ───────────────────────────────────────────── */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #aaa;
+}
+
+    .empty-state p {
+        font-size: 13px;
+        margin-bottom: 14px;
+    }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 900px) {
+    .sb {
+        width: 56px;
+    }
+
+    .main {
+        margin-left: 56px;
+    }
+
+    .sb-logo-text, .sb-item-label, .sb-section,
+    .sb-user-info, .sb-logout-label {
+        opacity: 0;
+        width: 0;
+    }
+
+    .kpi-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .two-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 600px) {
+    .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .page-body {
+        padding: 16px;
+    }
+
+    .topbar {
+        padding: 0 16px;
+    }
+
+    .welcome-role-badge {
+        display: none;
+    }
+}
+
+/* ── Global breadcrumb SVG safety net ────────────────────────── */
+/* Prevents arrow SVGs from blowing up to full size on pages     */
+/* that do not load project.css                                  */
+.breadcrumb svg {
+    width: 12px !important;
+    height: 12px !important;
+    flex-shrink: 0;
+}

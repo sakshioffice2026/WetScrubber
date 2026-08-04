@@ -1,0 +1,170 @@
+@model WetScrubber.Models.LoginViewModel
+@{
+    ViewData["Title"] = "Sign In";
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In — WetScrubber Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/auth.css" />
+</head>
+<body>
+
+    <div class="login-root">
+
+        <!-- ── LEFT: Brand panel ─────────────────────────────────── -->
+        <div class="lp-left">
+            <div class="lp-left-grid"></div>
+
+            <div class="lp-logo">
+                <div class="lp-logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#0b1120" stroke-width="2.5" stroke-linecap="round">
+                        <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" />
+                        <circle cx="12" cy="9" r="2.5" fill="#0b1120" stroke="none" />
+                    </svg>
+                </div>
+                <div class="lp-logo-text">Wet<span>Scrubber</span> Pro</div>
+            </div>
+
+            <div class="lp-center">
+                <div class="lp-tag">
+                    <div class="lp-tag-dot"></div>
+                    Engineering Suite v2.0
+                </div>
+                <h1 class="lp-heading">
+                    Design.<br>Simulate.<br><span>Comply.</span>
+                </h1>
+                <p class="lp-sub">
+                    Industrial wet scrubber design with real-time calculations,
+                    EPA &amp; EU IED compliance, and 3D visualization.
+                </p>
+                <div class="lp-stats">
+                    <div class="lp-stat">
+                        <div class="lp-stat-val">99.8%</div>
+                        <div class="lp-stat-lbl">Max Removal</div>
+                    </div>
+                    <div class="lp-stat">
+                        <div class="lp-stat-val">6</div>
+                        <div class="lp-stat-lbl">Scrubber Types</div>
+                    </div>
+                    <div class="lp-stat">
+                        <div class="lp-stat-val">5</div>
+                        <div class="lp-stat-lbl">Reg. Standards</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lp-footer">© 2025 WetScrubber Pro</div>
+        </div>
+
+        <!-- ── RIGHT: Login form ──────────────────────────────────── -->
+        <div class="lp-right">
+
+            <p class="lp-eyebrow">Welcome back</p>
+            <h2 class="lp-title">Sign in to your account</h2>
+            <p class="lp-desc">
+                No account yet?
+                <a asp-action="Register" asp-controller="Account">Create one free</a>
+            </p>
+
+            <!-- Server-side error -->
+            @if (!ViewData.ModelState.IsValid)
+            {
+                <div class="lp-error show">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0V5zm-.75 6.5a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                    <span asp-validation-summary="ModelOnly"></span>
+                </div>
+            }
+
+            <!-- Client-side error (shown by JS) -->
+            <div class="lp-error" id="errBox">
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0V5zm-.75 6.5a1 1 0 110-2 1 1 0 010 2z" />
+                </svg>
+                <span id="errText">Please fill in all required fields.</span>
+            </div>
+
+            <form asp-action="Login" asp-controller="Account" method="post" id="loginForm">
+                <input type="hidden" asp-for="ReturnUrl" />
+                @Html.AntiForgeryToken()
+
+                <!-- Email -->
+                <div class="field">
+                    <label asp-for="Email">Email address</label>
+                    <div class="field-wrap">
+                        <input asp-for="Email"
+                               id="lp-email"
+                               type="email"
+                               class="@(ViewData.ModelState["Email"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                               placeholder="you@company.com"
+                               autocomplete="email"
+                               autofocus />
+                        <svg class="field-icon" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M2 4a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4zm2-1a1 1 0 00-1 1v.5l5 3.5 5-3.5V4a1 1 0 00-1-1H4zm9 2.5l-5 3.5-5-3.5V12a1 1 0 001 1h8a1 1 0 001-1V5.5z" />
+                        </svg>
+                    </div>
+                    <span asp-validation-for="Email" class="text-danger"></span>
+                </div>
+
+                <!-- Password -->
+                <div class="field">
+                    <label asp-for="Password">Password</label>
+                    <div class="field-wrap">
+                        <input asp-for="Password"
+                               id="lp-pass"
+                               type="password"
+                               class="@(ViewData.ModelState["Password"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                               placeholder="••••••••"
+                               autocomplete="current-password" />
+                        <svg class="field-icon" id="togglePass" viewBox="0 0 16 16" fill="currentColor" title="Show password">
+                            <path d="M8 3C4.5 3 1.5 5.5 1 8c.5 2.5 3.5 5 7 5s6.5-2.5 7-5c-.5-2.5-3.5-5-7-5zm0 8a3 3 0 110-6 3 3 0 010 6zm0-4.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" />
+                        </svg>
+                    </div>
+                    <span asp-validation-for="Password" class="text-danger"></span>
+                </div>
+
+                <!-- Remember me + Forgot password -->
+                <div class="lp-row">
+                    <label class="lp-remember">
+                        <input asp-for="RememberMe" type="checkbox" />
+                        Keep me signed in
+                    </label>
+                    <a asp-action="ForgotPassword" asp-controller="Account" class="lp-forgot">
+                        Forgot password?
+                    </a>
+                </div>
+
+                <!-- Submit -->
+                <button type="submit" class="lp-btn" id="lp-submit">
+                    Sign in
+                    <div class="lp-btn-arrow">→</div>
+                </button>
+
+            </form>
+
+            <div class="lp-divider">
+                <div class="lp-divider-line"></div>
+                <span class="lp-divider-text">or</span>
+                <div class="lp-divider-line"></div>
+            </div>
+
+            <div class="lp-register">
+                Don't have an account?
+                <a asp-action="Register" asp-controller="Account">Create account</a>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="~/js/auth.js"></script>
+
+</body>
+</html>

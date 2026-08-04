@@ -1,0 +1,448 @@
+﻿@{
+    ViewData["Title"] = "Chemical Reactions";
+    ViewData["ActivePage"] = "Chemistry";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/scrubber.css" />
+    <link rel="stylesheet" href="~/css/chemistry.css" />
+}
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    <a asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Chemical Reactions</span>
+</div>
+
+<!-- Page intro -->
+<div class="chem-intro-card">
+    <div class="chem-intro-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#00d28c" stroke-width="2" stroke-linecap="round">
+            <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+        </svg>
+    </div>
+    <div>
+        <div class="chem-intro-title">How Wet Scrubbers Remove Pollutants</div>
+        <div class="chem-intro-desc">
+            Polluted gas enters the scrubber and contacts the scrubbing liquid.
+            The pollutant gas molecules <strong>dissolve</strong> into the liquid phase,
+            then <strong>react chemically</strong> with the reagent (NaOH, H₂SO₄, Ca(OH)₂)
+            to form harmless salts that drain out as blowdown.
+            Clean gas exits from the top.
+        </div>
+    </div>
+</div>
+
+<!-- Pollutant tab selector -->
+<div class="pollutant-tabs">
+    <button class="tab-btn active" data-panel="so2">SO₂</button>
+    <button class="tab-btn" data-panel="hcl">HCl</button>
+    <button class="tab-btn" data-panel="nh3">NH₃</button>
+    <button class="tab-btn" data-panel="h2s">H₂S</button>
+    <button class="tab-btn" data-panel="hf">HF</button>
+    <button class="tab-btn" data-panel="nox">NOₓ</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SO2
+════════════════════════════════════════════════════════════ -->
+<div class="reaction-panel show" id="panel-so2">
+
+    <div class="pollutant-header danger">
+        <div class="ph-icon"><svg viewBox="0 0 16 16" fill="#dc2626"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V5zm-.75 7a1 1 0 110-2 1 1 0 010 2z" /></svg></div>
+        <div class="ph-body">
+            <div class="ph-name">Sulfur Dioxide — SO₂</div>
+            <div class="ph-desc">From coal/oil combustion, cement kilns, metal smelting. Major cause of acid rain.</div>
+        </div>
+        <span class="hazard-tag danger">High toxicity · Acid rain</span>
+    </div>
+
+    <div class="process-flow">
+        <div class="pf-step">
+            <div class="pf-icon red"><svg viewBox="0 0 16 16" fill="#dc2626"><path d="M8 1a7 7 0 100 14A7 7 0 008 1z" /></svg></div>
+            <div class="pf-label">Dirty gas inlet</div>
+            <div class="pf-val">SO₂ ~2500 mg/Nm³</div>
+        </div>
+        <div class="pf-arrow">→</div>
+        <div class="pf-step">
+            <div class="pf-icon blue"><svg viewBox="0 0 16 16" fill="#3b82f6"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg></div>
+            <div class="pf-label">Scrubbing liquid</div>
+            <div class="pf-val">NaOH · pH 12</div>
+        </div>
+        <div class="pf-arrow">→</div>
+        <div class="pf-step">
+            <div class="pf-icon green"><svg viewBox="0 0 16 16" fill="#059669"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg></div>
+            <div class="pf-label">Clean gas outlet</div>
+            <div class="pf-val">SO₂ &lt;50 mg/Nm³</div>
+        </div>
+        <div class="pf-arrow">→</div>
+        <div class="pf-step">
+            <div class="pf-icon gray"><svg viewBox="0 0 16 16" fill="#888"><path d="M8 14C4.5 14 2 11 2 8s2.5-6 6-6 6 3 6 6-2.5 6-6 6z" /></svg></div>
+            <div class="pf-label">Blowdown drain</div>
+            <div class="pf-val">Na₂SO₃ solution</div>
+        </div>
+    </div>
+
+    <div class="chem-section-label">Chemical reactions</div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH (caustic soda)</span>
+            <span class="rxn-eq">SO₂ + 2NaOH → Na₂SO₃ + H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">Acid-base neutralisation</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product formed</div><div class="rxn-cell-val">Sodium sulfite (Na₂SO₃) — dissolved in blowdown water</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Operating pH</div><div class="rxn-cell-val">Must keep pH &gt; 9 to favour this reaction</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Max removal</div><div class="rxn-cell-val">Up to 99.5% with excess NaOH</div></div>
+            </div>
+            <div class="molecule-row">
+                <div class="mol"><div class="mol-f">SO₂</div><div class="mol-n">Sulfur dioxide (gas)</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">2NaOH</div><div class="mol-n">Caustic soda (liquid)</div></div>
+                <div class="mol-arr">→</div>
+                <div class="mol"><div class="mol-f">Na₂SO₃</div><div class="mol-n">Sodium sulfite</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">H₂O</div><div class="mol-n">Water</div></div>
+            </div>
+            <div class="compliance-row">
+                <span class="comp-lbl">Regulatory standards met:</span>
+                <span class="comp-badge">EPA 40 CFR Part 60</span>
+                <span class="comp-badge">EU IED 2010/75/EU</span>
+                <span class="comp-badge">CPCB India</span>
+                <span class="comp-badge">WHO Air Quality</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH — low pH variant</span>
+            <span class="rxn-eq">SO₂ + NaOH → NaHSO₃</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">When it occurs</div><div class="rxn-cell-val">When pH drops below 7 — NaOH partially consumed</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Problem</div><div class="rxn-cell-val">NaHSO₃ (bisulfite) is less stable — reduces absorption efficiency</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Prevention</div><div class="rxn-cell-val">Monitor pH continuously — add NaOH dosing control</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Design tip</div><div class="rxn-cell-val">Size NaOH feed pump for 1.5× stoichiometric requirement</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag green">Ca(OH)₂ — lime slurry</span>
+            <span class="rxn-eq">SO₂ + Ca(OH)₂ → CaSO₃ + H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Advantage</div><div class="rxn-cell-val">Cheaper reagent — lime costs 5× less than NaOH per tonne</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product</div><div class="rxn-cell-val">Calcium sulfite (CaSO₃) — solid precipitate, can scale packing</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">With oxidation</div><div class="rxn-cell-val">CaSO₃ + ½O₂ → CaSO₄ (gypsum) — usable building material</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Best used for</div><div class="rxn-cell-val">High SO₂ loads &gt;5000 mg/Nm³ — spray towers, not packed beds</div></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     HCl
+════════════════════════════════════════════════════════════ -->
+<div class="reaction-panel" id="panel-hcl">
+    <div class="pollutant-header orange">
+        <div class="ph-icon"><svg viewBox="0 0 16 16" fill="#ea580c"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V5zm-.75 7a1 1 0 110-2 1 1 0 010 2z" /></svg></div>
+        <div class="ph-body">
+            <div class="ph-name">Hydrochloric Acid — HCl</div>
+            <div class="ph-desc">From PVC combustion, chemical plants, steel pickling, incineration.</div>
+        </div>
+        <span class="hazard-tag orange">Corrosive · Respiratory damage</span>
+    </div>
+
+    <div class="chem-section-label">Chemical reactions</div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH</span>
+            <span class="rxn-eq">HCl + NaOH → NaCl + H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">Strong acid + strong base — complete neutralisation</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product</div><div class="rxn-cell-val">Common table salt (NaCl) + water — completely harmless</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Heat released</div><div class="rxn-cell-val">Exothermic — ΔH = −57.3 kJ/mol. Cool scrubbing liquid if large load.</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Max removal</div><div class="rxn-cell-val">Up to 99.8% — very favourable thermodynamics</div></div>
+            </div>
+            <div class="molecule-row">
+                <div class="mol"><div class="mol-f">HCl</div><div class="mol-n">Hydrochloric acid gas</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">NaOH</div><div class="mol-n">Caustic soda</div></div>
+                <div class="mol-arr">→</div>
+                <div class="mol"><div class="mol-f">NaCl</div><div class="mol-n">Table salt</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">H₂O</div><div class="mol-n">Water</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag green">Ca(OH)₂ — lime</span>
+            <span class="rxn-eq">2HCl + Ca(OH)₂ → CaCl₂ + 2H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product</div><div class="rxn-cell-val">Calcium chloride (CaCl₂) — used commercially in road de-icing</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Cost benefit</div><div class="rxn-cell-val">Lime is 3–5× cheaper per mole of reagent vs NaOH</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Risk</div><div class="rxn-cell-val">CaCl₂ is highly hygroscopic — can cause mist downstream</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Best for</div><div class="rxn-cell-val">High HCl concentrations &gt;1000 mg/Nm³</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     NH3
+════════════════════════════════════════════════════════════ -->
+<div class="reaction-panel" id="panel-nh3">
+    <div class="pollutant-header yellow">
+        <div class="ph-icon"><svg viewBox="0 0 16 16" fill="#ca8a04"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V5zm-.75 7a1 1 0 110-2 1 1 0 010 2z" /></svg></div>
+        <div class="ph-body">
+            <div class="ph-name">Ammonia — NH₃</div>
+            <div class="ph-desc">From fertiliser plants, food processing, refrigeration, livestock farms.</div>
+        </div>
+        <span class="hazard-tag yellow">Pungent odour · Toxic at high levels</span>
+    </div>
+
+    <div class="chem-section-label">Chemical reactions</div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag amber">H₂SO₄ (sulfuric acid)</span>
+            <span class="rxn-eq">2NH₃ + H₂SO₄ → (NH₄)₂SO₄</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">Base + acid — complete neutralisation</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product value</div><div class="rxn-cell-val">Ammonium sulfate (NH₄)₂SO₄ — sold as nitrogen fertiliser</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Max removal</div><div class="rxn-cell-val">99.9% — NH₃ extremely soluble (Henry's H = 0.0006)</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Revenue potential</div><div class="rxn-cell-val">By-product has commercial value — offsets operating cost</div></div>
+            </div>
+            <div class="molecule-row">
+                <div class="mol"><div class="mol-f">2NH₃</div><div class="mol-n">Ammonia gas</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">H₂SO₄</div><div class="mol-n">Sulfuric acid</div></div>
+                <div class="mol-arr">→</div>
+                <div class="mol"><div class="mol-f">(NH₄)₂SO₄</div><div class="mol-n">Ammonium sulfate fertiliser</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">H₂O (water)</span>
+            <span class="rxn-eq">NH₃ + H₂O ⇌ NH₄⁺ + OH⁻</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">Physical absorption + reversible ionisation (equilibrium)</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Limitation</div><div class="rxn-cell-val">Water scrubbing alone gives only 60–80% removal</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Why reversible</div><div class="rxn-cell-val">⇌ means the reaction goes both ways — NH₃ can re-evaporate if pH rises</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Best practice</div><div class="rxn-cell-val">Use dilute H₂SO₄ for &gt;99% removal and stable product</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     H2S
+════════════════════════════════════════════════════════════ -->
+<div class="reaction-panel" id="panel-h2s">
+    <div class="pollutant-header purple">
+        <div class="ph-icon"><svg viewBox="0 0 16 16" fill="#9333ea"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V5zm-.75 7a1 1 0 110-2 1 1 0 010 2z" /></svg></div>
+        <div class="ph-body">
+            <div class="ph-name">Hydrogen Sulfide — H₂S</div>
+            <div class="ph-desc">From coke ovens, oil refining, wastewater treatment, natural gas processing.</div>
+        </div>
+        <span class="hazard-tag purple">Highly toxic · Rotten egg odour at 0.0005 ppm</span>
+    </div>
+
+    <div class="chem-section-label">Chemical reactions</div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH</span>
+            <span class="rxn-eq">H₂S + 2NaOH → Na₂S + 2H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">Weak diprotic acid + strong base</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product</div><div class="rxn-cell-val">Sodium sulfide (Na₂S) dissolved in blowdown liquid</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Odour threshold</div><div class="rxn-cell-val">0.0005 ppm — detectable by humans at extremely low levels</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Required removal</div><div class="rxn-cell-val">&gt;99.9% needed to eliminate odour complaints near facility</div></div>
+            </div>
+            <div class="molecule-row">
+                <div class="mol"><div class="mol-f">H₂S</div><div class="mol-n">Hydrogen sulfide gas</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">2NaOH</div><div class="mol-n">Caustic soda</div></div>
+                <div class="mol-arr">→</div>
+                <div class="mol"><div class="mol-f">Na₂S</div><div class="mol-n">Sodium sulfide</div></div>
+                <div class="mol-plus">+</div>
+                <div class="mol"><div class="mol-f">2H₂O</div><div class="mol-n">Water</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH — partial reaction</span>
+            <span class="rxn-eq">H₂S + NaOH → NaHS + H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">When it occurs</div><div class="rxn-cell-val">When pH is between 7–9 — insufficient NaOH</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product</div><div class="rxn-cell-val">Sodium hydrosulfide (NaHS) — less stable, can re-release H₂S</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Prevention</div><div class="rxn-cell-val">Always maintain pH above 10 for complete reaction to Na₂S</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Monitoring</div><div class="rxn-cell-val">Install outlet H₂S sensor — alarm if breakthrough detected</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     HF
+════════════════════════════════════════════════════════════ -->
+<div class="reaction-panel" id="panel-hf">
+    <div class="pollutant-header teal">
+        <div class="ph-icon"><svg viewBox="0 0 16 16" fill="#0f766e"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V5zm-.75 7a1 1 0 110-2 1 1 0 010 2z" /></svg></div>
+        <div class="ph-body">
+            <div class="ph-name">Hydrogen Fluoride — HF</div>
+            <div class="ph-desc">From aluminium smelting, glass etching, semiconductor fabs, phosphate processing.</div>
+        </div>
+        <span class="hazard-tag teal">Extreme corrosive · Deep tissue penetration</span>
+    </div>
+
+    <div class="chem-section-label">Chemical reactions</div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH</span>
+            <span class="rxn-eq">HF + NaOH → NaF + H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">Weak acid + strong base neutralisation</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Product</div><div class="rxn-cell-val">Sodium fluoride (NaF) in solution — also toxic, treat as hazardous waste</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Critical warning</div><div class="rxn-cell-val">HF attacks glass and silica — use FRP, HDPE or PTFE equipment only. Never glass rotameters.</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Max removal</div><div class="rxn-cell-val">Up to 99.5% — HF has moderate solubility (H = 3×10⁻⁵)</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     NOx
+════════════════════════════════════════════════════════════ -->
+<div class="reaction-panel" id="panel-nox">
+    <div class="pollutant-header blue">
+        <div class="ph-icon"><svg viewBox="0 0 16 16" fill="#2563eb"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v4a.75.75 0 001.5 0V5zm-.75 7a1 1 0 110-2 1 1 0 010 2z" /></svg></div>
+        <div class="ph-body">
+            <div class="ph-name">Nitrogen Oxides — NOₓ (NO + NO₂)</div>
+            <div class="ph-desc">From high-temperature combustion — boilers, gas turbines, diesel engines, furnaces.</div>
+        </div>
+        <span class="hazard-tag blue">Smog · Ozone depletion · Acid rain</span>
+    </div>
+
+    <div class="chem-section-label">Chemical reactions</div>
+
+    <div class="rxn-card">
+        <div class="rxn-header" onclick="toggleRxn(this)">
+            <span class="rxn-liquid-tag blue">NaOH — NO₂ only</span>
+            <span class="rxn-eq">2NO₂ + 2NaOH → NaNO₃ + NaNO₂ + H₂O</span>
+            <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+        </div>
+        <div class="rxn-body">
+            <div class="rxn-grid">
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Critical limitation</div><div class="rxn-cell-val">NO (nitric oxide, ~95% of NOₓ) is INSOLUBLE — wet scrubbing cannot remove it</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Typical removal</div><div class="rxn-cell-val">Only 30–50% — wet scrubbing is NOT the primary NOₓ control technology</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Better technology</div><div class="rxn-cell-val">SCR (Selective Catalytic Reduction) with NH₃ achieves 90%+ NOₓ removal</div></div>
+                <div class="rxn-cell"><div class="rxn-cell-lbl">Oxidation pre-step</div><div class="rxn-cell-val">Inject H₂O₂ or O₃ to oxidise NO → NO₂, then scrub with NaOH for 80%+ removal</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     Hatta Number Interactive Section
+════════════════════════════════════════════════════════════ -->
+<div class="hatta-card">
+    <div class="hatta-header">
+        <div class="hatta-title">Reactive Absorption — Hatta Number (Ha)</div>
+        <div class="hatta-sub">
+            The Hatta number tells you <em>how fast</em> the chemical reaction is compared to
+            liquid film mass transfer. It determines whether reaction or diffusion is the
+            controlling step — and what the engineer should change to improve performance.
+        </div>
+    </div>
+    <div class="hatta-body">
+        <div class="hatta-formula">
+            Ha = √(k₂ · C<sub>b</sub> · D<sub>L</sub>) / k<sub>L</sub>
+        </div>
+        <div class="hatta-sliders">
+            <div class="hatta-row">
+                <label>Reaction rate constant k₂</label>
+                <input type="range" min="1" max="100" value="20" step="1" id="sliderK">
+                <span id="valK">20</span>
+                <span class="hatta-unit">m³/kmol·s</span>
+            </div>
+            <div class="hatta-row">
+                <label>Reagent bulk concentration C<sub>b</sub></label>
+                <input type="range" min="1" max="100" value="50" step="1" id="sliderC">
+                <span id="valC">50</span>
+                <span class="hatta-unit">kmol/m³ ×10⁻²</span>
+            </div>
+        </div>
+        <div class="hatta-result">
+            <div class="hatta-ha-row">
+                <span class="hatta-ha-label">Hatta Number (Ha)</span>
+                <span class="hatta-ha-val" id="haVal">3.16</span>
+            </div>
+            <div class="hatta-bar-bg">
+                <div class="hatta-bar-fill" id="regimeFill"></div>
+                <div class="hatta-markers">
+                    <span style="left:3%">0.3</span>
+                    <span style="left:30%">3</span>
+                    <span style="left:100%">10+</span>
+                </div>
+            </div>
+            <div class="regime-zones">
+                <div class="zone slow">Slow</div>
+                <div class="zone mid">Intermediate</div>
+                <div class="zone fast">Fast</div>
+            </div>
+            <div class="hatta-regime-box" id="regimeBox">
+                <div class="regime-name" id="regimeName">Fast reaction regime</div>
+                <div class="regime-desc" id="regimeDesc">Ha &gt; 3 — Reaction occurs entirely in the liquid film. Enhancement factor E ≈ Ha. Increasing liquid flow has little benefit — focus on reagent concentration.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="~/js/chemistry.js"></script>
+}

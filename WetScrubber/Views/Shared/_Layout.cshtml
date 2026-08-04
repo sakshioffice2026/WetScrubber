@@ -1,0 +1,201 @@
+﻿@{
+    var userName = Context.Session.GetString("UserName") ?? "User";
+    var userRole = Context.Session.GetString("UserRole") ?? "Engineer";
+    var initials = string.Concat(userName.Split(' ').Take(2)
+                        .Where(w => w.Length > 0)
+                        .Select(w => w[0]))
+                        .ToUpper();
+
+    // Each view sets ViewData["ActivePage"] to highlight correct nav item
+    var activePage = ViewData["ActivePage"]?.ToString() ?? "";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] — WetScrubber Pro</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Base app styles -->
+    <link rel="stylesheet" href="~/css/dashboard.css" />
+
+    <!-- Page-specific styles injected by each view -->
+    @await RenderSectionAsync("Styles", required: false)
+</head>
+<body>
+
+    <div class="shell">
+
+        <!-- ═══════════════════════════════════════════════
+             SIDEBAR  — rendered once here for all pages
+        ════════════════════════════════════════════════ -->
+        <nav class="sb" id="sidebar">
+
+            <div class="sb-toggle" id="sbToggle">
+                <svg viewBox="0 0 10 10" fill="none">
+                    <path d="M3 2l4 3-4 3" stroke="#888" stroke-width="1.5"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </div>
+
+            <div class="sb-logo">
+                <div class="sb-logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#0b1120"
+                         stroke-width="2.5" stroke-linecap="round">
+                        <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" />
+                        <circle cx="12" cy="9" r="2.5" fill="#0b1120" stroke="none" />
+                    </svg>
+                </div>
+                <div class="sb-logo-text">Wet<span>Scrubber</span> Pro</div>
+            </div>
+
+            <div class="sb-nav">
+
+                <div class="sb-section">Main</div>
+
+                <a asp-controller="Dashboard" asp-action="Index"
+                   class="sb-item @(activePage == "Dashboard" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M1 1h6v6H1zm8 0h6v6H9zM1 9h6v6H1zm8 0h6v6H9z" />
+                    </svg>
+                    <span class="sb-item-label">Dashboard</span>
+                </a>
+
+                <a asp-controller="Project" asp-action="Index"
+                   class="sb-item @(activePage == "Projects" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm2 2v2h8V5H4zm0 4v2h5V9H4z" />
+                    </svg>
+                    <span class="sb-item-label">Projects</span>
+                </a>
+
+                <div class="sb-section">Design</div>
+
+                <a asp-controller="Project" asp-action="Index"
+                   class="sb-item @(activePage == "NewDesign" ? "active" : "")"
+                   title="Pick a project then click Add Design">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm1 4H7v4l3.5 2.1.7-1.2L8 8.5V5z" />
+                    </svg>
+                    <span class="sb-item-label">New Design</span>
+                </a>
+
+                @* <a asp-controller="Scrubber" asp-action="ChemicalReactions"
+                   class="sb-item @(activePage == "Simulation" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M2 2h12v2H2zm0 4h8v2H2zm0 4h10v2H2z" />
+                    </svg>
+                    <span class="sb-item-label">Simulation</span>
+                </a> *@
+
+                <a asp-controller="Chemistry" asp-action="Index"
+                   class="sb-item @(activePage == "Chemistry" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M5 1a1 1 0 00-1 1v4.5L2.5 9A2 2 0 002 10.5V14a1 1 0 001 1h10a1 1 0 001-1v-3.5a2 2 0 00-.5-1.5L12 6.5V2a1 1 0 00-1-1H5zm1 1h4v4a1 1 0 00.2.6L11.5 8h-7l1.3-1.4A1 1 0 006 6V2zm-2 8h6v1H4v-1z" />
+                    </svg>
+                    <span class="sb-item-label">Chemistry</span>
+                </a>
+                <a asp-controller="Pollutant" asp-action="Index"
+                   class="sb-item @(activePage == "Pollutants" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2a5 5 0 110 10A5 5 0 018 3zm0 2a3 3 0 100 6 3 3 0 000-6z" />
+                    </svg>
+                    <span class="sb-item-label">Pollutants</span>
+                </a>
+
+                <a asp-controller="ScrubbingLiquid" asp-action="Index"
+                   class="sb-item @(activePage == "ScrubbingLiquids" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" />
+                    </svg>
+                    <span class="sb-item-label">Scrubbing Liquids</span>
+                </a>
+                <div class="sb-section">Reports</div>
+
+                <a asp-controller="Project" asp-action="Index"
+                   class="sb-item @(activePage == "Reports" ? "active" : "")">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M4 1h5l4 4v10H4V1zm5 0v4h4" />
+                    </svg>
+                    <span class="sb-item-label">Export Reports</span>
+                </a>
+
+            </div>
+
+            <div class="sb-bottom">
+                <div class="sb-user">
+                    <div class="sb-avatar">@initials</div>
+                    <div class="sb-user-info">
+                        <div class="sb-user-name">@userName</div>
+                        <div class="sb-user-role">@userRole</div>
+                    </div>
+                </div>
+
+                <form asp-controller="Account" asp-action="Logout" method="post">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="sb-logout" id="logoutBtn">
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3v-1.5H3.5v-9H6V2zm4.854 3.146l2.5 2.5a.5.5 0 010 .708l-2.5 2.5-1.061-1.061L11.44 8.5H6V7h5.44L9.793 5.707l1.061-1.061z" />
+                        </svg>
+                        <span class="sb-logout-label">Sign out</span>
+                    </button>
+                </form>
+            </div>
+
+        </nav>
+
+        <!-- ═══════════════════════════════════════════════
+             MAIN CONTENT AREA
+        ════════════════════════════════════════════════ -->
+        <div class="main" id="mainContent">
+
+            <!-- Topbar -->
+            <div class="topbar">
+                <div class="topbar-title">@ViewData["Title"]</div>
+                <div class="topbar-right">
+
+                    @* Each view can inject topbar buttons here *@
+                    @await RenderSectionAsync("TopbarActions", required: false)
+
+                    <div class="topbar-icon-btn" title="Notifications">
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 1a5 5 0 00-5 5v3L1.5 11.5h13L13 9V6a5 5 0 00-5-5zm0 14a2 2 0 002-2H6a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Page body — each view renders here -->
+            <div class="page-body">
+
+                @* Flash messages — available on every page *@
+                @if (TempData["Success"] != null)
+                {
+                    <div class="flash-toast flash-success">✓ @TempData["Success"]</div>
+                }
+                @if (TempData["Error"] != null)
+                {
+                    <div class="flash-toast flash-error">⚠ @TempData["Error"]</div>
+                }
+
+                @RenderBody()
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- jQuery + shared JS -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="~/js/dashboard.js"></script>
+
+    @* Page-specific scripts injected by each view *@
+    @await RenderSectionAsync("Scripts", required: false)
+
+</body>
+</html>

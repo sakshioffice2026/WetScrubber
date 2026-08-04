@@ -1,0 +1,128 @@
+@model WetScrubber.Models.ReactionFormViewModel
+
+<div class="form-card">
+    <div class="form-card-header">
+        <div class="form-card-icon">
+            <svg viewBox="0 0 16 16"><path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3z" /></svg>
+        </div>
+        <div>
+            <div class="form-card-title">Reaction Pair</div>
+            <div class="form-card-sub">Which pollutant and liquid this reaction is for</div>
+        </div>
+    </div>
+    <div class="form-card-body">
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="PollutantId">Pollutant <span class="req">*</span></label>
+                <select asp-for="PollutantId">
+                    <option value="">— select —</option>
+                    @foreach (var p in Model.Pollutants)
+                    {
+                        <option value="@p.Id">@p.DisplayName (@Html.Raw(p.Formula))</option>
+                    }
+                </select>
+                <span class="field-error">@Html.ValidationMessageFor(m => m.PollutantId)</span>
+            </div>
+            <div class="form-group">
+                <label asp-for="ScrubbingLiquidId">Scrubbing Liquid <span class="req">*</span></label>
+                <select asp-for="ScrubbingLiquidId">
+                    <option value="">— select —</option>
+                    @foreach (var l in Model.Liquids)
+                    {
+                        <option value="@l.Id">@l.DisplayName (@Html.Raw(l.Formula))</option>
+                    }
+                </select>
+                <span class="field-error">@Html.ValidationMessageFor(m => m.ScrubbingLiquidId)</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <div class="form-card-icon">
+            <svg viewBox="0 0 16 16"><path d="M2 2h12v2H2zm0 4h8v2H2zm0 4h10v2H2z" /></svg>
+        </div>
+        <div>
+            <div class="form-card-title">Reaction</div>
+            <div class="form-card-sub">Equation and description</div>
+        </div>
+    </div>
+    <div class="form-card-body">
+        <div class="form-row full">
+            <div class="form-group">
+                <label asp-for="Equation">Equation <span class="req">*</span></label>
+                <input asp-for="Equation" placeholder="SO₂ + 2NaOH → Na₂SO₃ + H₂O" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.Equation)</span>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="ReactionType">Reaction Type</label>
+                <input asp-for="ReactionType" placeholder="Acid-base neutralisation" />
+            </div>
+            <div class="form-group">
+                <label asp-for="ProductName">Product Formed</label>
+                <input asp-for="ProductName" placeholder="Sodium sulfite (Na₂SO₃)" />
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="form-card">
+    <div class="form-card-header">
+        <div class="form-card-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 10.5h-1.5v-5h1.5v5zm0-6.5h-1.5V3.5h1.5V5z" /></svg>
+        </div>
+        <div>
+            <div class="form-card-title">Calculation Factors</div>
+            <div class="form-card-sub">Used by the design engine</div>
+        </div>
+    </div>
+    <div class="form-card-body">
+        <div class="fg3">
+            <div class="form-group">
+                <label asp-for="StoichiometricRatio">Stoichiometric Ratio <span class="unit">(mol reagent / mol pollutant)</span></label>
+                <input asp-for="StoichiometricRatio" type="number" step="any" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.StoichiometricRatio)</span>
+            </div>
+            <div class="form-group">
+                <label asp-for="MaxRemovalEfficiency">Max Removal <span class="unit">(%)</span></label>
+                <input asp-for="MaxRemovalEfficiency" type="number" step="any" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.MaxRemovalEfficiency)</span>
+            </div>
+            <div class="form-group">
+                <label asp-for="HeatOfReaction">Heat of Reaction <span class="unit">(kJ/mol)</span></label>
+                <input asp-for="HeatOfReaction" type="number" step="any" placeholder="optional" />
+            </div>
+            <div class="form-group">
+                <label asp-for="MinOperatingPH">Min Operating pH</label>
+                <input asp-for="MinOperatingPH" type="number" step="0.1" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.MinOperatingPH)</span>
+            </div>
+            <div class="form-group">
+                <label asp-for="MaxOperatingPH">Max Operating pH</label>
+                <input asp-for="MaxOperatingPH" type="number" step="0.1" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.MaxOperatingPH)</span>
+            </div>
+            <div class="form-group"></div>
+        </div>
+
+        <div class="form-row full">
+            <div class="form-group">
+                <label asp-for="DesignNotes">Design Notes</label>
+                <textarea asp-for="DesignNotes" placeholder="Operating tips, warnings, material compatibility…"></textarea>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group check">
+                <label><input type="checkbox" asp-for="IsPrimary" /> Primary reaction for this pair</label>
+                <div class="field-hint">Used automatically on the design page when several exist.</div>
+            </div>
+            <div class="form-group check">
+                <label><input type="checkbox" asp-for="IsActive" /> Active</label>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,125 @@
+﻿@model WetScrubber.Models.CreateProjectViewModel
+@{
+    ViewData["Title"] = "New Project";
+    ViewData["ActivePage"] = "Projects";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+}
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    <a asp-controller="Project" asp-action="Index">Projects</a>
+    <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>New Project</span>
+</div>
+
+<div class="form-page-wrap">
+    <form asp-action="Create" asp-controller="Project" method="post" id="projectForm">
+        @Html.AntiForgeryToken()
+
+        <!-- Card 1: Project Identity -->
+        <div class="form-card">
+            <div class="form-card-header">
+                <div class="form-card-icon">
+                    <svg viewBox="0 0 16 16"><path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm2 2v2h8V5H4zm0 4v2h5V9H4z" /></svg>
+                </div>
+                <div>
+                    <div class="form-card-title">Project Identity</div>
+                    <div class="form-card-sub">Basic identification info</div>
+                </div>
+            </div>
+            <div class="form-card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label asp-for="ProjectNumber">Project Number <span class="req">*</span></label>
+                        <input asp-for="ProjectNumber" id="ProjectNumber"
+                               class="@(ViewData.ModelState["ProjectNumber"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                               placeholder="WS-2025-001" autofocus />
+                        <span class="field-error">@Html.ValidationMessageFor(m => m.ProjectNumber)</span>
+                    </div>
+                    <div class="form-group">
+                        <label asp-for="UnitSystem">Unit System</label>
+                        <select asp-for="UnitSystem">
+                            <option value="1">Metric (m³/hr, °C, Pa)</option>
+                            <option value="2">Imperial (ACFM, °F, inH₂O)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row full">
+                    <div class="form-group">
+                        <label asp-for="ProjectName">Project Name <span class="req">*</span></label>
+                        <input asp-for="ProjectName" id="ProjectName"
+                               class="@(ViewData.ModelState["ProjectName"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                               placeholder="Cement Plant SO₂ Removal System" />
+                        <span class="field-error">@Html.ValidationMessageFor(m => m.ProjectName)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 2: Client Info -->
+        <div class="form-card">
+            <div class="form-card-header">
+                <div class="form-card-icon">
+                    <svg viewBox="0 0 16 16"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0H3z" /></svg>
+                </div>
+                <div>
+                    <div class="form-card-title">Client &amp; Engineer</div>
+                    <div class="form-card-sub">Optional but recommended</div>
+                </div>
+            </div>
+            <div class="form-card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label asp-for="ClientName">Client Name</label>
+                        <input asp-for="ClientName" placeholder="Ultratech Ltd" />
+                        <span class="field-error">@Html.ValidationMessageFor(m => m.ClientName)</span>
+                    </div>
+                    <div class="form-group">
+                        <label asp-for="EngineerName">Engineer Name</label>
+                        <input asp-for="EngineerName" placeholder="Dr. Jane Smith" />
+                        <span class="field-error">@Html.ValidationMessageFor(m => m.EngineerName)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 3: Description -->
+        <div class="form-card">
+            <div class="form-card-header">
+                <div class="form-card-icon">
+                    <svg viewBox="0 0 16 16"><path d="M2 2h12v2H2zm0 4h8v2H2zm0 4h10v2H2z" /></svg>
+                </div>
+                <div>
+                    <div class="form-card-title">Description</div>
+                    <div class="form-card-sub">Optional project notes</div>
+                </div>
+            </div>
+            <div class="form-card-body">
+                <div class="form-row full">
+                    <div class="form-group">
+                        <label asp-for="Description">Description</label>
+                        <textarea asp-for="Description"
+                                  placeholder="Brief description of the project scope, process, and objectives…"></textarea>
+                        <span class="field-error">@Html.ValidationMessageFor(m => m.Description)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn-save">
+                <svg viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
+                Create Project
+            </button>
+            <a asp-controller="Project" asp-action="Index" class="btn-cancel">Cancel</a>
+        </div>
+
+    </form>
+</div>
+
+@section Scripts {
+    <script src="~/js/project.js"></script>
+}

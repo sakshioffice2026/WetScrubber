@@ -1,0 +1,294 @@
+﻿@model WetScrubber.Models.DesignDetailViewModel
+@{
+    ViewData["Title"] = Model.DesignName;
+    ViewData["ActivePage"] = "NewDesign";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/scrubber.css" />
+}
+
+@section TopbarActions {
+    <a asp-controller="Project" asp-action="Detail"
+       asp-route-id="@Model.ProjectId" class="btn-cancel"
+       style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">
+        ← Back to Project
+    </a>
+}
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    <a asp-controller="Project" asp-action="Index">Projects</a>
+    <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <a asp-controller="Project" asp-action="Detail" asp-route-id="@Model.ProjectId">@Model.ProjectNumber</a>
+    <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>@Model.DesignName</span>
+</div>
+
+<!-- ── Header card ────────────────────────────────────────────── -->
+<div class="detail-header-card">
+    <div>
+        <div class="detail-number" style="color:#3b82f6;">@Model.ScrubberType</div>
+        <div class="detail-title">@Model.DesignName</div>
+        <div class="detail-meta">
+            <div class="detail-meta-item">
+                <svg viewBox="0 0 16 16"><path d="M2 3a1 1 0 011-1h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3zm2 2v2h8V5H4zm0 4v2h5V9H4z" /></svg>
+                @Model.ProjectName
+            </div>
+            <div class="detail-meta-item">
+                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2a5 5 0 110 10A5 5 0 018 3zm.5 2.5h-1v4l3 1.8.5-.9-2.5-1.5V5.5z" /></svg>
+                Created @Model.CreatedAt.ToString("dd MMM yyyy, hh:mm tt")
+            </div>
+            <div class="detail-meta-item">
+                <svg viewBox="0 0 16 16"><path d="M2 4h1v8H2zm3 0h1v8H5zm3 0h1v8H8zm3 0h1v8h-1z" /></svg>
+                Shell: @Model.ShellMaterial &nbsp;|&nbsp; Internals: @Model.InternalMaterial
+            </div>
+            @if (Model.HasResults)
+            {
+                <span class="status-badge badge-completed">✓ Calculated</span>
+            }
+            else
+            {
+                <span class="status-badge badge-draft">Pending Calculation</span>
+            }
+        </div>
+    </div>
+
+    <div class="detail-actions">
+        @if (Model.HasResults)
+        {
+            <a asp-controller="Scrubber" asp-action="Results"
+               asp-route-id="@Model.DesignId"
+               class="btn-save" style="text-decoration:none;">
+                <svg viewBox="0 0 16 16"><path d="M2 2h12v2H2zm0 4h8v2H2zm0 4h10v2H2z" /></svg>
+                View Results
+            </a>
+        }
+
+        <form asp-controller="Scrubber" asp-action="RunCalculation"
+              asp-route-id="@Model.DesignId" method="post" style="margin:0;">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-save" id="btnRunCalc">
+                <svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg>
+                @(Model.HasResults ? "Re-run Calculation" : "Run Calculation")
+            </button>
+        </form>
+        <form asp-controller="Scrubber" asp-action="Delete"
+              asp-route-id="@Model.DesignId" method="post" style="margin:0;">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-delete-project"
+                    onclick="return confirm('Delete this design? This cannot be undone.')">
+                <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z" /></svg>
+                Delete
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ── Previous results banner ────────────────────────────────── -->
+@if (Model.HasResults)
+{
+    <div style="background:#f0fdf8;border:0.5px solid #bbf7e0;border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+            <div style="width:36px;height:36px;background:#00d28c;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="#0b1120"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
+            </div>
+            <div>
+                <div style="font-size:13px;font-weight:700;color:#059669;">Calculation results available</div>
+                <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+                    Tower: @Model.TowerDiameter m dia × @Model.TowerHeight m height &nbsp;|&nbsp;
+                    Removal: @Model.RemovalEfficiency.ToString("F1")% &nbsp;|&nbsp;
+                    ΔP: @Model.PressureDrop.ToString("F0") Pa
+                </div>
+            </div>
+        </div>
+        <a asp-controller="Scrubber" asp-action="Results" asp-route-id="@Model.DesignId"
+           style="font-size:12px;font-weight:600;color:#059669;text-decoration:none;white-space:nowrap;">
+            View full results →
+        </a>
+    </div>
+}
+
+<!-- ── Input summary cards ────────────────────────────────────── -->
+<!-- Gas Stream -->
+<div class="form-card" style="margin-bottom:14px;">
+    <div class="form-card-header">
+        <div class="form-card-icon">
+            <svg viewBox="0 0 16 16"><path d="M2 8c0-3 2-5 6-5s6 2 6 5-2 5-6 5-6-2-6-5z" /></svg>
+        </div>
+        <div>
+            <div class="form-card-title">Gas Stream</div>
+            <div class="form-card-sub">Inlet flow conditions</div>
+        </div>
+    </div>
+    <div class="form-card-body">
+        <div class="design-info-grid">
+            <div class="design-info-card">
+                <div class="design-info-label">Normal Flow Rate</div>
+                <div class="design-info-value">
+                    @Model.NormalFlowRate.ToString("N0")
+                    <span class="design-info-unit">Nm³/hr</span>
+                </div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">Actual Flow Rate</div>
+                <div class="design-info-value">
+                    @Model.ActualFlowRate.ToString("N0")
+                    <span class="design-info-unit">m³/hr</span>
+                </div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">Inlet Temperature</div>
+                <div class="design-info-value">
+                    @Model.InletTemperature
+                    <span class="design-info-unit">°C</span>
+                </div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">Inlet Pressure</div>
+                <div class="design-info-value">
+                    @Model.InletPressure.ToString("N0")
+                    <span class="design-info-unit">Pa</span>
+                </div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">Moisture Content</div>
+                <div class="design-info-value">
+                    @Model.MoistureContent
+                    <span class="design-info-unit">% vol</span>
+                </div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">Gas Density</div>
+                <div class="design-info-value">
+                    @Model.GasDensity
+                    <span class="design-info-unit">kg/m³</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pollutants -->
+<div class="form-card" style="margin-bottom:14px;">
+    <div class="form-card-header">
+        <div class="form-card-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 10.5h-1.5v-5h1.5v5zm0-6.5h-1.5V3.5h1.5V5z" /></svg>
+        </div>
+        <div>
+            <div class="form-card-title">Pollutants (@Model.Pollutants.Count)</div>
+            <div class="form-card-sub">Inlet concentrations and removal targets</div>
+        </div>
+    </div>
+    <div class="form-card-body" style="padding:0;">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+            <thead>
+                <tr style="background:#fafafa;">
+                    <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Pollutant</th>
+                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Inlet (mg/Nm³)</th>
+                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Target Outlet</th>
+                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Removal %</th>
+                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Mol. Weight</th>
+                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Henry's H</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Model.Pollutants)
+                {
+                    <tr style="border-bottom:0.5px solid #f8f8f8;">
+                        <td style="padding:12px 16px;">
+                            <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#eff6ff;color:#3b82f6;">
+                                @p.PollutantType
+                            </span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;font-weight:600;color:#0b1120;">@p.InletConcentration.ToString("N1")</td>
+                        <td style="padding:12px 16px;text-align:right;color:#555;">@p.TargetOutletConcentration.ToString("N1")</td>
+                        <td style="padding:12px 16px;text-align:right;">
+                            <span style="color:#059669;font-weight:600;">@p.TargetRemovalEfficiency.ToString("F1")%</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;color:#888;">@p.MolecularWeight</td>
+                        <td style="padding:12px 16px;text-align:right;color:#888;">@p.HenrysLawConstant</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Scrubbing Liquid -->
+<div class="form-card" style="margin-bottom:14px;">
+    <div class="form-card-header">
+        <div class="form-card-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
+        </div>
+        <div>
+            <div class="form-card-title">Scrubbing Liquid</div>
+            <div class="form-card-sub">Liquid phase properties</div>
+        </div>
+    </div>
+    <div class="form-card-body">
+        <div class="design-info-grid">
+            <div class="design-info-card">
+                <div class="design-info-label">Liquid Type</div>
+                <div class="design-info-value">@Model.LiquidType</div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">pH</div>
+                <div class="design-info-value">@Model.LiquidPH</div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">Concentration</div>
+                <div class="design-info-value">
+                    @Model.LiquidConcentration
+                    <span class="design-info-unit">% wt</span>
+                </div>
+            </div>
+            <div class="design-info-card">
+                <div class="design-info-label">L/G Ratio</div>
+                <div class="design-info-value">
+                    @Model.LiquidToGasRatio
+                    <span class="design-info-unit">L/m³</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Run Calculation CTA -->
+@if (!Model.HasResults)
+{
+    <div class="no-results">
+        <div class="no-results-icon">
+            <svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg>
+        </div>
+        <h4>Ready to calculate</h4>
+        <p>
+            All inputs are saved. Click <strong>Run Calculation</strong> to compute tower
+            dimensions, removal efficiency, pressure drop, and power requirements using
+            Souders-Brown, Colburn NTU/HTU, and Billet-Schultes methods.
+        </p>
+        <form asp-controller="Scrubber" asp-action="RunCalculation"
+              asp-route-id="@Model.DesignId" method="post">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-run-calc" id="btnRunCalcBottom">
+                <svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg>
+                Run Calculation Now
+            </button>
+        </form>
+    </div>
+}
+
+@section Scripts {
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script>
+        $(document).ready(function () {
+            // Show loading state when Run Calculation is clicked
+            $('form').has('#btnRunCalc, #btnRunCalcBottom').on('submit', function () {
+                var $btn = $(this).find('button[type="submit"]');
+                $btn.prop('disabled', true)
+                    .html('<span>Calculating… please wait</span>');
+            });
+        });
+    </script>
+}

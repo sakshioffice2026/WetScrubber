@@ -1,0 +1,29 @@
+@model WetScrubber.Models.LiquidFormViewModel
+@{
+    ViewData["Title"] = "Add Scrubbing Liquid";
+    ViewData["ActivePage"] = "Chemistry";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/scrubber.css" />
+    <link rel="stylesheet" href="~/css/chemistry-crud.css" />
+}
+
+<div class="breadcrumb">
+    <a asp-controller="Chemistry" asp-action="Index">Chemistry</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <a asp-action="Index">Scrubbing Liquids</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Add</span>
+</div>
+
+<div class="form-page-wrap">
+    <form asp-action="Create" method="post">
+        @Html.AntiForgeryToken()
+        <partial name="_LiquidForm" model="Model" />
+        <div class="form-actions">
+            <button type="submit" class="btn-save">Save Liquid</button>
+            <a asp-action="Index" class="btn-cancel">Cancel</a>
+        </div>
+    </form>
+</div>

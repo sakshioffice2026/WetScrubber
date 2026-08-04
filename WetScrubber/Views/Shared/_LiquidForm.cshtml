@@ -1,0 +1,50 @@
+@model WetScrubber.Models.LiquidFormViewModel
+
+<div class="form-card">
+    <div class="form-card-body">
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="Code">Code <span class="req">*</span></label>
+                <input asp-for="Code" placeholder="NaOH" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.Code)</span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Formula">Formula</label>
+                <input asp-for="Formula" placeholder="NaOH" />
+            </div>
+        </div>
+        <div class="form-row full">
+            <div class="form-group">
+                <label asp-for="DisplayName">Name <span class="req">*</span></label>
+                <input asp-for="DisplayName" placeholder="Caustic Soda" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.DisplayName)</span>
+            </div>
+        </div>
+        <div class="fg3">
+            <div class="form-group">
+                <label asp-for="ReagentMolecularWeight">Reagent Mol. Weight <span class="unit">(g/mol)</span></label>
+                <input asp-for="ReagentMolecularWeight" type="number" step="any" placeholder="40" />
+            </div>
+            <div class="form-group">
+                <label asp-for="DefaultDensity">Default Density <span class="unit">(kg/m³)</span></label>
+                <input asp-for="DefaultDensity" type="number" step="any" placeholder="1050" />
+            </div>
+            <div class="form-group">
+                <label asp-for="DefaultPH">Default pH</label>
+                <input asp-for="DefaultPH" type="number" step="0.1" placeholder="13" />
+            </div>
+        </div>
+        <div class="form-row full">
+            <div class="form-group">
+                <label asp-for="Description">Description</label>
+                <textarea asp-for="Description" placeholder="Notes, handling, cost…"></textarea>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group check">
+                <label><input type="checkbox" asp-for="IsActive" /> Active (available in dropdowns)</label>
+            </div>
+            <div class="form-group"></div>
+        </div>
+    </div>
+</div>

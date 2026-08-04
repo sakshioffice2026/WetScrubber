@@ -1,0 +1,211 @@
+﻿@using WetScrubber.Database.Enums
+@model WetScrubber.Models.ProjectDetailViewModel
+@{
+    ViewData["Title"] = Model.ProjectName;
+    ViewData["ActivePage"] = "Projects";
+
+    string badgeClass, statusLabel;
+    if (Model.Status == ProjectStatus.Completed) { badgeClass = "badge-completed"; statusLabel = "Completed"; }
+    else if (Model.Status == ProjectStatus.InProgress) { badgeClass = "badge-inprogress"; statusLabel = "In Progress"; }
+    else if (Model.Status == ProjectStatus.Archived) { badgeClass = "badge-archived"; statusLabel = "Archived"; }
+    else { badgeClass = "badge-draft"; statusLabel = "Draft"; }
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+}
+
+@section TopbarActions {
+    <a href="/Scrubber/Create?projectId=@Model.ProjectId" class="btn-new">
+        <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="#0b1120" stroke-width="2" fill="none" /></svg>
+        New Design
+    </a>
+}
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    <a asp-controller="Project" asp-action="Index">Projects</a>
+    <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>@Model.ProjectNumber</span>
+</div>
+
+<!-- Header card -->
+<div class="detail-header-card">
+    <div>
+        <div class="detail-number">@Model.ProjectNumber</div>
+        <div class="detail-title">@Model.ProjectName</div>
+        <div class="detail-meta">
+            @if (!string.IsNullOrEmpty(Model.ClientName))
+            {
+                <div class="detail-meta-item">
+                    <svg viewBox="0 0 16 16"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0H3z" /></svg>
+                    @Model.ClientName
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(Model.EngineerName))
+            {
+                <div class="detail-meta-item">
+                    <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1z" /></svg>
+                    @Model.EngineerName
+                </div>
+            }
+            <div class="detail-meta-item">
+                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2a5 5 0 110 10A5 5 0 018 3zm.5 2.5h-1v4l3 1.8.5-.9-2.5-1.5V5.5z" /></svg>
+                Updated @Model.UpdatedAt.ToString("dd MMM yyyy")
+            </div>
+            <span class="status-badge @badgeClass">@statusLabel</span>
+        </div>
+    </div>
+    <div class="detail-actions">
+        <a asp-controller="Project" asp-action="Edit" asp-route-id="@Model.ProjectId" class="btn-edit">
+            <svg viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10z" /></svg>
+            Edit
+        </a>
+        <button type="button" class="btn-delete-project btn-open-delete"
+                data-id="@Model.ProjectId" data-name="@Model.ProjectName">
+            <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z" /></svg>
+            Delete
+        </button>
+    </div>
+</div>
+
+<!-- Info grid -->
+<div class="detail-info-grid">
+    <div class="detail-info-card">
+        <div class="detail-info-label">Total Designs</div>
+        <div class="detail-info-value">@Model.TotalDesigns</div>
+    </div>
+    <div class="detail-info-card">
+        <div class="detail-info-label">With Results</div>
+        <div class="detail-info-value">@Model.CompletedDesigns</div>
+    </div>
+    <div class="detail-info-card">
+        <div class="detail-info-label">Unit System</div>
+        <div class="detail-info-value">@(Model.UnitSystem == UnitSystem.Metric ? "Metric" : "Imperial")</div>
+    </div>
+    <div class="detail-info-card">
+        <div class="detail-info-label">Created</div>
+        <div class="detail-info-value">@Model.CreatedAt.ToString("dd MMM yyyy")</div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.Description))
+{
+    <div style="background:#fff;border:0.5px solid #e8e8e8;border-radius:10px;padding:16px 20px;margin-bottom:16px;">
+        <div style="font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:8px;">Description</div>
+        <p style="font-size:13px;color:#555;line-height:1.65;">@Model.Description</p>
+    </div>
+}
+
+<!-- Designs table -->
+<div class="designs-card">
+    <div class="designs-header">
+        <div class="designs-title">Scrubber Designs (@Model.TotalDesigns)</div>
+        <a href="/Scrubber/Create?projectId=@Model.ProjectId" class="btn-new-design">
+            <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="#0b1120" stroke-width="2" fill="none" /></svg>
+            Add Design
+        </a>
+    </div>
+
+    @if (Model.Designs.Any())
+    {
+        <div style="overflow-x:auto;">
+            <table class="designs-table">
+                <thead>
+                    <tr>
+                        <th>Design Name</th>
+                        <th>Scrubber Type</th>
+                        <th>Shell Material</th>
+                        <th>Removal Eff.</th>
+                        <th>Results</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in Model.Designs)
+                    {
+                        <tr data-href="/Scrubber/DesignDetail/@d.DesignId">
+                            <td><span class="design-name">@d.DesignName</span></td>
+                            <td><span class="scrubber-type-badge">@d.ScrubberType.Replace("Tower", "").Replace("Scrubber", "").Trim()</span></td>
+                            <td><span class="proj-engineer">@d.ShellMaterial</span></td>
+                            <td>
+                                @if (d.HasResults)
+                                {
+                                    <div class="efficiency-bar">
+                                        <div class="efficiency-track">
+                                            <div class="efficiency-fill" style="width:@(Math.Min(d.RemovalEfficiency, 100))%"></div>
+                                        </div>
+                                        <span class="efficiency-val">@d.RemovalEfficiency.ToString("F1")%</span>
+                                    </div>
+                                }
+                                else
+                                {
+
+                                    <span style="font-size:11px;color:#bbb;">Not run yet</span>
+                                }
+                            </td>
+                            <td>
+                                @if (d.HasResults)
+                                {
+                                    <span class="status-badge badge-completed">✓ Done</span>
+                                }
+                                else
+                                {
+
+                                    <span class="status-badge badge-draft">Pending</span>
+                                }
+                            </td>
+                            <td class="proj-date">@d.UpdatedAt.ToString("dd MMM yyyy")</td>
+                            <td>
+                                <div class="design-actions">
+                                    <a asp-controller="Scrubber" asp-action="Edit" asp-route-id="@d.DesignId"
+                                       class="action-btn" title="Edit design">
+                                        <svg viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10z" /></svg>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <div class="empty-icon">
+                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm1 4H7v4l3.5 2.1.7-1.2L8 8.5V5z" /></svg>
+            </div>
+            <h4>No designs yet</h4>
+            <p>Add your first wet scrubber design to this project.</p>
+            <a href="/Scrubber/Create?projectId=@Model.ProjectId" class="btn-new-design">+ Add First Design</a>
+        </div>
+    }
+</div>
+
+<!-- Delete modal -->
+<div class="modal-backdrop" id="deleteModal">
+    <div class="modal-box">
+        <div class="modal-icon">
+            <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z" /></svg>
+        </div>
+        <div class="modal-title">Delete Project</div>
+        <div class="modal-message">
+            Are you sure you want to delete <strong id="deleteProjectName"></strong>?
+            All designs will be permanently deleted.
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn-modal-cancel" id="btnModalCancel">Cancel</button>
+            <button type="button" class="btn-modal-delete" id="btnModalDelete">Delete</button>
+        </div>
+    </div>
+</div>
+<form id="deleteForm" asp-controller="Project" asp-action="Delete" method="post" style="display:none;">
+    @Html.AntiForgeryToken()
+    <input type="hidden" id="deleteProjectIdInput" name="id" />
+</form>
+
+@section Scripts {
+    <script src="~/js/project.js"></script>
+}

@@ -1,0 +1,161 @@
+﻿@model WetScrubber.Models.ChemistryIndexViewModel
+@{
+    ViewData["Title"] = "Chemical Reactions";
+    ViewData["ActivePage"] = "Chemistry";
+
+    var pollutants = Model.Pollutants;
+    var liquids = Model.Liquids;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/scrubber.css" />
+    <link rel="stylesheet" href="~/css/chemistry.css" />
+    <link rel="stylesheet" href="~/css/chemistry-crud.css" />
+}
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    <a asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Chemical Reactions</span>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="flash-toast success">@TempData["Success"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="flash-toast error">@TempData["Error"]</div>
+}
+
+<!-- Intro + Add -->
+<div class="chem-intro-card">
+    <div class="chem-intro-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#00d28c" stroke-width="2" stroke-linecap="round">
+            <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+        </svg>
+    </div>
+    <div style="flex:1;">
+        <div class="chem-intro-title">Chemical Reactions Master</div>
+        <div class="chem-intro-desc">
+            These reactions drive the design calculations. When an engineer selects a
+            pollutant and scrubbing liquid on a design, the matching reaction and its
+            factors (stoichiometry, pH window, max removal) are applied automatically.
+        </div>
+    </div>
+  @*   <a asp-action="Create" class="btn-save" style="text-decoration:none;white-space:nowrap;">
+        <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" /></svg>
+        Add Reaction
+    </a> *@
+
+    <div style="display:flex; gap:8px; white-space:nowrap;">
+        <a asp-controller="Pollutant" asp-action="Index" class="btn-cancel" style="text-decoration:none;">
+            Pollutants
+        </a>
+        <a asp-controller="ScrubbingLiquid" asp-action="Index" class="btn-cancel" style="text-decoration:none;">
+            Liquids
+        </a>
+        <a asp-action="Create" class="btn-save" style="text-decoration:none;">
+            + Add Reaction
+        </a>
+    </div>
+</div>
+
+@if (!pollutants.Any())
+{
+    <div class="empty-state">No pollutants found. Seed the master tables first.</div>
+}
+else
+{
+    <!-- Pollutant tabs -->
+    <div class="pollutant-tabs">
+        @for (int i = 0; i < pollutants.Count; i++)
+        {
+            var p = pollutants[i];
+            <button class="tab-btn @(i == 0 ? "active" : "")" data-panel="@p.Code.ToLower()">@Html.Raw(p.Formula)</button>
+        }
+    </div>
+
+    @for (int i = 0; i < pollutants.Count; i++)
+    {
+        var p = pollutants[i];
+        var rows = Model.Reactions.Where(r => r.PollutantId == p.Id).ToList();
+
+        <div class="reaction-panel @(i == 0 ? "show" : "")" id="panel-@p.Code.ToLower()">
+
+            <div class="pollutant-header">
+                <div class="ph-body">
+                    <div class="ph-name">@p.DisplayName — @Html.Raw(p.Formula)</div>
+                    <div class="ph-desc">@p.Description</div>
+                </div>
+                <span class="hazard-tag">@rows.Count reaction(s)</span>
+            </div>
+
+            @if (!rows.Any())
+            {
+                <div class="empty-state">
+                    No reactions defined for @Html.Raw(p.Formula) yet.
+                    <a asp-action="Create">Add one</a>.
+                </div>
+            }
+
+            @foreach (var r in rows)
+            {
+                var liquidName = liquids.ContainsKey(r.ScrubbingLiquidId)
+                    ? liquids[r.ScrubbingLiquidId].DisplayName : "—";
+
+                <div class="rxn-card">
+                    <div class="rxn-header">
+                        <span class="rxn-liquid-tag blue">@liquidName</span>
+                        <span class="rxn-eq">@Html.Raw(r.Equation)</span>
+
+                        @if (r.IsPrimary)
+                        {
+                            <span class="primary-badge">Primary</span>
+                        }
+
+                        <div class="rxn-actions" onclick="event.stopPropagation();">
+                            <a asp-action="Edit" asp-route-id="@r.Id" class="action-btn" title="Edit">
+                                <svg viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10z" /></svg>
+                            </a>
+                            <form asp-action="Delete" asp-route-id="@r.Id" method="post"
+                                  onsubmit="return confirm('Remove this reaction?');" style="display:inline;">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="action-btn danger" title="Delete">
+                                    <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6zM14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 010-2h4a1 1 0 011-1h2a1 1 0 011 1h4a1 1 0 011 1z" /></svg>
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="rxn-chevron"><svg viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="#888" stroke-width="1.5" stroke-linecap="round" /></svg></div>
+                    </div>
+
+                    <div class="rxn-body">
+                        <div class="rxn-grid">
+                            <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction type</div><div class="rxn-cell-val">@r.ReactionType</div></div>
+                            <div class="rxn-cell"><div class="rxn-cell-lbl">Product formed</div><div class="rxn-cell-val">@r.ProductName</div></div>
+                            <div class="rxn-cell"><div class="rxn-cell-lbl">Stoichiometric ratio</div><div class="rxn-cell-val">@r.StoichiometricRatio mol reagent / mol pollutant</div></div>
+                            <div class="rxn-cell"><div class="rxn-cell-lbl">Max removal</div><div class="rxn-cell-val">@r.MaxRemovalEfficiency %</div></div>
+                            <div class="rxn-cell"><div class="rxn-cell-lbl">Operating pH</div><div class="rxn-cell-val">@r.MinOperatingPH – @r.MaxOperatingPH</div></div>
+                            @if (r.HeatOfReaction.HasValue)
+                            {
+                                <div class="rxn-cell"><div class="rxn-cell-lbl">Heat of reaction</div><div class="rxn-cell-val">@r.HeatOfReaction kJ/mol</div></div>
+                            }
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(r.DesignNotes))
+                        {
+                            <div class="rxn-note">@r.DesignNotes</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+}
+
+@section Scripts {
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="~/js/chemistry.js"></script>
+}

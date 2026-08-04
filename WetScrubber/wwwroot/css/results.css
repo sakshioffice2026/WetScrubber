@@ -1,0 +1,247 @@
+/* ============================================================
+   results.css  —  Calculation Results page
+   WetScrubber Pro | ASP.NET Core MVC
+   ============================================================ */
+
+/* ── Results header card ─────────────────────────────────────── */
+.results-header-card {
+    background: #0b1120;
+    border-radius: 10px;
+    padding: 22px 26px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.results-badge-type {
+    display: inline-block;
+    background: rgba(0, 210, 140, 0.15);
+    border: 0.5px solid rgba(0, 210, 140, 0.35);
+    color: #00d28c;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-bottom: 8px;
+}
+
+.results-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.3px;
+    margin-bottom: 4px;
+}
+
+.results-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.results-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.btn-recalc {
+    height: 36px;
+    padding: 0 16px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    border: 0.5px solid rgba(255, 255, 255, 0.2);
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s;
+}
+
+.btn-recalc:hover { background: rgba(255, 255, 255, 0.15); }
+.btn-recalc svg   { width: 12px; height: 12px; fill: #00d28c; }
+
+/* ── KPI result grid ─────────────────────────────────────────── */
+.results-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.result-kpi {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+}
+
+.result-kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: #e0e0e0;
+    border-radius: 2px 2px 0 0;
+}
+
+.result-kpi.green::before  { background: #00d28c; }
+.result-kpi.blue::before   { background: #3b82f6; }
+.result-kpi.amber::before  { background: #f59e0b; }
+.result-kpi.purple::before { background: #8b5cf6; }
+
+.result-kpi-icon {
+    position: absolute;
+    right: 14px;
+    top: 16px;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: #f5f6fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.result-kpi-icon svg { width: 14px; height: 14px; fill: #ccc; }
+.result-kpi.green  .result-kpi-icon svg { fill: #00d28c; }
+.result-kpi.blue   .result-kpi-icon svg { fill: #3b82f6; }
+.result-kpi.amber  .result-kpi-icon svg { fill: #f59e0b; }
+.result-kpi.purple .result-kpi-icon svg { fill: #8b5cf6; }
+
+.result-kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #aaa;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.result-kpi-value {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0b1120;
+    letter-spacing: -0.5px;
+    line-height: 1;
+}
+
+.result-kpi-unit {
+    font-size: 13px;
+    font-weight: 500;
+    color: #aaa;
+    margin-left: 2px;
+}
+
+.result-kpi-sub {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 6px;
+}
+
+/* ── Two-column data cards row ───────────────────────────────── */
+.results-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+/* ── Data card (transfer units, sizing) ──────────────────────── */
+.results-data-card {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.results-data-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid #f0f0f0;
+    background: #fafafa;
+}
+
+.results-data-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0b1120;
+}
+
+.results-data-sub {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 2px;
+}
+
+.results-data-body {
+    padding: 4px 0;
+}
+
+/* ── Data rows inside cards ──────────────────────────────────── */
+.data-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 0.5px solid #f8f8f8;
+    gap: 16px;
+}
+
+.data-row:last-child { border-bottom: none; }
+
+.data-label {
+    font-size: 12.5px;
+    color: #666;
+    flex: 1;
+}
+
+.data-value {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0b1120;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.data-value.highlight {
+    color: #00d28c;
+    font-size: 13.5px;
+}
+
+.data-value.value-good { color: #059669; }
+.data-value.value-warn { color: #d97706; }
+
+.total-row {
+    background: #f8f9fb;
+    border-top: 1px solid #f0f0f0 !important;
+}
+
+.total-row .data-label {
+    font-weight: 600;
+    color: #0b1120;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+    .results-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 900px) {
+    .results-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .results-two-col  { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+    .results-kpi-grid    { grid-template-columns: 1fr; }
+    .results-header-card { flex-direction: column; align-items: flex-start; }
+    .data-row            { flex-direction: column; align-items: flex-start; gap: 4px; }
+    .data-value          { text-align: left; }
+}

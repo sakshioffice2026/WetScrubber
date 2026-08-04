@@ -1,0 +1,46 @@
+@model WetScrubber.Models.PollutantFormViewModel
+
+<div class="form-card">
+    <div class="form-card-body">
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="Code">Code <span class="req">*</span></label>
+                <input asp-for="Code" placeholder="SO2" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.Code)</span>
+            </div>
+            <div class="form-group">
+                <label asp-for="Formula">Formula</label>
+                <input asp-for="Formula" placeholder="SO₂" />
+            </div>
+        </div>
+        <div class="form-row full">
+            <div class="form-group">
+                <label asp-for="DisplayName">Name <span class="req">*</span></label>
+                <input asp-for="DisplayName" placeholder="Sulfur Dioxide" />
+                <span class="field-error">@Html.ValidationMessageFor(m => m.DisplayName)</span>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="DefaultMolecularWeight">Default Molecular Weight <span class="unit">(g/mol)</span></label>
+                <input asp-for="DefaultMolecularWeight" type="number" step="any" placeholder="64" />
+            </div>
+            <div class="form-group">
+                <label asp-for="DefaultHenrysLawConstant">Default Henry's Law Constant</label>
+                <input asp-for="DefaultHenrysLawConstant" type="number" step="any" placeholder="0" />
+            </div>
+        </div>
+        <div class="form-row full">
+            <div class="form-group">
+                <label asp-for="Description">Description</label>
+                <textarea asp-for="Description" placeholder="Typical sources, hazards…"></textarea>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group check">
+                <label><input type="checkbox" asp-for="IsActive" /> Active (available in dropdowns)</label>
+            </div>
+            <div class="form-group"></div>
+        </div>
+    </div>
+</div>

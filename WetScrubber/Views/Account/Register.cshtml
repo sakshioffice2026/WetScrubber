@@ -1,0 +1,266 @@
+﻿@model WetScrubber.Models.RegisterViewModel
+@{
+    ViewData["Title"] = "Create Account";
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Account — WetScrubber Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/auth.css" />
+    <link rel="stylesheet" href="~/css/register.css" />
+</head>
+<body>
+
+    <div class="login-root reg-root">
+
+        <!-- ── LEFT: Brand panel ─────────────────────────────────── -->
+        <div class="lp-left">
+            <div class="lp-left-grid"></div>
+
+            <div class="lp-logo">
+                <div class="lp-logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#0b1120" stroke-width="2.5" stroke-linecap="round">
+                        <path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z" />
+                        <circle cx="12" cy="9" r="2.5" fill="#0b1120" stroke="none" />
+                    </svg>
+                </div>
+                <div class="lp-logo-text">Wet<span>Scrubber</span> Pro</div>
+            </div>
+
+            <div class="lp-center">
+                <div class="lp-tag">
+                    <div class="lp-tag-dot"></div>
+                    Free to get started
+                </div>
+                <h1 class="lp-heading">
+                    Join<br>Engineers<br><span>Worldwide.</span>
+                </h1>
+                <p class="lp-sub">
+                    Design compliant wet scrubber systems with professional
+                    engineering calculations and real-time compliance checking.
+                </p>
+
+                <ul class="reg-feature-list">
+                    <li>
+                        <div class="reg-feature-icon">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
+                            </svg>
+                        </div>
+                        Packed tower, venturi &amp; spray tower design
+                    </li>
+                    <li>
+                        <div class="reg-feature-icon">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
+                            </svg>
+                        </div>
+                        Real-time engineering calculations
+                    </li>
+                    <li>
+                        <div class="reg-feature-icon">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
+                            </svg>
+                        </div>
+                        EPA, EU IED &amp; CPCB compliance checking
+                    </li>
+                    <li>
+                        <div class="reg-feature-icon">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
+                            </svg>
+                        </div>
+                        CAPEX / OPEX economic analysis
+                    </li>
+                    <li>
+                        <div class="reg-feature-icon">
+                            <svg viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" />
+                            </svg>
+                        </div>
+                        PDF &amp; Excel report generation
+                    </li>
+                </ul>
+            </div>
+
+            <div class="lp-footer">© 2025 WetScrubber Pro</div>
+        </div>
+
+        <!-- ── RIGHT: Register form ───────────────────────────────── -->
+        <div class="lp-right reg-panel">
+
+            <p class="lp-eyebrow">Get started</p>
+            <h2 class="lp-title">Create your account</h2>
+            <p class="lp-desc">
+                Already have an account?
+                <a asp-action="Login" asp-controller="Account">Sign in</a>
+            </p>
+
+            <!-- Server validation summary -->
+            @if (!ViewData.ModelState.IsValid)
+            {
+                <div class="lp-error show">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 4a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0V5zm-.75 6.5a1 1 0 110-2 1 1 0 010 2z" />
+                    </svg>
+                    <span asp-validation-summary="ModelOnly"></span>
+                </div>
+            }
+
+            <form asp-action="Register" asp-controller="Account" method="post" id="registerForm">
+                @Html.AntiForgeryToken()
+
+                <!-- ── Section: Account info ────────────────────── -->
+                <div class="reg-section-label">Account info</div>
+
+                <div class="reg-grid">
+
+                    <!-- Full name -->
+                    <div class="field full">
+                        <label asp-for="FullName">
+                            Full name <span class="required-star">*</span>
+                        </label>
+                        <div class="field-wrap">
+                            <input asp-for="FullName"
+                                   class="@(ViewData.ModelState["FullName"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                                   placeholder="Dr. Jane Smith"
+                                   autocomplete="name"
+                                   autofocus />
+                            <svg class="field-icon" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 6a5 5 0 0110 0H3z" />
+                            </svg>
+                        </div>
+                        <span asp-validation-for="FullName" class="text-danger"></span>
+                    </div>
+
+                    <!-- Email -->
+                    <div class="field full">
+                        <label asp-for="Email">
+                            Email address <span class="required-star">*</span>
+                        </label>
+                        <div class="field-wrap">
+                            <input asp-for="Email"
+                                   type="email"
+                                   class="@(ViewData.ModelState["Email"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                                   placeholder="jane@company.com"
+                                   autocomplete="email" />
+                            <svg class="field-icon" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M2 4a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4zm2-1a1 1 0 00-1 1v.5l5 3.5 5-3.5V4a1 1 0 00-1-1H4zm9 2.5l-5 3.5-5-3.5V12a1 1 0 001 1h8a1 1 0 001-1V5.5z" />
+                            </svg>
+                        </div>
+                        <span asp-validation-for="Email" class="text-danger"></span>
+                    </div>
+
+                    <!-- Password -->
+                    <div class="field">
+                        <label asp-for="Password">
+                            Password <span class="required-star">*</span>
+                        </label>
+                        <div class="field-wrap">
+                            <input asp-for="Password"
+                                   id="passwordInput"
+                                   type="password"
+                                   class="@(ViewData.ModelState["Password"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                                   placeholder="Min. 6 characters"
+                                   autocomplete="new-password" />
+                            <svg class="field-icon" id="togglePassReg" viewBox="0 0 16 16" fill="currentColor" title="Show password">
+                                <path d="M8 3C4.5 3 1.5 5.5 1 8c.5 2.5 3.5 5 7 5s6.5-2.5 7-5c-.5-2.5-3.5-5-7-5zm0 8a3 3 0 110-6 3 3 0 010 6zm0-4.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" />
+                            </svg>
+                        </div>
+                        <!-- Strength bar -->
+                        <div class="strength-bar">
+                            <div class="strength-fill" id="strengthFill"></div>
+                        </div>
+                        <span asp-validation-for="Password" class="text-danger"></span>
+                    </div>
+
+                    <!-- Confirm password -->
+                    <div class="field">
+                        <label asp-for="ConfirmPassword">
+                            Confirm password <span class="required-star">*</span>
+                        </label>
+                        <div class="field-wrap">
+                            <input asp-for="ConfirmPassword"
+                                   id="ConfirmPassword"
+                                   type="password"
+                                   class="@(ViewData.ModelState["ConfirmPassword"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                                   placeholder="Repeat password"
+                                   autocomplete="new-password" />
+                            <svg class="field-icon" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M11.5 2h-7A2.5 2.5 0 002 4.5v7A2.5 2.5 0 004.5 14h7a2.5 2.5 0 002.5-2.5v-7A2.5 2.5 0 0011.5 2zM8 11.5a.75.75 0 01-.75-.75V8H5.5a.75.75 0 010-1.5h1.75V4.75a.75.75 0 011.5 0V6.5h1.75a.75.75 0 010 1.5H8.75v2.75A.75.75 0 018 11.5z" />
+                            </svg>
+                        </div>
+                        <span asp-validation-for="ConfirmPassword" class="text-danger"></span>
+                    </div>
+
+                </div>
+
+                <!-- ── Section: Professional info ──────────────── -->
+                <div class="reg-section-label" style="margin-top: 18px;">Professional info <span class="reg-optional">optional</span></div>
+
+                <div class="reg-grid">
+
+                    <!-- Job title -->
+                    <div class="field">
+                        <label asp-for="JobTitle">Job title</label>
+                        <div class="field-wrap">
+                            <input asp-for="JobTitle"
+                                   placeholder="Environmental Engineer" />
+                        </div>
+                        <span asp-validation-for="JobTitle" class="text-danger"></span>
+                    </div>
+
+                    <!-- Department -->
+                    <div class="field">
+                        <label asp-for="Department">Department</label>
+                        <div class="field-wrap">
+                            <input asp-for="Department"
+                                   placeholder="Process Engineering" />
+                        </div>
+                        <span asp-validation-for="Department" class="text-danger"></span>
+                    </div>
+
+                    <!-- Company -->
+                    <div class="field full">
+                        <label asp-for="Company">Company / Organization</label>
+                        <div class="field-wrap">
+                            <input asp-for="Company"
+                                   placeholder="Acme Industrial Corp." />
+                            <svg class="field-icon" viewBox="0 0 16 16" fill="currentColor">
+                                <path d="M1 2.5A1.5 1.5 0 012.5 1h11A1.5 1.5 0 0115 2.5v11a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 011 13.5v-11zM2.5 2a.5.5 0 00-.5.5V6h12V2.5a.5.5 0 00-.5-.5h-11zm-.5 5.5v6a.5.5 0 00.5.5h4V7.5H2zm5.5 0V14h5.5a.5.5 0 00.5-.5v-6H8z" />
+                            </svg>
+                        </div>
+                        <span asp-validation-for="Company" class="text-danger"></span>
+                    </div>
+
+                </div>
+
+                <!-- Submit -->
+                <button type="submit" class="lp-btn" style="margin-top: 22px;">
+                    Create account
+                    <div class="lp-btn-arrow">→</div>
+                </button>
+
+                <p class="reg-terms">
+                    By creating an account you agree to our
+                    <a href="#">Terms of Service</a>.
+                    Your account will be assigned the
+                    <strong>Engineer</strong> role by default.
+                </p>
+
+            </form>
+
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="~/js/auth.js"></script>
+
+</body>
+</html>
