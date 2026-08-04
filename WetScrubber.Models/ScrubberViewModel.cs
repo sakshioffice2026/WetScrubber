@@ -103,6 +103,28 @@ namespace WetScrubber.Models
 
         [Display(Name = "Internal Material")]
         public ConstructionMaterial InternalMaterial { get; set; } = ConstructionMaterial.PP;
+
+        // ── Diagnostics (populated by the controller from the last-run
+        // calculation, empty until then) ─────────────────────────
+        public List<DesignFindingViewModel> Diagnostics { get; set; } = new();
+    }
+
+    // ============================================================
+    //  DESIGN FINDING VIEW MODEL
+    //  Lightweight mirror of WetScrubber.Business.Diagnostics.DesignFinding
+    //  — kept as a plain DTO here rather than a project reference, since
+    //  WetScrubber.Models otherwise depends only on WetScrubber.Database.
+    // ============================================================
+    public class DesignFindingViewModel
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Severity { get; set; } = "Info";   // Info / Warning / Critical
+        public string Symptom { get; set; } = string.Empty;
+        public string Diagnosis { get; set; } = string.Empty;
+        public string Recommendation { get; set; } = string.Empty;
+        public List<string> AffectedFields { get; set; } = new();
+        public double? SuggestedValue { get; set; }
+        public string? SuggestedValueLabel { get; set; }
     }
 
     // ============================================================
@@ -187,5 +209,53 @@ namespace WetScrubber.Models
         public double PackingHeight { get; set; }
         public double PressureDrop { get; set; }
         public double RemovalEfficiency { get; set; }
+
+        // Diagnostics — empty until RunCalculation has produced geometry.
+        public List<DesignFindingViewModel> Diagnostics { get; set; } = new();
+
+        // Redesign lineage — lets the view offer "Compare with previous".
+        public bool IsLocked { get; set; }
+        public int? PreviousDesignId { get; set; }
+        public int RevisionNumber { get; set; } = 1;
+    }
+
+    // ============================================================
+    //  DESIGN COMPARE VIEW MODEL  (Option A — old vs. redesigned)
+    // ============================================================
+    public class DesignCompareViewModel
+    {
+        public int OldDesignId { get; set; }
+        public string OldDesignName { get; set; } = string.Empty;
+        public int NewDesignId { get; set; }
+        public string NewDesignName { get; set; } = string.Empty;
+        public int NewRevisionNumber { get; set; }
+
+        public List<CompareRowViewModel> Rows { get; set; } = new();
+
+        // Findings still open on the new revision — the "did this
+        // actually help" half of the loop.
+        public List<DesignFindingViewModel> NewDiagnostics { get; set; } = new();
+
+        // Narrative blocks, shown side by side rather than merged.
+        public string? OldApprovedNarrative { get; set; }
+        public string? NewAiNarrative { get; set; }
+        public string? NewApprovedNarrative { get; set; }
+        public string NewReportStatus { get; set; } = string.Empty;
+    }
+
+    // One field's old value, new value, and whether the change moved in
+    // the direction the diagnostics on the OLD design recommended.
+    public class CompareRowViewModel
+    {
+        public string Label { get; set; } = string.Empty;
+        public string Unit { get; set; } = string.Empty;
+        public double OldValue { get; set; }
+        public double NewValue { get; set; }
+        public double Delta => NewValue - OldValue;
+        public double? DeltaPercent => OldValue != 0 ? (NewValue - OldValue) / OldValue * 100.0 : null;
+
+        // null = no diagnostic on this field to judge against;
+        // true/false = did the change go the recommended direction.
+        public bool? MatchesRecommendation { get; set; }
     }
 }

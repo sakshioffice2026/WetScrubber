@@ -56,6 +56,14 @@
     </div>
 
     <div class="detail-actions">
+        @if (Model.PreviousDesignId.HasValue)
+        {
+            <a asp-controller="Scrubber" asp-action="Compare"
+               asp-route-id="@Model.DesignId" class="btn-cancel" style="text-decoration:none;">
+                <svg viewBox="0 0 16 16"><path d="M2 2h5v12H2zM9 2h5v12H9z" /></svg>
+                Compare with previous
+            </a>
+        }
         @if (Model.HasResults)
         {
             <a asp-controller="Scrubber" asp-action="Results"
@@ -111,6 +119,33 @@
            style="font-size:12px;font-weight:600;color:#059669;text-decoration:none;white-space:nowrap;">
             View full results →
         </a>
+    </div>
+}
+
+<!-- ── Diagnostics summary ────────────────────────────────────── -->
+@if (Model.Diagnostics.Any())
+{
+    var critical = Model.Diagnostics.Count(f => f.Severity == "Critical");
+    var warning = Model.Diagnostics.Count(f => f.Severity == "Warning");
+    <div style="background:@(critical > 0 ? "#fef2f2" : "#fffbeb");border:0.5px solid @(critical > 0 ? "#fecaca" : "#fde68a");border-radius:10px;padding:14px 20px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+            <div style="font-size:12.5px;color:@(critical > 0 ? "#991b1b" : "#92400e");">
+                <strong>@Model.Diagnostics.Count finding@(Model.Diagnostics.Count == 1 ? "" : "s")</strong>
+                from the last calculation
+                @if (critical > 0) { <text> — @critical critical</text> }
+                @if (warning > 0) { <text>, @warning warning</text> }
+            </div>
+            <a asp-controller="Scrubber" asp-action="Edit" asp-route-id="@Model.DesignId"
+               style="font-size:12px;font-weight:600;color:@(critical > 0 ? "#991b1b" : "#92400e");text-decoration:none;white-space:nowrap;">
+                Review &amp; edit inputs →
+            </a>
+        </div>
+        <ul style="margin:10px 0 0;padding-left:18px;font-size:12px;color:#444;">
+            @foreach (var f in Model.Diagnostics)
+            {
+                <li style="margin-bottom:4px;">@f.Symptom @f.Recommendation</li>
+            }
+        </ul>
     </div>
 }
 

@@ -31,7 +31,7 @@ namespace WetScrubber.Database
         {
             base.OnModelCreating(modelBuilder);
 
-            
+
             // ── Seed default roles ────────────────────────────────
             modelBuilder.Entity<Role>().HasData(
                 new Role { RoleId = 1, RoleName = "Admin" },
@@ -50,6 +50,15 @@ namespace WetScrubber.Database
                 .HasOne(x => x.ScrubbingLiquid)
                 .WithMany()
                 .HasForeignKey(x => x.LiquidType)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Redesign lineage — self-referencing, optional. Restrict
+            // delete so removing a revision can never cascade-delete the
+            // locked original it was compared against.
+            modelBuilder.Entity<ScrubberDesign>()
+                .HasOne(x => x.PreviousDesign)
+                .WithMany()
+                .HasForeignKey(x => x.PreviousDesignId)
                 .OnDelete(DeleteBehavior.Restrict);
 
         }

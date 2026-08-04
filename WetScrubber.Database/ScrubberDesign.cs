@@ -45,8 +45,21 @@ namespace WetScrubber.Database
         // a signed-off design.
         public bool IsLocked { get; set; } = false;
 
+        // ── Redesign lineage ───────────────────────────────────────
+        // Set by ScrubberController.CreateRevision when a locked design is
+        // cloned into a fresh, editable draft ("Redesign as per AI
+        // narrative"). Null for a design that was never derived from
+        // another one. Lets the Compare page find what to diff against,
+        // and RevisionNumber gives a human-readable "Rev 2", "Rev 3" trail
+        // without having to walk the chain just to render a label.
+        public int? PreviousDesignId { get; set; }
+
+        public int RevisionNumber { get; set; } = 1;
+
         // ── Navigation ───────────────────────────────────────────
         public Project Project { get; set; } = null!;
+
+        public ScrubberDesign? PreviousDesign { get; set; }
 
         public GasStream? GasStream { get; set; }
 

@@ -89,6 +89,19 @@
     </div>
 }
 
+@if (Model.Status == WetScrubber.Database.Enums.ReportStatus.Approved)
+{
+    <div class="report-warning" style="background:#eef6ff;border-color:#bfdbfe;color:#1e40af;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <span>This design is approved and locked. To act on the AI narrative's suggestions, start a new revision instead of editing this one.</span>
+        <form asp-controller="Scrubber" asp-action="CreateRevision" asp-route-id="@Model.DesignId" method="post" style="margin:0;flex-shrink:0;">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-run-calc" style="height:34px;padding:0 14px;white-space:nowrap;">
+                Redesign as per AI narrative
+            </button>
+        </form>
+    </div>
+}
+
 <div class="report-two-col">
 
     <div class="results-data-card">

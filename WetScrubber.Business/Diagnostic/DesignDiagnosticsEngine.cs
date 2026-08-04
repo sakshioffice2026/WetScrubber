@@ -43,6 +43,15 @@ namespace WetScrubber.Business.Diagnostics
         // target wasn't set.
         private const double DefaultRemovalEfficiencyTargetPercent = 95.0;
 
+        // Margins layered on top of a computed minimum before it's shown
+        // as a suggested value — landing exactly on a threshold still
+        // reads as a "just cleared the exam" design, not a safe one.
+        private const double PackingHeightSuggestionMultiple = 1.5;
+        private const double AbsorptionFactorSuggestionMargin = 1.05;
+        private const double RemovalEfficiencySuggestionMargin = 1.05;
+
+        private const string LiquidToGasRatioField = "LiquidToGasRatio";
+
         public IReadOnlyList<DesignFinding> Evaluate(DesignMetrics metrics)
         {
             var findings = new List<DesignFinding>();
@@ -94,13 +103,22 @@ namespace WetScrubber.Business.Diagnostics
         {
             if (m.PackingHeight <= MaxPlausiblePackingHeightM) return;
 
+            double? suggested = m.MinLGRatio > 0
+                ? m.MinLGRatio * PackingHeightSuggestionMultiple
+                : null;
+
             findings.Add(new DesignFinding
             {
                 Code = "PACKING_HEIGHT_UNREALISTIC",
                 Severity = FindingSeverity.Critical,
                 Symptom = $"Calculated packing height is {m.PackingHeight:F1} m.",
                 Diagnosis = "This exceeds any physically buildable packed tower and indicates the design is operating at or beyond the minimum L/G ratio (the absorption pinch point), where packing height requirements approach infinity.",
-                Recommendation = "Increase the liquid-to-gas ratio well above the calculated minimum, or relax the target outlet concentration, then recalculate."
+                Recommendation = "Increase the liquid-to-gas ratio well above the calculated minimum, or relax the target outlet concentration, then recalculate.",
+                AffectedFields = new[] { LiquidToGasRatioField },
+                SuggestedValue = suggested,
+                SuggestedValueLabel = suggested is double s
+                    ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}; min. viable is {m.MinLGRatio:F2})"
+                    : null
             });
         }
 
@@ -110,13 +128,25 @@ namespace WetScrubber.Business.Diagnostics
 
             if (m.AbsorptionFactor < LowAbsorptionFactorThreshold)
             {
+                // Absorption factor scales ~linearly with L/G ratio (all
+                // else held constant), so the L/G needed to clear the
+                // threshold scales the same way the shortfall does.
+                double? suggested = m.ActualLGRatio > 0
+                    ? m.ActualLGRatio * (LowAbsorptionFactorThreshold / m.AbsorptionFactor) * AbsorptionFactorSuggestionMargin
+                    : null;
+
                 findings.Add(new DesignFinding
                 {
                     Code = "ABSORPTION_FACTOR_LOW",
                     Severity = FindingSeverity.Warning,
                     Symptom = $"Absorption factor is {m.AbsorptionFactor:F2}.",
                     Diagnosis = "Liquid flow is insufficient for reliable absorption.",
-                    Recommendation = "Increase the L/G ratio or switch to a more reactive scrubbing liquid."
+                    Recommendation = "Increase the L/G ratio or switch to a more reactive scrubbing liquid.",
+                    AffectedFields = new[] { LiquidToGasRatioField },
+                    SuggestedValue = suggested,
+                    SuggestedValueLabel = suggested is double s
+                        ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
+                        : null
                 });
             }
         }
@@ -125,7 +155,9 @@ namespace WetScrubber.Business.Diagnostics
         {
             if (m.MinLGRatio <= 0 || m.ActualLGRatio <= 0) return; // not applicable
 
-            if (m.ActualLGRatio < m.MinLGRatio * TightLGMarginMultiple)
+            double requiredMargin = m.MinLGRatio * TightLGMarginMultiple;
+
+            if (m.ActualLGRatio < requiredMargin)
             {
                 findings.Add(new DesignFinding
                 {
@@ -133,7 +165,10 @@ namespace WetScrubber.Business.Diagnostics
                     Severity = FindingSeverity.Warning,
                     Symptom = $"Actual L/G ratio ({m.ActualLGRatio:F2}) is close to the minimum required ({m.MinLGRatio:F2}).",
                     Diagnosis = "The design has little margin — flooding risk under upset conditions.",
-                    Recommendation = "Increase the liquid flow rate or reduce the gas velocity."
+                    Recommendation = "Increase the liquid flow rate or reduce the gas velocity.",
+                    AffectedFields = new[] { LiquidToGasRatioField },
+                    SuggestedValue = requiredMargin,
+                    SuggestedValueLabel = $"≥ {requiredMargin:F2} L/m³ gas (currently {m.ActualLGRatio:F2}; min. viable is {m.MinLGRatio:F2})"
                 });
             }
         }
@@ -150,6 +185,10 @@ namespace WetScrubber.Business.Diagnostics
 
             if (ceiling.HasValue && m.PressureDrop > ceiling.Value)
             {
+                // No single input field maps cleanly to "tower diameter" —
+                // that's a calculated output, not something entered
+                // directly — so this stays qualitative rather than
+                // pointing at a field that doesn't actually control it.
                 findings.Add(new DesignFinding
                 {
                     Code = "PRESSURE_DROP_HIGH",
@@ -174,13 +213,27 @@ namespace WetScrubber.Business.Diagnostics
 
             if (m.RemovalEfficiency < target)
             {
+                // Rough heuristic, not an NTU inversion: scales L/G by the
+                // same fraction the design is short of its efficiency
+                // target. Deliberately labeled "approximate" — good
+                // enough to give a non-expert a starting number, not a
+                // substitute for re-running the real calculation.
+                double? suggested = (m.ActualLGRatio > 0 && m.RemovalEfficiency > 0)
+                    ? m.ActualLGRatio * (target / m.RemovalEfficiency) * RemovalEfficiencySuggestionMargin
+                    : null;
+
                 findings.Add(new DesignFinding
                 {
                     Code = "REMOVAL_EFFICIENCY_BELOW_TARGET",
                     Severity = FindingSeverity.Critical,
                     Symptom = $"Removal efficiency is {m.RemovalEfficiency:F2}%, below the target of {target:F2}%.",
                     Diagnosis = "The design will not meet its stated removal goal.",
-                    Recommendation = "Increase NTU (taller packing) or increase the L/G ratio."
+                    Recommendation = "Increase NTU (taller packing) or increase the L/G ratio.",
+                    AffectedFields = new[] { LiquidToGasRatioField },
+                    SuggestedValue = suggested,
+                    SuggestedValueLabel = suggested is double s
+                        ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
+                        : null
                 });
             }
         }

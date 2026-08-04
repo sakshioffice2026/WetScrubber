@@ -200,6 +200,22 @@ namespace WetScrubber.Controllers
             report.UpdatedAt = DateTime.UtcNow;
 
             await _reportRepository.UpdateAsync(report);
+
+            // Approving the report is also the PE sign-off on the design
+            // itself: lock it so ScrubberController.Edit refuses further
+            // mutation. From here on, changes — including anything the AI
+            // narrative recommends — must go through CreateRevision, which
+            // clones the inputs into a fresh, unlocked design.
+            var design = await _context.ScrubberDesigns.FindAsync(report.DesignId);
+            if (design != null && !design.IsLocked)
+            {
+                design.IsLocked = true;
+                design.ReviewStatus = DesignReviewStatus.Approved;
+                design.ReviewedByUserId = userId;
+                design.ReviewedAt = DateTime.UtcNow;
+                design.UpdatedAt = DateTime.UtcNow;
+            }
+
             await _reportRepository.SaveChangesAsync();
 
             return RedirectToAction(nameof(Review), new { designId = report.DesignId });
