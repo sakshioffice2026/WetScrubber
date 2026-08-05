@@ -24,6 +24,11 @@ namespace WetScrubber.Database
         // own molar volume entry or a solvent's association factor entry.
         public double? AssociationFactor { get; set; }
 
+        // Fuller-Schettler-Giddings atomic diffusion volume, SUM(v_i)
+        // (cm^3/mol), for gas-phase diffusivity (GasPhaseDiffusivity.cs,
+        // Phase 2). NEW column — requires a migration on existing DBs.
+        public double? FullerDiffusionVolumeCm3Mol { get; set; }
+
         public int? ReferenceSourceId { get; set; }
         public bool ValidatedFlag { get; set; } = false;
         public int? ValidatedByUserId { get; set; }

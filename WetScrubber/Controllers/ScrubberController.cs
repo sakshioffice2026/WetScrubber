@@ -41,12 +41,19 @@ namespace WetScrubber.Controllers
             // GetActualGasDensity / GetEffectiveHenrysLawConstant), so
             // this is safe to switch on by default rather than gating
             // it behind a feature flag.
+            // Phase 2: Onda kGa/kLa (Wilke-Chang + Fuller diffusivity)
+            // wherever DiffusionProperties has the pollutant + water rows
+            // seeded (see ApplicationDbContext Phase 2 seed data). Falls
+            // back to DefaultGasFilmCoeff/DefaultLiquidFilmCoeff on any
+            // miss — see GetEffectiveFilmCoefficients — so this is safe
+            // to switch on by default, same as the Phase 1 args above.
             _engine = new ScrubberCalculationEngine(
                 new PengRobinsonEos(),
                 new EfComponentPropertyLookup(dbContext),
                 new EfHenrysLawLookup(dbContext),
                 new NrtlActivityModel(),
-                new EfNrtlBinaryParameterLookup(dbContext));
+                new EfNrtlBinaryParameterLookup(dbContext),
+                new EfDiffusionPropertyLookup(dbContext));
             _diagnosticsEngine = diagnosticsEngine;
             _reportRepository = reportRepository;
             _chemistryPredictor = chemistryPredictor;

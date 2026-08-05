@@ -125,6 +125,25 @@ namespace WetScrubber.Database
                 new HenrysLawData { Id = 5, PollutantCode = "Cl2", H_ReferenceAt25C = 0.0074, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false }
             );
 
+            // ── Phase 2 seed data ────────────────────────────────────
+            // Molar volume at normal boiling point (Vb, cm3/mol) and
+            // Fuller-Schettler-Giddings diffusion volume (SumV, cm3/mol)
+            // for each pollutant, plus water's Wilke-Chang association
+            // factor (2.6 — the standard literature value for water as
+            // solvent). Same discipline as the ComponentProperty seed
+            // above: recalled standard engineering-reference values,
+            // right order of magnitude, UNVALIDATED — ReferenceSourceId=1,
+            // ValidatedFlag=false. Do not ship into a real design without
+            // a NIST/DIPPR/Poling-Prausnitz-O'Connell cross-check first.
+            modelBuilder.Entity<DiffusionProperty>().HasData(
+                new DiffusionProperty { Id = 1, ComponentCode = "SO2", MolarVolumeAtBoilingPointCm3Mol = 44.8, FullerDiffusionVolumeCm3Mol = 41.1, ReferenceSourceId = 1, ValidatedFlag = false },
+                new DiffusionProperty { Id = 2, ComponentCode = "HCl", MolarVolumeAtBoilingPointCm3Mol = 30.7, FullerDiffusionVolumeCm3Mol = 23.3, ReferenceSourceId = 1, ValidatedFlag = false },
+                new DiffusionProperty { Id = 3, ComponentCode = "NH3", MolarVolumeAtBoilingPointCm3Mol = 25.8, FullerDiffusionVolumeCm3Mol = 14.9, ReferenceSourceId = 1, ValidatedFlag = false },
+                new DiffusionProperty { Id = 4, ComponentCode = "H2S", MolarVolumeAtBoilingPointCm3Mol = 32.9, FullerDiffusionVolumeCm3Mol = 27.5, ReferenceSourceId = 1, ValidatedFlag = false },
+                new DiffusionProperty { Id = 5, ComponentCode = "Cl2", MolarVolumeAtBoilingPointCm3Mol = 48.4, FullerDiffusionVolumeCm3Mol = 38.4, ReferenceSourceId = 1, ValidatedFlag = false },
+                new DiffusionProperty { Id = 6, ComponentCode = "H2O", AssociationFactor = 2.6, ReferenceSourceId = 1, ValidatedFlag = false }
+            );
+
             // NrtlBinaryParameter: deliberately NOT seeded. See
             // NrtlBinaryParameter.cs — fabricating tau/alpha values here
             // would be worse than leaving the table empty, since a wrong

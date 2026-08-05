@@ -1,3 +1,4 @@
+using WetScrubber.Business.MassTransfer;
 using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Database.Enums;
 using WetScrubber.Models;
@@ -38,6 +39,13 @@ namespace WetScrubber.Services
         private readonly IActivityCoefficientModel? _activityModel;
         private readonly INrtlBinaryParameterLookup? _nrtlLookup;
 
+        // ── Phase 2 — Onda kGa/kLa from Wilke-Chang + Fuller diffusivity ──
+        // Same all-optional, hard-fallback-on-miss contract as the Phase 1
+        // fields above. Missing lookup, missing DiffusionProperty data, or
+        // any solver exception falls back to DefaultGasFilmCoeff /
+        // DefaultLiquidFilmCoeff — see GetEffectiveFilmCoefficients.
+        private readonly IDiffusionPropertyLookup? _diffusionLookup;
+
         public ScrubberCalculationEngine() { }
 
         public ScrubberCalculationEngine(
@@ -45,13 +53,15 @@ namespace WetScrubber.Services
             IComponentPropertyLookup componentLookup,
             IHenrysLawLookup? henrysLawLookup = null,
             IActivityCoefficientModel? activityModel = null,
-            INrtlBinaryParameterLookup? nrtlLookup = null)
+            INrtlBinaryParameterLookup? nrtlLookup = null,
+            IDiffusionPropertyLookup? diffusionLookup = null)
         {
             _eos = eos;
             _componentLookup = componentLookup;
             _henrysLawLookup = henrysLawLookup;
             _activityModel = activityModel;
             _nrtlLookup = nrtlLookup;
+            _diffusionLookup = diffusionLookup;
         }
 
         // ── Packing material defaults (Pall Rings 50mm) ───────────
@@ -120,16 +130,27 @@ namespace WetScrubber.Services
 
             // Gas mass velocity (kg/m²·s)
             double gasMassVelocity = (gasFlowM3S * vm.GasDensity) / crossSection;
+            // Liquid mass velocity (kg/m²·s) — Onda's ReL needs this same
+            // per-area basis as gasMassVelocity above.
+            double liquidMassVelocity = (liquidFlowM3Hr / 3600.0 * vm.LiquidDensity) / crossSection;
+
+            // Phase 2: Onda kGa/kLa from Wilke-Chang + Fuller diffusivity
+            // when DiffusionProperty data exists for this pollutant; hard
+            // fallback to DefaultGasFilmCoeff/DefaultLiquidFilmCoeff
+            // otherwise — see GetEffectiveFilmCoefficients.
+            var filmCoeffs = GetEffectiveFilmCoefficients(
+                pollutant, vm, gasMassVelocity, liquidMassVelocity, vm.InletTemperature + 273.15);
 
             var ntuResult = CalculateNtuHtu(
                 inletConcentrationPpm: pollutant.InletConcentration,
                 outletConcentrationPpm: pollutant.TargetOutletConcentration,
                 henrysLawConstant: henrysTemp,
                 liquidToGasRatioMolar: vm.LiquidToGasRatio,
-                gasFilmCoeff: DefaultGasFilmCoeff,
-                liquidFilmCoeff: DefaultLiquidFilmCoeff,
-                gasMassVelocity: gasMassVelocity,     // ✅ NEW
-                gasDensityKgM3: vm.GasDensity        // ✅ NEW
+                gasFilmCoeff: filmCoeffs.GasFilmCoeff,
+                liquidFilmCoeff: filmCoeffs.LiquidFilmCoeff,
+                gasMassVelocity: gasMassVelocity,
+                gasDensityKgM3: vm.GasDensity,
+                physicallyDerivedCoefficients: filmCoeffs.PhysicallyDerived
             );
 
             result.PackingHeight = Math.Round(ntuResult.PackingHeight, 2);
@@ -388,7 +409,10 @@ namespace WetScrubber.Services
     double gasFilmCoeff,
     double liquidFilmCoeff,
     double gasMassVelocity,     // NEW (kg/m²·s)
-    double gasDensityKgM3       // NEW
+    double gasDensityKgM3,      // NEW
+    bool physicallyDerivedCoefficients = false // Phase 2: true when gasFilmCoeff/
+                                               // liquidFilmCoeff came from Onda,
+                                               // not DefaultGasFilmCoeff/DefaultLiquidFilmCoeff
 )
         {
             // ─────────────────────────────────────────────
@@ -426,17 +450,32 @@ namespace WetScrubber.Services
                 henrysLawConstant / Math.Max(liquidFilmCoeff, 0.001)
             );
 
-            // 👉 Scale correction (VERY IMPORTANT)
-            double Kya = KGa * 100;   // adjust to realistic engineering range
-
             // ─────────────────────────────────────────────
-            // 5. HTU calculation (FIXED)
-            // HTU = G / (Kya * ρg)
+            // 5. HTU calculation: HTU = G / (Kya * ρg)
             // ─────────────────────────────────────────────
-            double HTU = gasMassVelocity / Math.Max(Kya * gasDensityKgM3, 0.001);
+            double Kya;
+            double HTU;
 
-            // Clamp to realistic range
-            HTU = Math.Min(Math.Max(HTU, 0.5), 2.0);
+            if (physicallyDerivedCoefficients)
+            {
+                // Phase 2: gasFilmCoeff/liquidFilmCoeff are real kGa/kLa
+                // (kmol/m3·hr·kPa, 1/hr) from Onda — no scale correction,
+                // no clamp. If HTU comes out unreasonable now, that means
+                // the derivation upstream is wrong and needs fixing at
+                // the root, not band-aiding here again (see roadmap
+                // Phase 2 sequencing note).
+                Kya = KGa;
+                HTU = gasMassVelocity / Math.Max(Kya * gasDensityKgM3, 1e-6);
+            }
+            else
+            {
+                // Legacy path — unchanged for any caller still on
+                // DefaultGasFilmCoeff/DefaultLiquidFilmCoeff (no
+                // DiffusionProperty data wired for this pollutant yet).
+                Kya = KGa * 100;
+                HTU = gasMassVelocity / Math.Max(Kya * gasDensityKgM3, 0.001);
+                HTU = Math.Min(Math.Max(HTU, 0.5), 2.0);
+            }
 
             // ─────────────────────────────────────────────
             // 6. Packing height
@@ -619,6 +658,68 @@ namespace WetScrubber.Services
             catch
             {
                 return 1.0;
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  PHASE 2 — Onda kGa/kLa, with a hard fallback to
+        //  DefaultGasFilmCoeff/DefaultLiquidFilmCoeff. Mirrors
+        //  GetActualGasDensity's contract exactly: any missing lookup,
+        //  missing DiffusionProperty row, or solver exception returns
+        //  the pre-Phase-2 constants unchanged, PhysicallyDerived=false.
+        // ════════════════════════════════════════════════════════════
+        private const double WaterMolecularWeight = 18.015; // g/mol
+
+        private (double GasFilmCoeff, double LiquidFilmCoeff, bool PhysicallyDerived)
+            GetEffectiveFilmCoefficients(
+                PollutantInputViewModel pollutant,
+                CreateDesignViewModel vm,
+                double gasMassVelocityKgM2S,
+                double liquidMassVelocityKgM2S,
+                double temperatureK)
+        {
+            var fallback = (DefaultGasFilmCoeff, DefaultLiquidFilmCoeff, false);
+
+            if (_diffusionLookup == null || _componentLookup == null)
+                return fallback;
+
+            try
+            {
+                var component = _componentLookup.GetByPollutantId(pollutant.PollutantType);
+                if (component == null) return fallback;
+
+                var solute = _diffusionLookup.GetByComponentCode(component.Code);
+                var solvent = _diffusionLookup.GetByComponentCode(LiquidActivityBuilder.WaterCode);
+
+                double? dLiquidCm2S = WilkeChangDiffusivity.TryCalculate(
+                    solute, solvent, WaterMolecularWeight, vm.LiquidViscosity, temperatureK);
+                double? dGasCm2S = GasPhaseDiffusivity.TryCalculate(
+                    solute, component.MolecularWeight, temperatureK, vm.InletPressure / 1000.0);
+
+                if (dLiquidCm2S == null || dGasCm2S == null) return fallback;
+
+                var onda = OndaMassTransferCorrelation.Calculate(
+                    gasMassVelocityKgM2S: gasMassVelocityKgM2S,
+                    liquidMassVelocityKgM2S: liquidMassVelocityKgM2S,
+                    gasDensityKgM3: vm.GasDensity,
+                    liquidDensityKgM3: vm.LiquidDensity,
+                    gasViscosityPas: vm.GasViscosity,
+                    liquidViscosityPas: vm.LiquidViscosity / 1000.0, // mPa·s -> Pa·s
+                    gasDiffusivityM2S: GasPhaseDiffusivity.CentimeterSqPerSecToMeterSqPerSec(dGasCm2S.Value),
+                    liquidDiffusivityM2S: WilkeChangDiffusivity.CentimeterSqPerSecToMeterSqPerSec(dLiquidCm2S.Value),
+                    packingSurfaceAreaM2M3: DefaultSurfaceArea,
+                    voidFraction: DefaultVoidFraction,
+                    temperatureK: temperatureK,
+                    pressureKPa: vm.InletPressure / 1000.0);
+
+                return (onda.GasFilmCoeff, onda.LiquidFilmCoeff, true);
+            }
+            catch
+            {
+                // Same reasoning as GetActualGasDensity's catch: a Phase 2
+                // data/solver gap must never break a design that worked
+                // before Phase 2 existed.
+                return fallback;
             }
         }
 
