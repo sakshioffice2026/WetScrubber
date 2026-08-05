@@ -47,13 +47,18 @@ namespace WetScrubber.Controllers
             // back to DefaultGasFilmCoeff/DefaultLiquidFilmCoeff on any
             // miss — see GetEffectiveFilmCoefficients — so this is safe
             // to switch on by default, same as the Phase 1 args above.
+            // Phase 5: packing vendor library — vm.PackingCode resolved
+            // against PackingMaterials wherever a design selects one.
+            // Falls back to the original hardcoded Pall Ring 50mm
+            // constants on null/blank/not-found — see ResolvePacking.
             _engine = new ScrubberCalculationEngine(
                 new PengRobinsonEos(),
                 new EfComponentPropertyLookup(dbContext),
                 new EfHenrysLawLookup(dbContext),
                 new NrtlActivityModel(),
                 new EfNrtlBinaryParameterLookup(dbContext),
-                new EfDiffusionPropertyLookup(dbContext));
+                new EfDiffusionPropertyLookup(dbContext),
+                new EfPackingMaterialLookup(dbContext));
             _diagnosticsEngine = diagnosticsEngine;
             _reportRepository = reportRepository;
             _chemistryPredictor = chemistryPredictor;
@@ -865,7 +870,7 @@ namespace WetScrubber.Controllers
             }).ToList();
         }
 
-        // Fill pollutant + liquid dropdowns from the master tables.
+        // Fill pollutant + liquid + packing dropdowns from the master tables.
         // Works for CreateDesignViewModel and its subclass EditDesignViewModel.
         private void PopulateMasterLists(CreateDesignViewModel vm)
         {
@@ -873,6 +878,8 @@ namespace WetScrubber.Controllers
                 .Where(p => p.IsActive).OrderBy(p => p.Id).ToList();
             vm.LiquidOptions = _dbContext.ScrubbingLiquids
                 .Where(l => l.IsActive).OrderBy(l => l.Id).ToList();
+            vm.PackingOptions = _dbContext.PackingMaterials
+                .Where(p => p.IsActive).OrderBy(p => p.PackingType).ThenBy(p => p.NominalSizeMm).ToList();
         }
 
         private CreateDesignViewModel BuildCreateViewModel(ScrubberDesign d)

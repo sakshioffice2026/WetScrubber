@@ -4,6 +4,7 @@ using WetScrubber.Database;
 using WetScrubber.Database.Enums;
 
 
+
 namespace WetScrubber.Business.Diagnostics
 {
     /// <summary>

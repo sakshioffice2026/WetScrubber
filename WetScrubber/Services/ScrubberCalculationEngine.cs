@@ -47,6 +47,13 @@ namespace WetScrubber.Services
         // DefaultLiquidFilmCoeff — see GetEffectiveFilmCoefficients.
         private readonly IDiffusionPropertyLookup? _diffusionLookup;
 
+        // ── Phase 5 — packing vendor library ────────────────────────
+        // Same all-optional, hard-fallback-on-miss contract as the fields
+        // above. Missing lookup, or vm.PackingCode null/blank/not found,
+        // falls back to the original hardcoded Pall Ring 50mm constants
+        // below — see ResolvePacking.
+        private readonly IPackingMaterialLookup? _packingLookup;
+
         public ScrubberCalculationEngine() { }
 
         public ScrubberCalculationEngine(
@@ -55,7 +62,8 @@ namespace WetScrubber.Services
             IHenrysLawLookup? henrysLawLookup = null,
             IActivityCoefficientModel? activityModel = null,
             INrtlBinaryParameterLookup? nrtlLookup = null,
-            IDiffusionPropertyLookup? diffusionLookup = null)
+            IDiffusionPropertyLookup? diffusionLookup = null,
+            IPackingMaterialLookup? packingLookup = null)
         {
             _eos = eos;
             _componentLookup = componentLookup;
@@ -63,14 +71,39 @@ namespace WetScrubber.Services
             _activityModel = activityModel;
             _nrtlLookup = nrtlLookup;
             _diffusionLookup = diffusionLookup;
+            _packingLookup = packingLookup;
         }
 
         // ── Packing material defaults (Pall Rings 50mm) ───────────
+        // Historical hard fallback — see ResolvePacking. Left in place
+        // unchanged so behavior is byte-identical when _packingLookup is
+        // null or vm.PackingCode doesn't resolve to a row.
         private const double DefaultPackingFactor = 66.0;    // Fp, 1/m
         private const double DefaultSurfaceArea = 112.0;   // m²/m³
         private const double DefaultVoidFraction = 0.951;   // ε
         private const double DefaultGasFilmCoeff = 0.03;    // kGa kmol/m³·hr·kPa
         private const double DefaultLiquidFilmCoeff = 0.01;    // kLa m/hr
+
+        /// <summary>
+        /// Resolves the packing dimensions to use for this calculation:
+        /// vm.PackingCode via _packingLookup when both are present and the
+        /// code is found, otherwise the historical hardcoded Pall Ring
+        /// 50mm constants — same "unsourced/unselected data never breaks
+        /// a design" contract as GetEffectiveHenrysLawConstant /
+        /// GetEffectiveFilmCoefficients.
+        /// </summary>
+        private (double PackingFactorPerM, double SurfaceAreaM2M3, double VoidFraction) ResolvePacking(
+            CreateDesignViewModel vm)
+        {
+            if (_packingLookup != null && !string.IsNullOrWhiteSpace(vm.PackingCode))
+            {
+                var packing = _packingLookup.GetByCode(vm.PackingCode);
+                if (packing != null)
+                    return (packing.PackingFactorPerM, packing.SpecificSurfaceAreaM2M3, packing.VoidFraction);
+            }
+
+            return (DefaultPackingFactor, DefaultSurfaceArea, DefaultVoidFraction);
+        }
 
         // ════════════════════════════════════════════════════════════
         //  MAIN ENTRY — run full calculation based on scrubber type
@@ -114,6 +147,7 @@ namespace WetScrubber.Services
             // 2. Tower diameter — most conservative across all pollutants
             // present (gas-density correction differs slightly by
             // species); previously this only ever looked at the first row.
+            var packing = ResolvePacking(vm);
             double towerDiameter = 0;
             foreach (var p in pollutants)
             {
@@ -124,7 +158,7 @@ namespace WetScrubber.Services
                     liquidFlowRateM3Hr: liquidFlowM3Hr,
                     gasDensityKgM3: vm.GasDensity,
                     liquidDensityKgM3: vm.LiquidDensity,
-                    packingFactor: DefaultPackingFactor,
+                    packingFactor: packing.PackingFactorPerM,
                     liquidViscosityMPas: vm.LiquidViscosity,
                     pollutantTypeId: p.PollutantType,
                     inletConcentrationPpm: p.InletConcentration);
@@ -183,8 +217,8 @@ namespace WetScrubber.Services
                     liquidLoadingM3M2Hr: liquidFlowM3Hr / crossSection,
                     gasDensityKgM3: vm.GasDensity,
                     liquidDensityKgM3: vm.LiquidDensity,
-                    packingSurfaceAreaM2M3: DefaultSurfaceArea,
-                    voidFraction: DefaultVoidFraction,
+                    packingSurfaceAreaM2M3: packing.SurfaceAreaM2M3,
+                    voidFraction: packing.VoidFraction,
                     liquidViscosityPas: vm.LiquidViscosity / 1000.0
                 ) * result.PackingHeight, 2);
 
@@ -821,6 +855,7 @@ namespace WetScrubber.Services
 
                 if (dLiquidCm2S == null || dGasCm2S == null) return fallback;
 
+                var packing = ResolvePacking(vm);
                 var onda = OndaMassTransferCorrelation.Calculate(
                     gasMassVelocityKgM2S: gasMassVelocityKgM2S,
                     liquidMassVelocityKgM2S: liquidMassVelocityKgM2S,
@@ -830,8 +865,8 @@ namespace WetScrubber.Services
                     liquidViscosityPas: vm.LiquidViscosity / 1000.0, // mPa·s -> Pa·s
                     gasDiffusivityM2S: GasPhaseDiffusivity.CentimeterSqPerSecToMeterSqPerSec(dGasCm2S.Value),
                     liquidDiffusivityM2S: WilkeChangDiffusivity.CentimeterSqPerSecToMeterSqPerSec(dLiquidCm2S.Value),
-                    packingSurfaceAreaM2M3: DefaultSurfaceArea,
-                    voidFraction: DefaultVoidFraction,
+                    packingSurfaceAreaM2M3: packing.SurfaceAreaM2M3,
+                    voidFraction: packing.VoidFraction,
                     temperatureK: temperatureK,
                     pressureKPa: vm.InletPressure / 1000.0);
 

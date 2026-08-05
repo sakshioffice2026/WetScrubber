@@ -34,6 +34,9 @@ namespace WetScrubber.Database
         public DbSet<DiffusionProperty> DiffusionProperties { get; set; }
         public DbSet<ReferenceSource> ReferenceSources { get; set; }
 
+        // ── Phase 5: packing vendor library ─────────────────────────
+        public DbSet<PackingMaterial> PackingMaterials { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -149,6 +152,26 @@ namespace WetScrubber.Database
             // would be worse than leaving the table empty, since a wrong
             // NRTL parameter silently produces a wrong liquid activity
             // coefficient with no obvious symptom downstream.
+
+            // ── Phase 5: packing vendor library ─────────────────────
+            // Fp/ap/void-fraction are the widely-published GPDC generalized
+            // correlation constants (Perry's 9th ed., Table 14-13/14-14) —
+            // catalog-level generic values, not a vendor's proprietary test
+            // data, so (unlike NrtlBinaryParameter) safe to seed here. Row
+            // Id=3 (PALL-PP-50) matches ScrubberCalculationEngine's old
+            // hardcoded DefaultPackingFactor/DefaultSurfaceArea exactly —
+            // see EfPackingMaterialLookup.FallbackDefault for the same values.
+            modelBuilder.Entity<PackingMaterial>().HasData(
+                new PackingMaterial { Id = 1, Code = "PALL-PP-25", DisplayName = "Pall Ring 25mm Polypropylene", Vendor = "Generic", PackingType = "Pall Ring", MaterialOfConstruction = "Polypropylene", NominalSizeMm = 25, PackingFactorPerM = 170.0, SpecificSurfaceAreaM2M3 = 205.0, VoidFraction = 0.90, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 2, Code = "PALL-PP-38", DisplayName = "Pall Ring 38mm Polypropylene", Vendor = "Generic", PackingType = "Pall Ring", MaterialOfConstruction = "Polypropylene", NominalSizeMm = 38, PackingFactorPerM = 130.0, SpecificSurfaceAreaM2M3 = 130.0, VoidFraction = 0.91, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 3, Code = "PALL-PP-50", DisplayName = "Pall Ring 50mm Polypropylene", Vendor = "Generic", PackingType = "Pall Ring", MaterialOfConstruction = "Polypropylene", NominalSizeMm = 50, PackingFactorPerM = 66.0, SpecificSurfaceAreaM2M3 = 112.0, VoidFraction = 0.94, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 4, Code = "PALL-SS-50", DisplayName = "Pall Ring 50mm Stainless Steel 316", Vendor = "Generic", PackingType = "Pall Ring", MaterialOfConstruction = "SS316", NominalSizeMm = 50, PackingFactorPerM = 79.0, SpecificSurfaceAreaM2M3 = 115.0, VoidFraction = 0.94, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 5, Code = "RASCHIG-CER-25", DisplayName = "Raschig Ring 25mm Ceramic", Vendor = "Generic", PackingType = "Raschig Ring", MaterialOfConstruction = "Ceramic", NominalSizeMm = 25, PackingFactorPerM = 510.0, SpecificSurfaceAreaM2M3 = 190.0, VoidFraction = 0.68, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 6, Code = "RASCHIG-CER-50", DisplayName = "Raschig Ring 50mm Ceramic", Vendor = "Generic", PackingType = "Raschig Ring", MaterialOfConstruction = "Ceramic", NominalSizeMm = 50, PackingFactorPerM = 220.0, SpecificSurfaceAreaM2M3 = 92.0, VoidFraction = 0.71, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 7, Code = "IMTP-SS-25", DisplayName = "Intalox Metal Tower Packing 25mm SS", Vendor = "Koch-Glitsch", PackingType = "Intalox Saddle", MaterialOfConstruction = "SS316", NominalSizeMm = 25, PackingFactorPerM = 141.0, SpecificSurfaceAreaM2M3 = 148.0, VoidFraction = 0.97, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 8, Code = "IMTP-SS-50", DisplayName = "Intalox Metal Tower Packing 50mm SS", Vendor = "Koch-Glitsch", PackingType = "Intalox Saddle", MaterialOfConstruction = "SS316", NominalSizeMm = 50, PackingFactorPerM = 66.0, SpecificSurfaceAreaM2M3 = 92.0, VoidFraction = 0.97, ReferenceSourceId = 1, ValidatedFlag = false },
+                new PackingMaterial { Id = 9, Code = "MELLAPAK-250Y", DisplayName = "Mellapak 250Y Structured Packing", Vendor = "Sulzer", PackingType = "Structured", MaterialOfConstruction = "SS316", NominalSizeMm = null, PackingFactorPerM = 66.0, SpecificSurfaceAreaM2M3 = 250.0, VoidFraction = 0.975, NominalHetpM = 0.45, ReferenceSourceId = 1, ValidatedFlag = false }
+            );
         }
     }
 }

@@ -87,7 +87,7 @@ namespace WetScrubber.Services.Flowsheet
 
         private static CreateDesignViewModel CloneTemplate(CreateDesignViewModel src)
         {
-            var clone = (CreateDesignViewModel)src.MemberwiseClone();
+            var clone = src.Clone();
             clone.Pollutants = src.Pollutants.Select(p => new PollutantInputViewModel
             {
                 PollutantType = p.PollutantType,
