@@ -222,6 +222,28 @@ namespace WetScrubber.Services
                 ntuResult.NTU,
                 ntuResult.HTU);
 
+            // ── Phase 4a: Multi-pollutant iterative solver ─────────────
+            // When multiple pollutants present, solve them simultaneously
+            // in shared liquid. Falls back to single-pollutant if only one,
+            // or if any lookup fails.
+            if (vm.Pollutants.Count > 1)
+            {
+                var multiResult = TryComputeMultiPollutantIterativeSolution(vm, henrysTemp);
+                if (multiResult?.Converged == true)
+                {
+                    // Sum across pollutants: overall removal is weighted avg
+                    double totalRemoval = multiResult.OverallRemovalEfficiency.Values.Average();
+                    result.RemovalEfficiency = Math.Round(totalRemoval, 2);
+                    result.LiquidOutletTemperature = Math.Round(multiResult.LiquidOutletTemperatureC, 1);
+                    result.HeatAbsorbedKW = Math.Round(multiResult.TotalHeatAbsorbedKW, 2);
+                    return result;
+                }
+            }
+
+            // Fallback: single-pollutant (Phase 1/2/3) for first pollutant
+            if (vm.Pollutants.Count == 0)
+                return result;
+
             return result;
         }
 
@@ -636,6 +658,124 @@ namespace WetScrubber.Services
             }
         }
 
+        // ════════════════════════════════════════════════════════════
+        //  PHASE 3 — Iterative tower solver with heat feedback
+        // ════════════════════════════════════════════════════════════
+        private IterativeTowerSolver.SolverOutput? TryComputeIterativeTowerSolution(
+            PollutantInputViewModel pollutant,
+            CreateDesignViewModel vm,
+            double henrysLawConstant)
+        {
+            try
+            {
+                string? pollutantCode = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
+                if (pollutantCode == null)
+                    return null;
+
+                double gasFlowM3S = vm.ActualFlowRate / 3600.0;
+                double gasMassFlowKgS = gasFlowM3S * vm.GasDensity;
+                double liquidFlowM3S = (vm.LiquidToGasRatio * gasFlowM3S) / 1000.0; // L/m3 -> m3/s
+                double liquidMassFlowKgS = liquidFlowM3S * vm.LiquidDensity;
+
+                var solverInput = new IterativeTowerSolver.SolverInput
+                {
+                    GasInletPpm = pollutant.InletConcentration,
+                    GasOutletTargetPpm = pollutant.TargetOutletConcentration,
+                    GasTemperatureC = vm.InletTemperature,
+                    GasMassFlowKgS = gasMassFlowKgS,
+                    LiquidInletTempC = vm.LiquidTemperature,
+                    LiquidMassFlowKgS = liquidMassFlowKgS,
+                    LiquidDensityKgM3 = vm.LiquidDensity,
+                    HenrysLawConstantReference = henrysLawConstant,
+                    HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
+                    PollutantMolecularWeight = pollutant.MolecularWeight,
+                    HenrysLawTemperatureCorrectionFn = t =>
+                    {
+                        // Van't Hoff correction for this species
+                        var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
+                        if (data?.HeatOfSolutionKJmol == null)
+                            return 1.0;
+                        double tempCoeff = -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
+                        double T = t + 273.15;
+                        return Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
+                    }
+                };
+
+                return IterativeTowerSolver.SolveIterative(solverInput, numSegments: 5);
+            }
+            catch
+            {
+                return null; // Fallback to single-pass if iterative fails
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  PHASE 4a — Multi-pollutant iterative solver
+        // ════════════════════════════════════════════════════════════
+        private MultiPollutantIterativeSolver.SolverOutput? TryComputeMultiPollutantIterativeSolution(
+            CreateDesignViewModel vm,
+            double henrysLawConstantReference)
+        {
+            if (vm.Pollutants.Count == 0)
+                return null;
+
+            try
+            {
+                var pollutantInputs = new List<MultiPollutantIterativeSolver.PollutantInput>();
+
+                foreach (var pollutant in vm.Pollutants)
+                {
+                    string? pollutantCode = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
+                    if (pollutantCode == null)
+                        continue;
+
+                    double effectiveHenry = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
+
+                    pollutantInputs.Add(new MultiPollutantIterativeSolver.PollutantInput
+                    {
+                        Code = pollutantCode,
+                        InletPpm = pollutant.InletConcentration,
+                        MolecularWeight = pollutant.MolecularWeight,
+                        HenrysLawConstant = effectiveHenry,
+                        HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
+                        HenrysLawTemperatureCorrectionFn = t =>
+                        {
+                            var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
+                            if (data?.HeatOfSolutionKJmol == null)
+                                return 1.0;
+                            double tempCoeff = -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
+                            double T = t + 273.15;
+                            return Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
+                        }
+                    });
+                }
+
+                if (pollutantInputs.Count == 0)
+                    return null;
+
+                double gasFlowM3S = vm.ActualFlowRate / 3600.0;
+                double gasMassFlowKgS = gasFlowM3S * vm.GasDensity;
+                double liquidFlowM3S = (vm.LiquidToGasRatio * gasFlowM3S) / 1000.0;
+                double liquidMassFlowKgS = liquidFlowM3S * vm.LiquidDensity;
+
+                var solverInput = new MultiPollutantIterativeSolver.SolverInput
+                {
+                    Pollutants = pollutantInputs,
+                    GasTemperatureC = vm.InletTemperature,
+                    GasMassFlowKgS = gasMassFlowKgS,
+                    LiquidInletTempC = vm.LiquidTemperature,
+                    LiquidMassFlowKgS = liquidMassFlowKgS,
+                    LiquidDensityKgM3 = vm.LiquidDensity
+                };
+
+                return MultiPollutantIterativeSolver.SolveIterative(solverInput, numSegments: 5);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public double CalculateMinimumLiquidGasRatio(
             double inletPpm,
             double outletPpm,
@@ -879,6 +1019,10 @@ namespace WetScrubber.Services
         public double FanPowerKW { get; set; }
         public double PumpPowerKW { get; set; }
         public double TotalPowerKW => FanPowerKW + PumpPowerKW;
+
+        // Phase 3 — Energy balance (populated by iterative solver if enabled)
+        public double LiquidOutletTemperature { get; set; } = 25.0;
+        public double HeatAbsorbedKW { get; set; } = 0.0;
 
         // Sensitivity analysis points for chart
         public List<SensitivityPoint> SensitivityPoints { get; set; } = new();
