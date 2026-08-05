@@ -33,13 +33,20 @@ namespace WetScrubber.Controllers
             _dbContext = dbContext;
             _logger = logger;
             // Phase 1: real-gas density wherever ComponentProperties has
-            // the pollutant; GetActualGasDensity inside the engine falls
-            // back to the original ideal-gas number for anything it
-            // doesn't have data for, so this is safe to switch on by
-            // default rather than gating it behind a feature flag.
+            // the pollutant; per-species Van't Hoff Henry's Law wherever
+            // HenrysLawData.HeatOfSolutionKJmol is populated; NRTL
+            // activity correction wherever NrtlBinaryParameters has a
+            // (Water, pollutant) pair. Every one of these falls back to
+            // its pre-Phase-1 behavior on any miss (see
+            // GetActualGasDensity / GetEffectiveHenrysLawConstant), so
+            // this is safe to switch on by default rather than gating
+            // it behind a feature flag.
             _engine = new ScrubberCalculationEngine(
                 new PengRobinsonEos(),
-                new EfComponentPropertyLookup(dbContext));
+                new EfComponentPropertyLookup(dbContext),
+                new EfHenrysLawLookup(dbContext),
+                new NrtlActivityModel(),
+                new EfNrtlBinaryParameterLookup(dbContext));
             _diagnosticsEngine = diagnosticsEngine;
             _reportRepository = reportRepository;
             _chemistryPredictor = chemistryPredictor;

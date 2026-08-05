@@ -27,12 +27,31 @@ namespace WetScrubber.Services
         private readonly IEquationOfState? _eos;
         private readonly IComponentPropertyLookup? _componentLookup;
 
+        // ── Phase 1 — Van 't Hoff Henry's Law + NRTL activity ───────
+        // Same "all optional, hard fallback on miss" contract as _eos
+        // above. _henrysLawLookup missing/no-data-for-species falls
+        // back to the original hardcoded tempCoeff=2000. _activityModel
+        // / _nrtlLookup missing/no pair found falls back to gamma=1
+        // (ideal solution) — expected today since NrtlBinaryParameters
+        // ships empty (see NrtlBinaryParameter.cs).
+        private readonly IHenrysLawLookup? _henrysLawLookup;
+        private readonly IActivityCoefficientModel? _activityModel;
+        private readonly INrtlBinaryParameterLookup? _nrtlLookup;
+
         public ScrubberCalculationEngine() { }
 
-        public ScrubberCalculationEngine(IEquationOfState eos, IComponentPropertyLookup componentLookup)
+        public ScrubberCalculationEngine(
+            IEquationOfState eos,
+            IComponentPropertyLookup componentLookup,
+            IHenrysLawLookup? henrysLawLookup = null,
+            IActivityCoefficientModel? activityModel = null,
+            INrtlBinaryParameterLookup? nrtlLookup = null)
         {
             _eos = eos;
             _componentLookup = componentLookup;
+            _henrysLawLookup = henrysLawLookup;
+            _activityModel = activityModel;
+            _nrtlLookup = nrtlLookup;
         }
 
         // ── Packing material defaults (Pall Rings 50mm) ───────────
@@ -89,8 +108,12 @@ namespace WetScrubber.Services
             );
 
             // 3. NTU / HTU → packing height
-            double henrysTemp = GetHenrysLawConstant(
-                pollutant.HenrysLawConstant, 2000, vm.InletTemperature);
+            // Phase 1: real per-species Van't Hoff coefficient +
+            // NRTL activity correction when data/wiring exists;
+            // falls back to the original single hardcoded
+            // tempCoeff=2000 / gamma=1 otherwise (see
+            // GetEffectiveHenrysLawConstant).
+            double henrysTemp = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
             // Calculate gas flow and cross-sectional area
             double gasFlowM3S = vm.ActualFlowRate / 3600.0;
             double crossSection = Math.PI * Math.Pow(result.TowerDiameter, 2) / 4.0;
@@ -516,6 +539,87 @@ namespace WetScrubber.Services
             double T = temperatureC + 273.15;
             double H_T = H25 * Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
             return Math.Max(H_T, 0.001);
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  PHASE 1 — effective Henry's Law: per-species Van't Hoff
+        //  temperature coefficient (replaces the single hardcoded
+        //  tempCoeff=2000) combined with an NRTL activity-coefficient
+        //  correction (replaces the implicit gamma=1 ideal-solution
+        //  assumption). Both corrections fall back independently and
+        //  silently to prior behavior when their data isn't available —
+        //  same never-break-an-existing-design contract as
+        //  GetActualGasDensity.
+        // ════════════════════════════════════════════════════════════
+        private double GetEffectiveHenrysLawConstant(PollutantInputViewModel pollutant, double gasTemperatureC)
+        {
+            string? pollutantCode = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
+
+            double tempCoeff = GetVanTHoffTempCoeff(pollutantCode, defaultTempCoeff: 2000);
+            double H_T = GetHenrysLawConstant(pollutant.HenrysLawConstant, tempCoeff, gasTemperatureC);
+            double gamma = GetSoluteActivityCoefficient(pollutantCode, pollutant.InletConcentration);
+
+            // Modified Henry's Law with an activity correction:
+            // y* = gamma_solute * H * x. gamma > 1 (positive deviation)
+            // makes the pollutant appear less absorbable than the ideal
+            // H alone would predict; gamma = 1 (today's default, since
+            // NrtlBinaryParameters ships empty) reproduces the exact
+            // pre-Phase-1 number.
+            return H_T * gamma;
+        }
+
+        private double GetVanTHoffTempCoeff(string? pollutantCode, double defaultTempCoeff)
+        {
+            if (_henrysLawLookup == null || pollutantCode == null)
+                return defaultTempCoeff;
+
+            try
+            {
+                var data = _henrysLawLookup.GetByPollutantCode(pollutantCode);
+                if (data?.HeatOfSolutionKJmol == null)
+                    return defaultTempCoeff; // HeatOfSolutionKJmol unsourced — see HenrysLawData.cs
+
+                // tempCoeff [K] = -ΔH_soln[J/mol] / R, matching the
+                // exp(tempCoeff*(1/T - 1/298.15)) form GetHenrysLawConstant
+                // already uses — this just replaces the constant fed
+                // into it with a per-species one.
+                return -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
+            }
+            catch
+            {
+                return defaultTempCoeff;
+            }
+        }
+
+        private double GetSoluteActivityCoefficient(string? pollutantCode, double inletConcentrationPpm)
+        {
+            if (_activityModel == null || _nrtlLookup == null || pollutantCode == null)
+                return 1.0; // ideal solution
+
+            try
+            {
+                // Rough proxy for liquid-phase solute mole fraction from
+                // the gas-phase inlet ppm — a real value needs the
+                // liquid mass balance (Phase 3). Capped at a dilute
+                // value deliberately: this is the regime scrubbers
+                // normally operate in and where NRTL's correction is
+                // best-behaved.
+                double xSolute = Math.Min(Math.Max(inletConcentrationPpm, 0.0) / 1_000_000.0, 0.05);
+
+                bool built = LiquidActivityBuilder.TryBuildWaterSoluteBinary(
+                    pollutantCode, xSolute, _nrtlLookup,
+                    out var water, out var solute, out var binary);
+
+                if (!built)
+                    return 1.0; // no (Water, pollutant) NRTL pair on file
+
+                var result = _activityModel.Evaluate(water, solute, binary);
+                return result.GammaB; // solute's activity coefficient
+            }
+            catch
+            {
+                return 1.0;
+            }
         }
 
         // ════════════════════════════════════════════════════════════
