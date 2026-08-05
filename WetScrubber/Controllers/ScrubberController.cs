@@ -4,10 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WetScrubber.Business.AI;
 using WetScrubber.Business.Diagnostics;
+using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Database;
 using WetScrubber.Database.Enums;
 using WetScrubber.Models;
 using WetScrubber.Repositories.Interfaces;
+using WetScrubber.Repositories.Repositories;
 using WetScrubber.Services;
 
 namespace WetScrubber.Controllers
@@ -30,7 +32,14 @@ namespace WetScrubber.Controllers
         {
             _dbContext = dbContext;
             _logger = logger;
-            _engine = new ScrubberCalculationEngine();
+            // Phase 1: real-gas density wherever ComponentProperties has
+            // the pollutant; GetActualGasDensity inside the engine falls
+            // back to the original ideal-gas number for anything it
+            // doesn't have data for, so this is safe to switch on by
+            // default rather than gating it behind a feature flag.
+            _engine = new ScrubberCalculationEngine(
+                new PengRobinsonEos(),
+                new EfComponentPropertyLookup(dbContext));
             _diagnosticsEngine = diagnosticsEngine;
             _reportRepository = reportRepository;
             _chemistryPredictor = chemistryPredictor;
