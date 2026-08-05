@@ -2,103 +2,99 @@
 
 namespace WetScrubber.Business.MassTransfer
 {
-    public sealed class MassTransferCoefficients
+    public sealed class OndaResult
     {
-        /// <summary>kGa — matches DefaultGasFilmCoeff's unit, kmol/(m3·hr·kPa).</summary>
-        public double GasFilmCoeff { get; set; }
-
-        /// <summary>kLa — 1/hr (DefaultLiquidFilmCoeff's intended unit; the
-        /// "m/hr" in that constant's comment is kL alone, pre-multiplied
-        /// by area a it becomes 1/hr — see ScrubberCalculationEngine's
-        /// KGa formula, which treats both as already area-inclusive).</summary>
-        public double LiquidFilmCoeff { get; set; }
+        public double WettedAreaM2M3 { get; set; }        // aW
+        public double GasFilmCoeffKmolM2SPa { get; set; }  // kG, partial-pressure basis
+        public double LiquidFilmCoeffMS { get; set; }      // kL, concentration basis
     }
 
     /// <summary>
-    /// Onda, Takeuchi &amp; Okumoto (1968) correlations for gas- and
-    /// liquid-film mass transfer coefficients in random packed columns,
-    /// via Reynolds/Schmidt dimensionless groups:
-    ///
-    ///   kG·R·T/(at·DG) = C1 · ReG^0.7 · ScG^(1/3) · (at·dp)^-2.0
-    ///   kL·(rhoL/(muL·g))^(1/3) = 0.0051 · ReL'^(2/3) · ScL^-0.5 · (at·dp)^0.4
-    ///
-    /// Replaces ScrubberCalculationEngine's fixed DefaultGasFilmCoeff /
-    /// DefaultLiquidFilmCoeff (0.03 / 0.01) with values derived from real
-    /// fluid properties (viscosity, density, diffusivity — from
-    /// WilkeChangDiffusivity / GasPhaseDiffusivity) and packing geometry.
-    ///
-    /// SIMPLIFICATION (flagged, not hidden): wetted interfacial area aw is
-    /// approximated as the total packing area `at` (i.e. aw/at = 1). Onda's
-    /// own wetted-area correlation needs the packing material's critical
-    /// surface tension and the liquid's surface tension, neither of which
-    /// exist in ComponentProperty/DiffusionProperty yet — sourcing those is
-    /// a follow-up, not something to fabricate here. aw=at is the standard
-    /// conservative starting assumption used before that data exists.
-    ///
-    /// Characteristic packing size dp is derived geometrically from the
-    /// existing ap/void-fraction constants (dp = 6(1-eps)/ap) rather than
-    /// requiring a new stored value.
+    /// Onda, Takeuchi &amp; Okumoto (1968) packed-column mass transfer
+    /// correlation, SI form as republished in Seader/Henley/Roper,
+    /// "Separation Process Principles". NOT independently re-derived
+    /// against a published worked example — checked for dimensional
+    /// consistency only. Treat like every other Phase 0/1 constant:
+    /// usable, not yet production-certified.
     /// </summary>
     public static class OndaMassTransferCorrelation
     {
-        private const double GasConstantKPaM3PerKmolK = 8.314; // kPa·m3/(kmol·K)
-        private const double GravityAccel = 9.81;               // m/s2
+        private const double GravityAccel = 9.81; // m/s2
 
-        public static MassTransferCoefficients Calculate(
-            double gasMassVelocityKgM2S,
-            double liquidMassVelocityKgM2S,
-            double gasDensityKgM3,
+        public static OndaResult Calculate(
+            double packingSpecificAreaM2M3,   // aT
+            double nominalPackingSizeM,        // dp
+            double criticalSurfaceTensionNM,   // sigma_c, packing material
+            double liquidSurfaceTensionNM,     // sigma_L
+            double liquidMassVelocityKgM2S,    // L
+            double gasMassVelocityKgM2S,        // G
             double liquidDensityKgM3,
-            double gasViscosityPas,
+            double gasDensityKgM3,
             double liquidViscosityPas,
-            double gasDiffusivityM2S,
+            double gasViscosityPas,
             double liquidDiffusivityM2S,
-            double packingSurfaceAreaM2M3, // at
-            double voidFraction,
+            double gasDiffusivityM2S,
             double temperatureK,
             double pressureKPa)
         {
-            if (gasDiffusivityM2S <= 0 || liquidDiffusivityM2S <= 0
-                || packingSurfaceAreaM2M3 <= 0 || gasViscosityPas <= 0
-                || liquidViscosityPas <= 0 || gasDensityKgM3 <= 0 || liquidDensityKgM3 <= 0)
+            double aT = packingSpecificAreaM2M3;
+            double dp = nominalPackingSizeM;
+            double L = Math.Max(liquidMassVelocityKgM2S, 1e-6);
+            double G = Math.Max(gasMassVelocityKgM2S, 1e-6);
+            double muL = Math.Max(liquidViscosityPas, 1e-6);
+            double muG = Math.Max(gasViscosityPas, 1e-9);
+            double rhoL = liquidDensityKgM3;
+            double rhoG = gasDensityKgM3;
+            double dL = liquidDiffusivityM2S;
+            double dG = gasDiffusivityM2S;
+
+            // ── Wetted (effective interfacial) area, aW/aT ──────────
+            double sigmaRatio = Math.Pow(criticalSurfaceTensionNM / liquidSurfaceTensionNM, 0.75);
+            double reL = L / (aT * muL);
+            double frL = (L * L * aT) / (rhoL * rhoL * GravityAccel);
+            double weL = (L * L) / (rhoL * liquidSurfaceTensionNM * aT);
+
+            double exponent = -1.45 * sigmaRatio
+                * Math.Pow(reL, 0.1)
+                * Math.Pow(frL, -0.05)
+                * Math.Pow(weL, 0.2);
+
+            double aWOverAt = 1.0 - Math.Exp(exponent);
+            double aW = Math.Max(aWOverAt, 0.01) * aT;
+
+            // ── Liquid film coefficient, kL [m/s] ───────────────────
+            //   kL*(rhoL/(muL*g))^(1/3) = 0.0051*(L/(aW*muL))^(2/3)
+            //                           * (muL/(rhoL*DL))^(-1/2)
+            //                           * (aT*dp)^0.4
+            double reLForKl = L / (aW * muL);
+            double scL = muL / (rhoL * dL);
+            double gravityTerm = Math.Pow(muL * GravityAccel / rhoL, 1.0 / 3.0);
+
+            double kL = 0.0051
+                * Math.Pow(reLForKl, 2.0 / 3.0)
+                * Math.Pow(scL, -0.5)
+                * Math.Pow(aT * dp, 0.4)
+                * gravityTerm;
+
+            // ── Gas film coefficient, kG [kmol/(m2*s*Pa)] ───────────
+            //   kG*R*T/(aT*DG) = C*(G/(aT*muG))^0.7*(muG/(rhoG*DG))^(1/3)*(aT*dp)^-2
+            //   C = 5.23 for dp >= 15mm, 2.0 otherwise
+            double c = dp >= 0.015 ? 5.23 : 2.0;
+            double reG = G / (aT * muG);
+            double scG = muG / (rhoG * dG);
+            const double R = 8314.0; // J/(kmol*K) = Pa*m3/(kmol*K)
+
+            double kG = c
+                * Math.Pow(reG, 0.7)
+                * Math.Pow(scG, 1.0 / 3.0)
+                * Math.Pow(aT * dp, -2.0)
+                * (aT * dG) / (R * temperatureK);
+
+            return new OndaResult
             {
-                throw new ArgumentException(
-                    "All fluid properties and packing area must be positive — " +
-                    "caller should fall back to DefaultGasFilmCoeff/DefaultLiquidFilmCoeff " +
-                    "on missing data instead of calling this with zeros.");
-            }
-
-            double at = packingSurfaceAreaM2M3;
-            double dp = 6.0 * (1.0 - voidFraction) / at; // equivalent packing size, m
-            double atDp = at * dp;
-
-            // ── Gas film (kG) ────────────────────────────────────────
-            double reG = gasMassVelocityKgM2S / (at * gasViscosityPas);
-            double scG = gasViscosityPas / (gasDensityKgM3 * gasDiffusivityM2S);
-            double c1 = dp > 0.012 ? 5.23 : 2.00; // Onda's large/small packing split, dp in m
-
-            double kG = c1 * Math.Pow(reG, 0.7) * Math.Pow(scG, 1.0 / 3.0)
-                        * Math.Pow(atDp, -2.0)
-                        * (at * gasDiffusivityM2S) / (GasConstantKPaM3PerKmolK * temperatureK);
-            // kG here: kmol/(m2·s·kPa)
-
-            double gasFilmCoeff = kG * at * 3600.0; // -> kGa, kmol/(m3·hr·kPa)
-
-            // ── Liquid film (kL) ─────────────────────────────────────
-            double reL = liquidMassVelocityKgM2S / (at * liquidViscosityPas); // aw≈at
-            double scL = liquidViscosityPas / (liquidDensityKgM3 * liquidDiffusivityM2S);
-
-            double kL = 0.0051 * Math.Pow(reL, 2.0 / 3.0) * Math.Pow(scL, -0.5)
-                        * Math.Pow(atDp, 0.4)
-                        * Math.Pow(liquidDensityKgM3 / (liquidViscosityPas * GravityAccel), -1.0 / 3.0);
-            // kL here: m/s
-
-            double liquidFilmCoeff = kL * at * 3600.0; // -> kLa, 1/hr
-
-            return new MassTransferCoefficients
-            {
-                GasFilmCoeff = gasFilmCoeff,
-                LiquidFilmCoeff = liquidFilmCoeff
+                WettedAreaM2M3 = aW,
+                GasFilmCoeffKmolM2SPa = kG,
+                LiquidFilmCoeffMS = kL
             };
         }
     }

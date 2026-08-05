@@ -29,5 +29,9 @@ namespace WetScrubber.Business.Diagnostics
 
         public double RemovalEfficiency { get; init; }    // %
         public double? TargetRemovalEfficiency { get; init; } // % (optional — from the pollutant target)
+        public string? PackingCode { get; init; }
+        public string? PackingSizingMethod { get; init; }
+        public bool IsLimestoneSlurry { get; init; }
+        public double SolidsLoadingWtPercent { get; init; }
     }
 }

@@ -1,4 +1,3 @@
-using WetScrubber.Business.Conservation;
 using WetScrubber.Business.MassTransfer;
 using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Database.Enums;
@@ -40,19 +39,14 @@ namespace WetScrubber.Services
         private readonly IActivityCoefficientModel? _activityModel;
         private readonly INrtlBinaryParameterLookup? _nrtlLookup;
 
-        // ── Phase 2 — Onda kGa/kLa from Wilke-Chang + Fuller diffusivity ──
-        // Same all-optional, hard-fallback-on-miss contract as the Phase 1
-        // fields above. Missing lookup, missing DiffusionProperty data, or
-        // any solver exception falls back to DefaultGasFilmCoeff /
-        // DefaultLiquidFilmCoeff — see GetEffectiveFilmCoefficients.
-        private readonly IDiffusionPropertyLookup? _diffusionLookup;
-
-        // ── Phase 5 — packing vendor library ────────────────────────
-        // Same all-optional, hard-fallback-on-miss contract as the fields
-        // above. Missing lookup, or vm.PackingCode null/blank/not found,
-        // falls back to the original hardcoded Pall Ring 50mm constants
-        // below — see ResolvePacking.
-        private readonly IPackingMaterialLookup? _packingLookup;
+        // ── Phase 2 — Onda rate-based film coefficients ─────────────
+        // Same optional/fallback contract. Missing lookup, missing
+        // DiffusionProperty rows, or any Onda/Wilke-Chang/Fuller
+        // exception falls back to CalculateNtuHtu's fixed
+        // DefaultGasFilmCoeff/DefaultLiquidFilmCoeff — never breaks an
+        // existing design.
+        private readonly IDiffusionCoefficientLookup? _diffusionLookup;
+        private readonly IPackingLookup? _packingLookup;
 
         public ScrubberCalculationEngine() { }
 
@@ -62,8 +56,8 @@ namespace WetScrubber.Services
             IHenrysLawLookup? henrysLawLookup = null,
             IActivityCoefficientModel? activityModel = null,
             INrtlBinaryParameterLookup? nrtlLookup = null,
-            IDiffusionPropertyLookup? diffusionLookup = null,
-            IPackingMaterialLookup? packingLookup = null)
+            IDiffusionCoefficientLookup? diffusionLookup = null,
+            IPackingLookup? packingLookup = null)
         {
             _eos = eos;
             _componentLookup = componentLookup;
@@ -75,35 +69,20 @@ namespace WetScrubber.Services
         }
 
         // ── Packing material defaults (Pall Rings 50mm) ───────────
-        // Historical hard fallback — see ResolvePacking. Left in place
-        // unchanged so behavior is byte-identical when _packingLookup is
-        // null or vm.PackingCode doesn't resolve to a row.
         private const double DefaultPackingFactor = 66.0;    // Fp, 1/m
         private const double DefaultSurfaceArea = 112.0;   // m²/m³
         private const double DefaultVoidFraction = 0.951;   // ε
         private const double DefaultGasFilmCoeff = 0.03;    // kGa kmol/m³·hr·kPa
-        private const double DefaultLiquidFilmCoeff = 0.01;    // kLa m/hr
+        private const double DefaultLiquidFilmCoeff = 0.01;    // kLa m/hr — fallback path only
 
-        /// <summary>
-        /// Resolves the packing dimensions to use for this calculation:
-        /// vm.PackingCode via _packingLookup when both are present and the
-        /// code is found, otherwise the historical hardcoded Pall Ring
-        /// 50mm constants — same "unsourced/unselected data never breaks
-        /// a design" contract as GetEffectiveHenrysLawConstant /
-        /// GetEffectiveFilmCoefficients.
-        /// </summary>
-        private (double PackingFactorPerM, double SurfaceAreaM2M3, double VoidFraction) ResolvePacking(
-            CreateDesignViewModel vm)
-        {
-            if (_packingLookup != null && !string.IsNullOrWhiteSpace(vm.PackingCode))
-            {
-                var packing = _packingLookup.GetByCode(vm.PackingCode);
-                if (packing != null)
-                    return (packing.PackingFactorPerM, packing.SpecificSurfaceAreaM2M3, packing.VoidFraction);
-            }
-
-            return (DefaultPackingFactor, DefaultSurfaceArea, DefaultVoidFraction);
-        }
+        // Phase 2 — Onda correlation packing/fluid defaults. Same
+        // "standard textbook value, not independently sourced" caveat
+        // as DefaultPackingFactor/DefaultSurfaceArea above.
+        private const double DefaultNominalPackingSizeM = 0.05;         // 50mm Pall rings
+        private const double DefaultPackingCriticalSurfaceTensionNM = 0.075; // metal packing
+        private const double DefaultLiquidSurfaceTensionNM = 0.0728;    // water, ~20-25°C
+        private const double WaterMolarDensityKmolM3 = 55.3;    // ~constant over typical scrubber liquid temps
+        private const double SolventMolecularWeightGMol = 18.02; // water
 
         // ════════════════════════════════════════════════════════════
         //  MAIN ENTRY — run full calculation based on scrubber type
@@ -126,88 +105,87 @@ namespace WetScrubber.Services
         {
             var result = new CalculationResult();
 
-            var pollutants = vm.Pollutants.Count > 0
-                ? vm.Pollutants
-                : new List<PollutantInputViewModel> { new PollutantInputViewModel() };
-
-            // Phase 3 — multi-component gas composition, Σy_i = 1 enforced
-            // up front (Composition.FromValues). Sizing below still
-            // governs off one species at a time — full simultaneous
-            // multi-species absorption is Phase 4 flowsheet territory —
-            // but this is the guard rail the roadmap says has to exist
-            // before "more than one pollutant" is meaningful at all.
-            var composition = BuildGasComposition(pollutants, out var compositionWarning);
-            result.GasMoleFractions = composition?.MoleFractions;
-            result.CompositionWarning = compositionWarning;
+            // Use first pollutant for primary calculation
+            var pollutant = vm.Pollutants.FirstOrDefault() ?? new PollutantInputViewModel();
 
             // 1. Liquid flow rate from L/G ratio
             double liquidFlowM3Hr = vm.ActualFlowRate * vm.LiquidToGasRatio / 1000.0;
+
+            // 2. Tower diameter
+            result.TowerDiameter = CalculateTowerDiameter(
+                gasFlowRateNm3Hr: vm.NormalFlowRate,
+                gasTemperatureC: vm.InletTemperature,
+                gasPressurePa: vm.InletPressure,
+                liquidFlowRateM3Hr: liquidFlowM3Hr,
+                gasDensityKgM3: vm.GasDensity,
+                liquidDensityKgM3: vm.LiquidDensity,
+                packingFactor: DefaultPackingFactor,
+                liquidViscosityMPas: vm.LiquidViscosity,
+                // Phase 1: real-gas density when this engine instance was
+                // built with an EOS + lookup (see the two-arg constructor)
+                // and ComponentProperties has this pollutant. Falls back
+                // to the original ideal-gas number otherwise — see
+                // GetActualGasDensity.
+                pollutantTypeId: pollutant.PollutantType,
+                inletConcentrationPpm: pollutant.InletConcentration
+            );
+
+            // 3. NTU / HTU → packing height
+            // Phase 1: real per-species Van't Hoff coefficient +
+            // NRTL activity correction when data/wiring exists;
+            // falls back to the original single hardcoded
+            // tempCoeff=2000 / gamma=1 otherwise (see
+            // GetEffectiveHenrysLawConstant).
+            double henrysTemp = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
+            // Calculate gas flow and cross-sectional area
             double gasFlowM3S = vm.ActualFlowRate / 3600.0;
-
-            // 2. Tower diameter — most conservative across all pollutants
-            // present (gas-density correction differs slightly by
-            // species); previously this only ever looked at the first row.
-            var packing = ResolvePacking(vm);
-            double towerDiameter = 0;
-            foreach (var p in pollutants)
-            {
-                double d = CalculateTowerDiameter(
-                    gasFlowRateNm3Hr: vm.NormalFlowRate,
-                    gasTemperatureC: vm.InletTemperature,
-                    gasPressurePa: vm.InletPressure,
-                    liquidFlowRateM3Hr: liquidFlowM3Hr,
-                    gasDensityKgM3: vm.GasDensity,
-                    liquidDensityKgM3: vm.LiquidDensity,
-                    packingFactor: packing.PackingFactorPerM,
-                    liquidViscosityMPas: vm.LiquidViscosity,
-                    pollutantTypeId: p.PollutantType,
-                    inletConcentrationPpm: p.InletConcentration);
-                towerDiameter = Math.Max(towerDiameter, d);
-            }
-            result.TowerDiameter = towerDiameter;
-
             double crossSection = Math.PI * Math.Pow(result.TowerDiameter, 2) / 4.0;
+
+            // Gas / liquid mass velocities (kg/m²·s)
             double gasMassVelocity = (gasFlowM3S * vm.GasDensity) / crossSection;
             double liquidMassVelocity = (liquidFlowM3Hr / 3600.0 * vm.LiquidDensity) / crossSection;
 
-            // 3. Per-pollutant NTU/HTU + Phase 3 layer rating; governing
-            // species = whichever needs the tallest packing (standard
-            // multi-pollutant scrubber practice: size for the hardest
-            // species, report removal for all of them).
-            var perPollutant = new List<PollutantSizingResult>();
-            PollutantInputViewModel governingInput = pollutants[0];
-            PollutantSizingResult? governing = null;
+            // Phase 2: Wilke-Chang + Fuller diffusivities feeding the
+            // Onda correlation for physically-derived kG/kL/aW, in
+            // place of the fixed DefaultGasFilmCoeff/DefaultLiquidFilmCoeff.
+            // Falls back to CalculateNtuHtu (old fixed-coefficient path,
+            // scale factor and clamp intact) whenever DiffusionProperty
+            // data, packing lookup, or the lookups are unavailable — see
+            // TryComputeOndaFilmCoefficients.
+            var rateBased = TryComputeOndaFilmCoefficients(
+                pollutant, vm, gasMassVelocity, liquidMassVelocity, henrysTemp, vm.PackingCode);
 
-            foreach (var p in pollutants)
-            {
-                var sizing = SizePollutant(p, vm, crossSection, liquidFlowM3Hr, gasMassVelocity, liquidMassVelocity);
-                perPollutant.Add(sizing);
-                if (governing == null || sizing.PackingHeightM > governing.PackingHeightM)
-                {
-                    governing = sizing;
-                    governingInput = p;
-                }
-            }
-            governing!.IsGoverning = true;
-            result.PollutantResults = perPollutant;
-            result.GoverningPollutantType = governing.PollutantType;
+            var ntuResult = rateBased != null
+                ? CalculateNtuHtuRateBased(
+                    inletConcentrationPpm: pollutant.InletConcentration,
+                    outletConcentrationPpm: pollutant.TargetOutletConcentration,
+                    henrysLawConstant: henrysTemp,
+                    liquidToGasRatioMolar: vm.LiquidToGasRatio,
+                    gasMolarVelocityKmolM2S: rateBased.GasMolarVelocityKmolM2S,
+                    overallKGaKmolM3S: rateBased.OverallKGaKmolM3S)
+                : CalculateNtuHtu(
+                    inletConcentrationPpm: pollutant.InletConcentration,
+                    outletConcentrationPpm: pollutant.TargetOutletConcentration,
+                    henrysLawConstant: henrysTemp,
+                    liquidToGasRatioMolar: vm.LiquidToGasRatio,
+                    gasFilmCoeff: DefaultGasFilmCoeff,
+                    liquidFilmCoeff: DefaultLiquidFilmCoeff,
+                    gasMassVelocity: gasMassVelocity,
+                    gasDensityKgM3: vm.GasDensity
+                );
 
-            result.PackingHeight = governing.PackingHeightM;
-            result.NTU = governing.NTU;
-            result.HTU = governing.HTU;
-            result.AbsorptionFactor = governing.AbsorptionFactor;
-            result.RemovalEfficiency = governing.RemovalEfficiency;
-            result.MinLGRatio = governing.MinLGRatio;
-            result.PhysicallyDerivedRating = governing.PhysicallyDerivedRating;
-            result.RatedOutletConcentrationPpm = governing.RatedOutletConcentrationPpm;
-            result.RatedRemovalEfficiency = governing.RatedRemovalEfficiency;
-            result.LiquidOutletTemperatureK = governing.LiquidOutletTemperatureK;
-            result.LayerRatingConverged = governing.LayerRatingConverged;
+            result.PackingHeight = Math.Round(ntuResult.PackingHeight, 2);
+            result.NTU = Math.Round(ntuResult.NTU, 2);
+            result.HTU = Math.Round(ntuResult.HTU, 2);
+            result.AbsorptionFactor = Math.Round(ntuResult.AbsorptionFactor, 3);
+            result.RemovalEfficiency = Math.Round(ntuResult.RemovalEfficiency, 2);
 
             // 4. Total tower height = packing + 30% freeboard + 1m sump + 1m top
             result.TowerHeight = Math.Round(result.PackingHeight * 1.3 + 2.0, 2);
 
             // 5. Gas velocity inside tower
+            //double crossSection = Math.PI * Math.Pow(result.TowerDiameter, 2) / 4.0;
+            //double gasFlowM3S   = vm.ActualFlowRate / 3600.0;
             result.GasVelocity = Math.Round(gasFlowM3S / crossSection, 2);
 
             // 6. Pressure drop
@@ -217,8 +195,8 @@ namespace WetScrubber.Services
                     liquidLoadingM3M2Hr: liquidFlowM3Hr / crossSection,
                     gasDensityKgM3: vm.GasDensity,
                     liquidDensityKgM3: vm.LiquidDensity,
-                    packingSurfaceAreaM2M3: packing.SurfaceAreaM2M3,
-                    voidFraction: packing.VoidFraction,
+                    packingSurfaceAreaM2M3: DefaultSurfaceArea,
+                    voidFraction: DefaultVoidFraction,
                     liquidViscosityPas: vm.LiquidViscosity / 1000.0
                 ) * result.PackingHeight, 2);
 
@@ -226,133 +204,25 @@ namespace WetScrubber.Services
             result.FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, result.PressureDrop + 500), 2);
             result.PumpPowerKW = Math.Round(CalculatePumpPower(liquidFlowM3Hr, result.TowerHeight + 5, vm.LiquidDensity), 2);
 
+            // 8. L/G min ratio check
+            result.MinLGRatio = Math.Round(
+                CalculateMinimumLiquidGasRatio(
+                    pollutant.InletConcentration,
+                    pollutant.TargetOutletConcentration,
+                    henrysTemp), 3);
+
             result.ActualLGRatio = vm.LiquidToGasRatio;
             result.LiquidFlowRateM3Hr = Math.Round(liquidFlowM3Hr, 2);
             result.ScrubberType = "Packed Tower";
 
-            // 8. Sensitivity analysis for chart — governing species drives it.
+            // 9. Sensitivity analysis for chart
             result.SensitivityPoints = RunLGRatioSensitivity(
-                governingInput.InletConcentration,
-                governingInput.HenrysLawConstant,
-                governing.NTU,
-                governing.HTU);
+                pollutant.InletConcentration,
+                pollutant.HenrysLawConstant,
+                ntuResult.NTU,
+                ntuResult.HTU);
 
             return result;
-        }
-
-        // ════════════════════════════════════════════════════════════
-        //  Phase 3 — per-pollutant sizing + rating. Extracted so
-        //  RunPackedTowerCalc can loop it across every pollutant row
-        //  instead of only ever looking at vm.Pollutants[0].
-        // ════════════════════════════════════════════════════════════
-        private PollutantSizingResult SizePollutant(
-            PollutantInputViewModel pollutant,
-            CreateDesignViewModel vm,
-            double crossSection,
-            double liquidFlowM3Hr,
-            double gasMassVelocity,
-            double liquidMassVelocity)
-        {
-            // Phase 1: real per-species Van't Hoff coefficient + NRTL
-            // activity correction when data/wiring exists; falls back to
-            // the original hardcoded tempCoeff=2000 / gamma=1 otherwise.
-            double henrysTemp = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
-
-            // Phase 2: Onda kGa/kLa from Wilke-Chang + Fuller diffusivity
-            // when DiffusionProperty data exists; hard fallback to
-            // DefaultGasFilmCoeff/DefaultLiquidFilmCoeff otherwise.
-            var filmCoeffs = GetEffectiveFilmCoefficients(
-                pollutant, vm, gasMassVelocity, liquidMassVelocity, vm.InletTemperature + 273.15);
-
-            var ntuResult = CalculateNtuHtu(
-                inletConcentrationPpm: pollutant.InletConcentration,
-                outletConcentrationPpm: pollutant.TargetOutletConcentration,
-                henrysLawConstant: henrysTemp,
-                liquidToGasRatioMolar: vm.LiquidToGasRatio,
-                gasFilmCoeff: filmCoeffs.GasFilmCoeff,
-                liquidFilmCoeff: filmCoeffs.LiquidFilmCoeff,
-                gasMassVelocity: gasMassVelocity,
-                gasDensityKgM3: vm.GasDensity,
-                physicallyDerivedCoefficients: filmCoeffs.PhysicallyDerived
-            );
-
-            var sizing = new PollutantSizingResult
-            {
-                PollutantType = pollutant.PollutantType,
-                InletConcentrationPpm = pollutant.InletConcentration,
-                TargetOutletConcentrationPpm = pollutant.TargetOutletConcentration,
-                PackingHeightM = Math.Round(ntuResult.PackingHeight, 2),
-                NTU = Math.Round(ntuResult.NTU, 2),
-                HTU = Math.Round(ntuResult.HTU, 2),
-                AbsorptionFactor = Math.Round(ntuResult.AbsorptionFactor, 3),
-                RemovalEfficiency = Math.Round(ntuResult.RemovalEfficiency, 2),
-                PhysicallyDerivedFilmCoefficients = filmCoeffs.PhysicallyDerived,
-                MinLGRatio = Math.Round(
-                    CalculateMinimumLiquidGasRatio(
-                        pollutant.InletConcentration, pollutant.TargetOutletConcentration, henrysTemp), 3)
-            };
-
-            // Phase 3: discretized layer-by-layer rating check. Runs in
-            // addition to NTU/HTU above — never replaces it.
-            var rating = RunLayerRatingCheck(
-                sizing.PackingHeightM, pollutant, vm, crossSection, liquidFlowM3Hr,
-                gasMassVelocity, liquidMassVelocity);
-
-            sizing.PhysicallyDerivedRating = rating.Success;
-            sizing.RatedOutletConcentrationPpm = rating.RatedOutletConcentrationPpm;
-            sizing.RatedRemovalEfficiency = rating.RatedRemovalEfficiency;
-            sizing.LiquidOutletTemperatureK = rating.LiquidOutletTemperatureK;
-            sizing.LayerRatingConverged = rating.Converged;
-
-            return sizing;
-        }
-
-        // ════════════════════════════════════════════════════════════
-        //  Phase 3 — Σy_i = 1 gas composition (Composition.FromValues).
-        //  Any pollutant with no ComponentProperties code falls back to
-        //  a synthetic "POLLUTANT_n" code rather than dropping it, same
-        //  never-silently-lose-input stance as the rest of this file.
-        //  Returns null (with a warning) only on a genuine data problem
-        //  — e.g. two rows resolving to the same species code — never
-        //  on a merely-unmapped one.
-        // ════════════════════════════════════════════════════════════
-        private Composition? BuildGasComposition(List<PollutantInputViewModel> pollutants, out string? warning)
-        {
-            warning = null;
-            try
-            {
-                var values = new List<(string Code, double Value)>();
-                double pollutantFractionSum = 0;
-                int unmappedIndex = 0;
-
-                foreach (var p in pollutants)
-                {
-                    string? code = _componentLookup?.GetByPollutantId(p.PollutantType)?.Code;
-                    if (code == null) code = $"POLLUTANT_{unmappedIndex++}";
-
-                    double y = Math.Max(p.InletConcentration, 0.0) / 1_000_000.0;
-                    values.Add((code, y));
-                    pollutantFractionSum += y;
-                }
-
-                double balance = 1.0 - pollutantFractionSum;
-                if (balance <= 0)
-                {
-                    warning = "Pollutant inlet concentrations sum to ≥100% of the gas stream — " +
-                              "composition was normalized; treat this as a data-entry check.";
-                    balance = 1e-6;
-                }
-                values.Add(("BULK_CARRIER", balance));
-
-                return Composition.FromValues(values);
-            }
-            catch (Exception ex)
-            {
-                // e.g. two pollutant rows resolving to the same species
-                // code — a real data problem, not something to paper over.
-                warning = ex.Message;
-                return null;
-            }
         }
 
         // ════════════════════════════════════════════════════════════
@@ -560,10 +430,7 @@ namespace WetScrubber.Services
     double gasFilmCoeff,
     double liquidFilmCoeff,
     double gasMassVelocity,     // NEW (kg/m²·s)
-    double gasDensityKgM3,      // NEW
-    bool physicallyDerivedCoefficients = false // Phase 2: true when gasFilmCoeff/
-                                               // liquidFilmCoeff came from Onda,
-                                               // not DefaultGasFilmCoeff/DefaultLiquidFilmCoeff
+    double gasDensityKgM3       // NEW
 )
         {
             // ─────────────────────────────────────────────
@@ -601,32 +468,26 @@ namespace WetScrubber.Services
                 henrysLawConstant / Math.Max(liquidFilmCoeff, 0.001)
             );
 
-            // ─────────────────────────────────────────────
-            // 5. HTU calculation: HTU = G / (Kya * ρg)
-            // ─────────────────────────────────────────────
-            double Kya;
-            double HTU;
+            // ⚠️  LEGACY SCALE CORRECTION (Phase 1, before Onda)
+            // This *100 scale factor was a band-aid before physically-derived
+            // film coefficients (Onda, Phase 2). With rate-based calcs
+            // (CalculateNtuHtuRateBased), it's gone — the HTU falls out
+            // naturally from proper kg/kl units. Keeping it here for
+            // backward compatibility with any fixed-coefficient designs
+            // still in the database. If HTU*NTU looks wrong, migrate to
+            // rate-based path instead of tweaking the scale factor.
+            double Kya = KGa * 100;
 
-            if (physicallyDerivedCoefficients)
-            {
-                // Phase 2: gasFilmCoeff/liquidFilmCoeff are real kGa/kLa
-                // (kmol/m3·hr·kPa, 1/hr) from Onda — no scale correction,
-                // no clamp. If HTU comes out unreasonable now, that means
-                // the derivation upstream is wrong and needs fixing at
-                // the root, not band-aiding here again (see roadmap
-                // Phase 2 sequencing note).
-                Kya = KGa;
-                HTU = gasMassVelocity / Math.Max(Kya * gasDensityKgM3, 1e-6);
-            }
-            else
-            {
-                // Legacy path — unchanged for any caller still on
-                // DefaultGasFilmCoeff/DefaultLiquidFilmCoeff (no
-                // DiffusionProperty data wired for this pollutant yet).
-                Kya = KGa * 100;
-                HTU = gasMassVelocity / Math.Max(Kya * gasDensityKgM3, 0.001);
-                HTU = Math.Min(Math.Max(HTU, 0.5), 2.0);
-            }
+            // ─────────────────────────────────────────────
+            // 5. HTU calculation (FIXED-COEFFICIENT LEGACY)
+            // HTU = G / (Kya * ρg)
+            // ─────────────────────────────────────────────
+            double HTU = gasMassVelocity / Math.Max(Kya * gasDensityKgM3, 0.001);
+
+            // Clamp to realistic range (0.5-2.0 m) — another legacy
+            // workaround. Rate-based calcs don't need this; physical
+            // derivation self-constrains.
+            HTU = Math.Min(Math.Max(HTU, 0.5), 2.0);
 
             // ─────────────────────────────────────────────
             // 6. Packing height
@@ -642,6 +503,139 @@ namespace WetScrubber.Services
                 RemovalEfficiency = Math.Min((1.0 - y2 / y1) * 100.0, 99.99)
             };
         }
+        // ════════════════════════════════════════════════════════════
+        //  PHASE 2 — rate-based NTU/HTU using Onda-derived film
+        //  coefficients. Clean unit cancellation (kmol/m²·s ÷ kmol/m³·s
+        //  = m) — no scale hack, no clamp. If this produces an
+        //  unphysical number, the fix is correcting the Onda inputs
+        //  feeding it, not adding a fudge factor back in.
+        // ════════════════════════════════════════════════════════════
+        public NtuHtuResult CalculateNtuHtuRateBased(
+            double inletConcentrationPpm,
+            double outletConcentrationPpm,
+            double henrysLawConstant,
+            double liquidToGasRatioMolar,
+            double gasMolarVelocityKmolM2S,
+            double overallKGaKmolM3S)
+        {
+            double y1 = Math.Max(inletConcentrationPpm, 0.001) / 1e6;
+            double y2 = Math.Max(outletConcentrationPpm, 0.0001) / 1e6;
+
+            double A = liquidToGasRatioMolar / Math.Max(henrysLawConstant, 0.001);
+
+            double NTU;
+            if (Math.Abs(A - 1.0) < 0.01)
+            {
+                NTU = 2.0 * (y1 - y2) / (y1 + y2);
+            }
+            else
+            {
+                double term = (y1 / y2) * (1 - 1.0 / A) + 1.0 / A;
+                NTU = (A / (A - 1)) * Math.Log(Math.Max(term, 0.0001));
+            }
+            NTU = Math.Max(NTU, 0.5);
+
+            double HTU = gasMolarVelocityKmolM2S / Math.Max(overallKGaKmolM3S, 1e-9);
+            double packingHeight = NTU * HTU;
+
+            return new NtuHtuResult
+            {
+                NTU = NTU,
+                HTU = HTU,
+                PackingHeight = packingHeight,
+                AbsorptionFactor = A,
+                RemovalEfficiency = Math.Min((1.0 - y2 / y1) * 100.0, 99.99)
+            };
+        }
+
+        private sealed class RateBasedFilmResult
+        {
+            public double GasMolarVelocityKmolM2S { get; set; }
+            public double OverallKGaKmolM3S { get; set; }
+        }
+
+        private RateBasedFilmResult? TryComputeOndaFilmCoefficients(
+            PollutantInputViewModel pollutant,
+            CreateDesignViewModel vm,
+            double gasMassVelocity,
+            double liquidMassVelocity,
+            double henrysLawConstant,
+            string packingCode)
+        {
+            if (_diffusionLookup == null || _componentLookup == null || _packingLookup == null)
+                return null;
+
+            try
+            {
+                string? pollutantCode = _componentLookup.GetByPollutantId(pollutant.PollutantType)?.Code;
+                if (pollutantCode == null)
+                    return null;
+
+                var soluteData = _diffusionLookup.GetByCode(pollutantCode);
+                var solventData = _diffusionLookup.GetByCode("H2O");
+                var packingData = _packingLookup.GetByCode(packingCode);
+
+                if (soluteData?.MolarVolumeAtBoilingPointCm3Mol == null
+                    || solventData?.AssociationFactor == null
+                    || packingData == null)
+                    return null; // Missing data — fall back to fixed coeffs
+
+                double liquidTempK = vm.LiquidTemperature + 273.15;
+                double gasTempK = vm.InletTemperature + 273.15;
+
+                double dL = WilkeChangDiffusivity.Calculate(
+                    soluteMolarVolumeCm3Mol: soluteData.MolarVolumeAtBoilingPointCm3Mol.Value,
+                    solventAssociationFactor: solventData.AssociationFactor.Value,
+                    solventMolecularWeightGMol: SolventMolecularWeightGMol,
+                    solventViscosityCp: vm.LiquidViscosity,
+                    temperatureK: liquidTempK);
+
+                double dG = FullerGasDiffusivity.Calculate(
+                    codeA: pollutantCode, molecularWeightA: pollutant.MolecularWeight,
+                    codeB: "Air", molecularWeightB: 28.97,
+                    temperatureK: gasTempK, pressureKPa: vm.InletPressure / 1000.0);
+
+                var onda = OndaMassTransferCorrelation.Calculate(
+                    packingSpecificAreaM2M3: packingData.SpecificAreaM2M3,
+                    nominalPackingSizeM: packingData.NominalSizeM,
+                    criticalSurfaceTensionNM: packingData.CriticalSurfaceTensionNM,
+                    liquidSurfaceTensionNM: DefaultLiquidSurfaceTensionNM,
+                    liquidMassVelocityKgM2S: liquidMassVelocity,
+                    gasMassVelocityKgM2S: gasMassVelocity,
+                    liquidDensityKgM3: vm.LiquidDensity,
+                    gasDensityKgM3: vm.GasDensity,
+                    liquidViscosityPas: vm.LiquidViscosity / 1000.0,
+                    gasViscosityPas: vm.GasViscosity,
+                    liquidDiffusivityM2S: dL,
+                    gasDiffusivityM2S: dG,
+                    temperatureK: gasTempK,
+                    pressureKPa: vm.InletPressure / 1000.0);
+
+                // Convert film coefficients to mole-fraction basis so
+                // they combine with this engine's y = H*x Henry's Law
+                // convention (see GetEffectiveHenrysLawConstant).
+                double kGaY = onda.GasFilmCoeffKmolM2SPa * vm.InletPressure * onda.WettedAreaM2M3;
+                double kLaX = onda.LiquidFilmCoeffMS * WaterMolarDensityKmolM3 * onda.WettedAreaM2M3;
+
+                double overallKGa = 1.0 / (
+                    1.0 / Math.Max(kGaY, 1e-9) + henrysLawConstant / Math.Max(kLaX, 1e-9));
+
+                double soluteMoleFraction = pollutant.InletConcentration / 1_000_000.0;
+                double mixtureMW = soluteMoleFraction * pollutant.MolecularWeight
+                    + (1 - soluteMoleFraction) * 28.97;
+
+                return new RateBasedFilmResult
+                {
+                    GasMolarVelocityKmolM2S = gasMassVelocity / mixtureMW,
+                    OverallKGaKmolM3S = overallKGa
+                };
+            }
+            catch
+            {
+                return null; // never let a Phase 2 gap break a working design
+            }
+        }
+
         public double CalculateMinimumLiquidGasRatio(
             double inletPpm,
             double outletPpm,
@@ -741,14 +735,13 @@ namespace WetScrubber.Services
         //  same never-break-an-existing-design contract as
         //  GetActualGasDensity.
         // ════════════════════════════════════════════════════════════
-        private double GetEffectiveHenrysLawConstant(
-            PollutantInputViewModel pollutant, double gasTemperatureC, double? xSoluteOverride = null)
+        private double GetEffectiveHenrysLawConstant(PollutantInputViewModel pollutant, double gasTemperatureC)
         {
             string? pollutantCode = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
 
             double tempCoeff = GetVanTHoffTempCoeff(pollutantCode, defaultTempCoeff: 2000);
             double H_T = GetHenrysLawConstant(pollutant.HenrysLawConstant, tempCoeff, gasTemperatureC);
-            double gamma = GetSoluteActivityCoefficient(pollutantCode, pollutant.InletConcentration, xSoluteOverride);
+            double gamma = GetSoluteActivityCoefficient(pollutantCode, pollutant.InletConcentration);
 
             // Modified Henry's Law with an activity correction:
             // y* = gamma_solute * H * x. gamma > 1 (positive deviation)
@@ -782,25 +775,20 @@ namespace WetScrubber.Services
             }
         }
 
-        private double GetSoluteActivityCoefficient(
-            string? pollutantCode, double inletConcentrationPpm, double? xSoluteOverride = null)
+        private double GetSoluteActivityCoefficient(string? pollutantCode, double inletConcentrationPpm)
         {
             if (_activityModel == null || _nrtlLookup == null || pollutantCode == null)
                 return 1.0; // ideal solution
 
             try
             {
-                // xSoluteOverride = real per-layer liquid mole fraction
-                // from PackedTowerLayerSolver's operating line (Phase 3
-                // rating pass). Falls back to the ppm proxy only when no
-                // real liquid-balance value exists yet (e.g. the initial
-                // NTU/HTU sizing pass, which runs before any layer march).
-                // Capped at a dilute value deliberately either way: this
-                // is the regime scrubbers normally operate in and where
-                // NRTL's correction is best-behaved.
-                double xSolute = xSoluteOverride
-                    ?? Math.Min(Math.Max(inletConcentrationPpm, 0.0) / 1_000_000.0, 0.05);
-                xSolute = Math.Min(Math.Max(xSolute, 0.0), 0.05);
+                // Rough proxy for liquid-phase solute mole fraction from
+                // the gas-phase inlet ppm — a real value needs the
+                // liquid mass balance (Phase 3). Capped at a dilute
+                // value deliberately: this is the regime scrubbers
+                // normally operate in and where NRTL's correction is
+                // best-behaved.
+                double xSolute = Math.Min(Math.Max(inletConcentrationPpm, 0.0) / 1_000_000.0, 0.05);
 
                 bool built = LiquidActivityBuilder.TryBuildWaterSoluteBinary(
                     pollutantCode, xSolute, _nrtlLookup,
@@ -815,153 +803,6 @@ namespace WetScrubber.Services
             catch
             {
                 return 1.0;
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════
-        //  PHASE 2 — Onda kGa/kLa, with a hard fallback to
-        //  DefaultGasFilmCoeff/DefaultLiquidFilmCoeff. Mirrors
-        //  GetActualGasDensity's contract exactly: any missing lookup,
-        //  missing DiffusionProperty row, or solver exception returns
-        //  the pre-Phase-2 constants unchanged, PhysicallyDerived=false.
-        // ════════════════════════════════════════════════════════════
-        private const double WaterMolecularWeight = 18.015; // g/mol
-
-        private (double GasFilmCoeff, double LiquidFilmCoeff, bool PhysicallyDerived)
-            GetEffectiveFilmCoefficients(
-                PollutantInputViewModel pollutant,
-                CreateDesignViewModel vm,
-                double gasMassVelocityKgM2S,
-                double liquidMassVelocityKgM2S,
-                double temperatureK)
-        {
-            var fallback = (DefaultGasFilmCoeff, DefaultLiquidFilmCoeff, false);
-
-            if (_diffusionLookup == null || _componentLookup == null)
-                return fallback;
-
-            try
-            {
-                var component = _componentLookup.GetByPollutantId(pollutant.PollutantType);
-                if (component == null) return fallback;
-
-                var solute = _diffusionLookup.GetByComponentCode(component.Code);
-                var solvent = _diffusionLookup.GetByComponentCode(LiquidActivityBuilder.WaterCode);
-
-                double? dLiquidCm2S = WilkeChangDiffusivity.TryCalculate(
-                    solute, solvent, WaterMolecularWeight, vm.LiquidViscosity, temperatureK);
-                double? dGasCm2S = GasPhaseDiffusivity.TryCalculate(
-                    solute, component.MolecularWeight, temperatureK, vm.InletPressure / 1000.0);
-
-                if (dLiquidCm2S == null || dGasCm2S == null) return fallback;
-
-                var packing = ResolvePacking(vm);
-                var onda = OndaMassTransferCorrelation.Calculate(
-                    gasMassVelocityKgM2S: gasMassVelocityKgM2S,
-                    liquidMassVelocityKgM2S: liquidMassVelocityKgM2S,
-                    gasDensityKgM3: vm.GasDensity,
-                    liquidDensityKgM3: vm.LiquidDensity,
-                    gasViscosityPas: vm.GasViscosity,
-                    liquidViscosityPas: vm.LiquidViscosity / 1000.0, // mPa·s -> Pa·s
-                    gasDiffusivityM2S: GasPhaseDiffusivity.CentimeterSqPerSecToMeterSqPerSec(dGasCm2S.Value),
-                    liquidDiffusivityM2S: WilkeChangDiffusivity.CentimeterSqPerSecToMeterSqPerSec(dLiquidCm2S.Value),
-                    packingSurfaceAreaM2M3: packing.SurfaceAreaM2M3,
-                    voidFraction: packing.VoidFraction,
-                    temperatureK: temperatureK,
-                    pressureKPa: vm.InletPressure / 1000.0);
-
-                return (onda.GasFilmCoeff, onda.LiquidFilmCoeff, true);
-            }
-            catch
-            {
-                // Same reasoning as GetActualGasDensity's catch: a Phase 2
-                // data/solver gap must never break a design that worked
-                // before Phase 2 existed.
-                return fallback;
-            }
-        }
-
-        // ════════════════════════════════════════════════════════════
-        //  PHASE 3 — PackedTowerLayerSolver rating check. Same
-        //  all-optional / hard-fallback-on-any-gap contract as Phase
-        //  1/2: missing pollutant code, a solver exception, or a
-        //  non-positive packing height returns Success = false and the
-        //  caller's NTU/HTU-only result stands as the only answer.
-        // ════════════════════════════════════════════════════════════
-        private const double DefaultLiquidSpecificHeatKJKgK = 4.18; // water; per-species Cp unsourced today
-
-        private LayerRatingResult RunLayerRatingCheck(
-            double packingHeightM,
-            PollutantInputViewModel pollutant,
-            CreateDesignViewModel vm,
-            double crossSectionM2,
-            double liquidFlowM3Hr,
-            double gasMassVelocityKgM2S,
-            double liquidMassVelocityKgM2S)
-        {
-            var failure = new LayerRatingResult { Success = false };
-            if (packingHeightM <= 0) return failure;
-
-            try
-            {
-                string? pollutantCode = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
-
-                double inletTempK = vm.InletTemperature + 273.15;
-                double totalPressureKPa = vm.InletPressure / 1000.0;
-
-                // Molar fluxes per unit cross-section (ideal-gas basis for
-                // the bulk carrier gas — same basis gasMassVelocity uses).
-                double gasMolarFluxKmolM2Hr =
-                    (totalPressureKPa * vm.ActualFlowRate) / (GasConstant * inletTempK) / crossSectionM2;
-                double liquidMolarFluxKmolM2Hr =
-                    (liquidFlowM3Hr * vm.LiquidDensity / WaterMolecularWeight) / crossSectionM2;
-                double liquidMassFluxKgM2Hr =
-                    (liquidFlowM3Hr * vm.LiquidDensity) / crossSectionM2;
-
-                double? heatOfSolutionKJmol = null;
-                if (_henrysLawLookup != null && pollutantCode != null)
-                    heatOfSolutionKJmol = _henrysLawLookup.GetByPollutantCode(pollutantCode)?.HeatOfSolutionKJmol;
-
-                var solverResult = PackedTowerLayerSolver.Solve(
-                    packingHeightM: packingHeightM,
-                    layerCount: 20,
-                    gasMolarFluxKmolM2Hr: gasMolarFluxKmolM2Hr,
-                    liquidMolarFluxKmolM2Hr: liquidMolarFluxKmolM2Hr,
-                    liquidMassFluxKgM2Hr: liquidMassFluxKgM2Hr,
-                    liquidSpecificHeatKJKgK: DefaultLiquidSpecificHeatKJKgK,
-                    inletGasMoleFraction: pollutant.InletConcentration / 1_000_000.0,
-                    inletLiquidMoleFraction: 0.0,
-                    outletGasMoleFractionTarget: pollutant.TargetOutletConcentration / 1_000_000.0,
-                    inletLiquidTemperatureK: inletTempK,
-                    heatOfSolutionKJmol: heatOfSolutionKJmol,
-                    totalPressureKPa: totalPressureKPa,
-                    // Both delegates re-derive from local T (and, for
-                    // Henry's constant, local liquid x) so the march
-                    // captures the thermal + activity coupling the
-                    // isothermal NTU/HTU calc cannot.
-                    localGasFilmCoeff: tK => GetEffectiveFilmCoefficients(
-                        pollutant, vm, gasMassVelocityKgM2S, liquidMassVelocityKgM2S, tK).GasFilmCoeff,
-                    localHenrysConstant: (tK, x) => GetEffectiveHenrysLawConstant(pollutant, tK - 273.15, x));
-
-                double inletY = pollutant.InletConcentration / 1_000_000.0;
-
-                return new LayerRatingResult
-                {
-                    Success = true,
-                    RatedOutletConcentrationPpm = Math.Round(solverResult.OutletGasMoleFraction * 1_000_000.0, 3),
-                    RatedRemovalEfficiency = Math.Round(
-                        100.0 * (1.0 - solverResult.OutletGasMoleFraction / Math.Max(inletY, 1e-12)), 2),
-                    LiquidOutletTemperatureK = Math.Round(solverResult.OutletLiquidTemperatureK, 2),
-                    Converged = solverResult.Converged,
-                    IterationsUsed = solverResult.IterationsUsed
-                };
-            }
-            catch
-            {
-                // Same reasoning as GetActualGasDensity's catch: a Phase 3
-                // data/solver gap must never break a design that worked
-                // before Phase 3 existed. NTU/HTU result stands alone.
-                return failure;
             }
         }
 
@@ -1041,63 +882,6 @@ namespace WetScrubber.Services
 
         // Sensitivity analysis points for chart
         public List<SensitivityPoint> SensitivityPoints { get; set; } = new();
-
-        // ── Phase 3 — PackedTowerLayerSolver rating check ───────────
-        // Mirrors the governing pollutant's entry in PollutantResults.
-        // PhysicallyDerivedRating = false means the solver didn't run
-        // (missing data or a gap) — trust NTU/HTU-based fields only.
-        public bool PhysicallyDerivedRating { get; set; }
-        public double RatedOutletConcentrationPpm { get; set; }
-        public double RatedRemovalEfficiency { get; set; }
-        public double LiquidOutletTemperatureK { get; set; }
-        public bool LayerRatingConverged { get; set; }
-        public int LayerRatingIterations { get; set; }
-
-        // ── Phase 3 — multi-pollutant ───────────────────────────────
-        // GasMoleFractions is the Σy_i=1 inlet composition (pollutants +
-        // a synthetic "BULK_CARRIER" balance). CompositionWarning is set
-        // instead of throwing on a genuine data problem (e.g. duplicate
-        // species codes). PollutantResults holds one entry per pollutant
-        // row; the rest of this DTO mirrors whichever entry has
-        // IsGoverning = true (tallest required packing height).
-        public IReadOnlyDictionary<string, double>? GasMoleFractions { get; set; }
-        public string? CompositionWarning { get; set; }
-        public int GoverningPollutantType { get; set; }
-        public List<PollutantSizingResult> PollutantResults { get; set; } = new();
-    }
-
-    public sealed class LayerRatingResult
-    {
-        public bool Success { get; set; }
-        public double RatedOutletConcentrationPpm { get; set; }
-        public double RatedRemovalEfficiency { get; set; }
-        public double LiquidOutletTemperatureK { get; set; }
-        public bool Converged { get; set; }
-        public int IterationsUsed { get; set; }
-    }
-
-    public sealed class PollutantSizingResult
-    {
-        public int PollutantType { get; set; }
-        public double InletConcentrationPpm { get; set; }
-        public double TargetOutletConcentrationPpm { get; set; }
-        public bool IsGoverning { get; set; }
-
-        // NTU/HTU sizing
-        public double PackingHeightM { get; set; }
-        public double NTU { get; set; }
-        public double HTU { get; set; }
-        public double AbsorptionFactor { get; set; }
-        public double RemovalEfficiency { get; set; }
-        public double MinLGRatio { get; set; }
-        public bool PhysicallyDerivedFilmCoefficients { get; set; }
-
-        // Phase 3 layer rating
-        public bool PhysicallyDerivedRating { get; set; }
-        public double RatedOutletConcentrationPpm { get; set; }
-        public double RatedRemovalEfficiency { get; set; }
-        public double LiquidOutletTemperatureK { get; set; }
-        public bool LayerRatingConverged { get; set; }
     }
 
     public class NtuHtuResult

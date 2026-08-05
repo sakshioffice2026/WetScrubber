@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using WetScrubber.Business.AI;
 using WetScrubber.Business.Diagnostics;
+using WetScrubber.Business.MassTransfer;
 using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Database;
 using WetScrubber.Database.Enums;
@@ -36,29 +37,19 @@ namespace WetScrubber.Controllers
             // the pollutant; per-species Van't Hoff Henry's Law wherever
             // HenrysLawData.HeatOfSolutionKJmol is populated; NRTL
             // activity correction wherever NrtlBinaryParameters has a
-            // (Water, pollutant) pair. Every one of these falls back to
-            // its pre-Phase-1 behavior on any miss (see
-            // GetActualGasDensity / GetEffectiveHenrysLawConstant), so
-            // this is safe to switch on by default rather than gating
-            // it behind a feature flag.
-            // Phase 2: Onda kGa/kLa (Wilke-Chang + Fuller diffusivity)
-            // wherever DiffusionProperties has the pollutant + water rows
-            // seeded (see ApplicationDbContext Phase 2 seed data). Falls
-            // back to DefaultGasFilmCoeff/DefaultLiquidFilmCoeff on any
-            // miss — see GetEffectiveFilmCoefficients — so this is safe
-            // to switch on by default, same as the Phase 1 args above.
-            // Phase 5: packing vendor library — vm.PackingCode resolved
-            // against PackingMaterials wherever a design selects one.
-            // Falls back to the original hardcoded Pall Ring 50mm
-            // constants on null/blank/not-found — see ResolvePacking.
+            // (Water, pollutant) pair. Phase 2: rate-based kG/kL from
+            // diffusivity + Onda correlation wherever DiffusionProperty
+            // + Packing data exists. Every gap falls back to pre-Phase
+            // behavior (see TryComputeOndaFilmCoefficients), safe to
+            // switch on by default.
             _engine = new ScrubberCalculationEngine(
                 new PengRobinsonEos(),
                 new EfComponentPropertyLookup(dbContext),
                 new EfHenrysLawLookup(dbContext),
                 new NrtlActivityModel(),
                 new EfNrtlBinaryParameterLookup(dbContext),
-                new EfDiffusionPropertyLookup(dbContext),
-                new EfPackingMaterialLookup(dbContext));
+                new EfDiffusionCoefficientLookup(dbContext),
+                new EfPackingLookup(dbContext));
             _diagnosticsEngine = diagnosticsEngine;
             _reportRepository = reportRepository;
             _chemistryPredictor = chemistryPredictor;
@@ -870,7 +861,7 @@ namespace WetScrubber.Controllers
             }).ToList();
         }
 
-        // Fill pollutant + liquid + packing dropdowns from the master tables.
+        // Fill pollutant + liquid dropdowns from the master tables.
         // Works for CreateDesignViewModel and its subclass EditDesignViewModel.
         private void PopulateMasterLists(CreateDesignViewModel vm)
         {
@@ -878,8 +869,8 @@ namespace WetScrubber.Controllers
                 .Where(p => p.IsActive).OrderBy(p => p.Id).ToList();
             vm.LiquidOptions = _dbContext.ScrubbingLiquids
                 .Where(l => l.IsActive).OrderBy(l => l.Id).ToList();
-            vm.PackingOptions = _dbContext.PackingMaterials
-                .Where(p => p.IsActive).OrderBy(p => p.PackingType).ThenBy(p => p.NominalSizeMm).ToList();
+            vm.PackingOptions = _dbContext.Packings
+                .Where(pk => pk.IsActive).OrderBy(pk => pk.Code).ToList();
         }
 
         private CreateDesignViewModel BuildCreateViewModel(ScrubberDesign d)

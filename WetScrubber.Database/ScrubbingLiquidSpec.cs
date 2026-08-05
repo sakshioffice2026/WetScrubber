@@ -21,6 +21,12 @@ namespace WetScrubber.Database
         public double Viscosity { get; set; } = 1;
         public double LiquidToGasRatio { get; set; } = 2;
 
+        // Phase 5 FGD slurry inputs. Density and viscosity above describe the
+        // carrier liquid; the calculation engine derives slurry hydraulics.
+        public bool IsLimestoneSlurry { get; set; }
+        public double SolidsLoadingWtPercent { get; set; }
+        public double LimestoneParticleDiameterMicron { get; set; } = 50;
+
         [ForeignKey(nameof(LiquidType))]
         public virtual ScrubbingLiquid? ScrubbingLiquid { get; set; }
 

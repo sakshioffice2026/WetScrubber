@@ -25,6 +25,9 @@ namespace WetScrubber.Database
 
         public ConstructionMaterial InternalMaterial { get; set; } = ConstructionMaterial.PP;
 
+        [MaxLength(30)]
+        public string? PackingCode { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

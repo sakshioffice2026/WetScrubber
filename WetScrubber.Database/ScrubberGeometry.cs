@@ -30,6 +30,14 @@ namespace WetScrubber.Database
         public double MinLGRatio { get; set; }
         public double GasVelocity { get; set; }
 
+        [MaxLength(30)]
+        public string? PackingCode { get; set; }
+        [MaxLength(100)]
+        public string? PackingSizingMethod { get; set; }
+        public bool IsLimestoneSlurry { get; set; }
+        public double SolidsLoadingWtPercent { get; set; }
+        public double SlurryApparentViscosityMPas { get; set; }
+
         // ── Navigation ───────────────────────────────────────────
         public ScrubberDesign Design { get; set; } = null!;
     }

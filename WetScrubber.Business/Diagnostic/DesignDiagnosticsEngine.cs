@@ -63,6 +63,7 @@ namespace WetScrubber.Business.Diagnostics
             EvaluatePressureDrop(metrics, findings);
             EvaluateRemovalEfficiency(metrics, findings);
 
+            EvaluatePackingAndSlurryProvenance(metrics, findings);
             return findings;
         }
 
@@ -234,6 +235,44 @@ namespace WetScrubber.Business.Diagnostics
                     SuggestedValueLabel = suggested is double s
                         ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
                         : null
+                });
+            }
+        }
+        private static void EvaluatePackingAndSlurryProvenance(DesignMetrics m, List<DesignFinding> findings)
+        {
+            if (m.ScrubberType == "Packed Tower" && string.IsNullOrWhiteSpace(m.PackingCode))
+            {
+                findings.Add(new DesignFinding
+                {
+                    Code = "PACKING_SELECTION_MISSING",
+                    Severity = FindingSeverity.Warning,
+                    Symptom = "No packing selection is stored with this design.",
+                    Diagnosis = "The calculation used the legacy default packing, so the result cannot be traced to a selected catalog record.",
+                    Recommendation = "Select a packing material and re-run the calculation before engineering review."
+                });
+            }
+
+            if (m.PackingSizingMethod?.Contains("nominal HETP") == true)
+            {
+                findings.Add(new DesignFinding
+                {
+                    Code = "STRUCTURED_PACKING_HETP_ESTIMATE",
+                    Severity = FindingSeverity.Info,
+                    Symptom = "Structured-packing height was estimated from nominal HETP.",
+                    Diagnosis = "Nominal HETP is a vendor/application-specific performance value, not a universal correlation.",
+                    Recommendation = "Confirm HETP against the selected vendor's hydraulic and mass-transfer data at the design loads."
+                });
+            }
+
+            if (m.IsLimestoneSlurry && m.SolidsLoadingWtPercent >= 25.0)
+            {
+                findings.Add(new DesignFinding
+                {
+                    Code = "LIMESTONE_SLURRY_HIGH_SOLIDS",
+                    Severity = FindingSeverity.Warning,
+                    Symptom = $"Limestone solids loading is {m.SolidsLoadingWtPercent:F1} wt%.",
+                    Diagnosis = "High solids loading raises apparent viscosity and increases plugging, settling, and slurry-distribution risk.",
+                    Recommendation = "Verify recirculation velocity, agitator duty, nozzle passage size, and vendor fouling limits."
                 });
             }
         }

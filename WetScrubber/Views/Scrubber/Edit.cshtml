@@ -372,6 +372,21 @@
                     <span class="field-hint">Only used for Packed Tower sizing; ignored for other scrubber types.</span>
                 </div>
 
+                <div class="form-group">
+                    <label><input asp-for="IsLimestoneSlurry" /> Limestone FGD slurry</label>
+                    <span class="field-hint">Applies slurry density and apparent-viscosity corrections to hydraulic calculations.</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="SolidsLoadingWtPercent">Limestone solids <span class="unit">(wt%)</span></label>
+                    <input asp-for="SolidsLoadingWtPercent" type="number" step="0.1" placeholder="15" />
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="LimestoneParticleDiameterMicron">Limestone particle size <span class="unit">(micron)</span></label>
+                    <input asp-for="LimestoneParticleDiameterMicron" type="number" step="1" placeholder="50" />
+                </div>
+
             </div>
         </div>
     </div>

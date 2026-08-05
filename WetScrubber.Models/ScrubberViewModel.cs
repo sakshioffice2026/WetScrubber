@@ -26,12 +26,6 @@ namespace WetScrubber.Models
         [Display(Name = "Scrubber Type")]
         public ScrubberType ScrubberType { get; set; } = ScrubberType.PackedTower;
 
-        // Exposes the protected object.MemberwiseClone() for callers outside
-        // this class (e.g. PackedTowerScrubberUnit.CloneTemplate) that need a
-        // shallow copy per flowsheet/recycle pass without mutating the shared
-        // template instance.
-        public CreateDesignViewModel Clone() => (CreateDesignViewModel)MemberwiseClone();
-
         // ── Step 2: Gas stream ────────────────────────────────────
         [Required(ErrorMessage = "Normal flow rate is required")]
         [Range(1, 10000000, ErrorMessage = "Must be between 1 and 10,000,000")]
@@ -77,7 +71,6 @@ namespace WetScrubber.Models
         // ── Master dropdown sources (populated by the controller) ──
         public List<Pollutant> PollutantOptions { get; set; } = new();
         public List<ScrubbingLiquid> LiquidOptions { get; set; } = new();
-        public List<PackingMaterial> PackingOptions { get; set; } = new();
 
         [Range(0, 50)]
         [Display(Name = "Concentration (% wt)")]
@@ -104,13 +97,10 @@ namespace WetScrubber.Models
         [Display(Name = "L/G Ratio (L/m³ gas)")]
         public double LiquidToGasRatio { get; set; } = 3.0;
 
-        // ── Step 4b: Packing selection (Phase 5) ─────────────────
-        // Joins PackingMaterial.Code. Null/blank = keep using the
-        // engine's historical hardcoded Pall Ring 50mm default (see
-        // ScrubberCalculationEngine.ResolvePacking) — same "unselected
-        // is not an error" contract the rest of Phase 5 uses.
+        // ── Phase 2: Packing type (for Onda rate-based correlation) ──
         [Display(Name = "Packing Type")]
-        public string? PackingCode { get; set; }
+        public string PackingCode { get; set; } = "PallRing50";  // FK -> packing.Code, default to common choice
+        public List<Packing> PackingOptions { get; set; } = new();  // populated by controller
 
         // ── Step 5: Construction materials ───────────────────────
         [Display(Name = "Shell Material")]
