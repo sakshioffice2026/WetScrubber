@@ -64,7 +64,7 @@ namespace WetScrubber.Business.Conservation
             double? heatOfSolutionKJmol,
             double totalPressureKPa,
             Func<double, double> localGasFilmCoeff, // temperatureK -> KGa, kmol/(m3·hr·kPa)
-            Func<double, double> localHenrysConstant, // temperatureK -> H  (y* = H·x)
+            Func<double, double, double> localHenrysConstant, // (temperatureK, liquidMoleFraction) -> H  (y* = H·x)
             int maxIterations = 25,
             double convergenceTolerance = 1e-4)
         {
@@ -104,7 +104,7 @@ namespace WetScrubber.Business.Conservation
                     double x = OperatingLineX(y, yOutEstimate, inletLiquidMoleFraction,
                         gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr);
 
-                    double hLocal = localHenrysConstant(tLocal);
+                    double hLocal = localHenrysConstant(tLocal, x); // real per-layer x, not a ppm proxy
                     double kGaLocal = localGasFilmCoeff(tLocal);
                     double yStar = hLocal * x;
 
