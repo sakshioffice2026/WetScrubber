@@ -31,7 +31,7 @@
         </a>
     </div>
 
-    <div style="overflow-x:auto;">
+    <div class="table-responsive">
         <table class="proj-table">
             <thead>
                 <tr>
@@ -58,7 +58,7 @@
                                     <svg viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10z" /></svg>
                                 </a>
                                 <form asp-action="Delete" asp-route-id="@f.Id" method="post"
-                                      onsubmit="return confirm('Delete flowsheet @f.Name? This removes all its unit operations and connections.');" style="display:inline;">
+                                      onsubmit="return confirm('Delete flowsheet @f.Name? This removes all its unit operations and connections.');" class="d-inline">
                                     @Html.AntiForgeryToken()
                                     <button type="submit" class="action-btn" title="Delete">
                                         <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm5.5.5a.5.5 0 00-1 0v6a.5.5 0 001 0V6zM14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 010-2h4a1 1 0 011-1h2a1 1 0 011 1h4a1 1 0 011 1z" /></svg>
@@ -70,7 +70,11 @@
                 }
                 @if (Model.Count == 0)
                 {
-                    <tr><td colspan="6" style="text-align:center; color:#888;">No flowsheets yet.</td></tr>
+                    <tr>
+                        <td colspan="6" class="text-center text-secondary py-4">
+                            No flowsheets yet.
+                        </td>
+                    </tr>
                 }
             </tbody>
         </table>

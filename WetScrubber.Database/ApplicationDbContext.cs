@@ -95,6 +95,12 @@ namespace WetScrubber.Database
                     Id = 2,
                     Citation = "Existing WetScrubber seed data (chemistrypredictor.py KNOWN_REACTIONS) — carried forward, not independently re-sourced",
                     SourceType = "InHouse"
+                },
+                new ReferenceSource
+                {
+                    Id = 3,
+                    Citation = "Rumble, J.R. (ed.), NIST-JANAF-class critical review: \"Thermodynamics of Solution of SO2(g) in Water and of Aqueous Sulfur Dioxide Solutions\", hosted by NIST (PMC6658418 / NIST J. Res. 90(5), 1985). Selected value for SO2(g) = SO2(aq): deltaH ~= -26.97 +/- 0.30 kJ/mol at 298.15 K. Independently retrievable at https://pmc.ncbi.nlm.nih.gov/articles/PMC6658418/ — cross-check against a second primary source (e.g. DIPPR) before flipping ValidatedFlag.",
+                    SourceType = "NIST"
                 }
             );
 
@@ -120,13 +126,25 @@ namespace WetScrubber.Database
             // Henry's Law reference constants (H at 25C) carried forward
             // unchanged from the existing chemistrypredictor.py seed
             // data — same numbers already trusted elsewhere in this
-            // codebase, not new claims. HeatOfSolutionKJmol is left
-            // NULL deliberately: see HenrysLawData.cs for why this one
-            // field is not safe to seed from memory. The calculation
-            // engine must keep using its current hardcoded fallback
-            // until these are populated from a real source.
+            // codebase, not new claims.
+            //
+            // HeatOfSolutionKJmol: SO2 is now populated from an actual
+            // literature search (NIST-hosted critical review, see
+            // ReferenceSourceId=3 above) — this is a real citable number,
+            // not a recalled one, but still ValidatedFlag=false pending a
+            // second-source cross-check per this table's own governance
+            // rule. HCl/NH3/H2S/Cl2 are left NULL: a first search attempt
+            // for HCl came back too ambiguous to attribute cleanly (the
+            // NIST WebBook Henry's-law table did not resolve to a single
+            // unambiguous species-specific row), and NH3/H2S/Cl2 haven't
+            // been attempted yet. Do not fill these from memory — see
+            // HenrysLawData.cs. The calculation engine already falls back
+            // safely to its shared tempCoeff=2000 default for any species
+            // with HeatOfSolutionKJmol == null (see
+            // ScrubberCalculationEngine.GetVanTHoffTempCoeff), so leaving
+            // these null is safe, just less accurate than a sourced value.
             modelBuilder.Entity<HenrysLawData>().HasData(
-                new HenrysLawData { Id = 1, PollutantCode = "SO2", H_ReferenceAt25C = 0.0083, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },
+                new HenrysLawData { Id = 1, PollutantCode = "SO2", H_ReferenceAt25C = 0.0083, HeatOfSolutionKJmol = -26.97, ReferenceSourceId = 3, ValidatedFlag = false },
                 new HenrysLawData { Id = 2, PollutantCode = "HCl", H_ReferenceAt25C = 0.00002, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },
                 new HenrysLawData { Id = 3, PollutantCode = "NH3", H_ReferenceAt25C = 0.00061, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },
                 new HenrysLawData { Id = 4, PollutantCode = "H2S", H_ReferenceAt25C = 0.0102, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },

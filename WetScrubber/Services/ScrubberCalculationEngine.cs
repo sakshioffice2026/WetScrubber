@@ -48,6 +48,17 @@ namespace WetScrubber.Services
         private readonly IDiffusionCoefficientLookup? _diffusionLookup;
         private readonly IPackingLookup? _packingLookup;
 
+        // ── Centralized Van 't Hoff math ─────────────────────────────
+        // Single implementation used by GetHenrysLawConstant,
+        // GetVanTHoffTempCoeff-derived callers, and the three
+        // HenrysLawTemperatureCorrectionFn lambdas below — those four
+        // call sites used to each carry their own copy of
+        // "-(heatOfSolutionKJmol*1000)/R" + "exp(coeff*(1/T-1/298.15))".
+        // Not injectable via constructor (deliberately no new public
+        // surface here) — always available, same as _eos/_componentLookup
+        // being the only things that actually change engine behavior.
+        private readonly IHenrysLawCalculator _henrysLawCalculator = new HenrysLawCalculator();
+
         public ScrubberCalculationEngine() { }
 
         public ScrubberCalculationEngine(
@@ -587,6 +598,24 @@ namespace WetScrubber.Services
             public double OverallKGaKmolM3S { get; set; }
         }
 
+        // Shared by all three HenrysLawTemperatureCorrectionFn lambdas
+        // below (IterativeTowerSolver, MultiPollutantIterativeSolver,
+        // MultiPollutantOdeSolver call sites) — was three separate
+        // copies of the same "tempCoeff = -(deltaH*1000)/R; return
+        // exp(tempCoeff*(1/T-1/298.15))" expression. Delegates to
+        // IHenrysLawCalculator with referenceHenrysConstantAt25C = 1.0
+        // and fallbackTempCoeffK = 0.0 so a missing HeatOfSolutionKJmol
+        // reproduces the original "return 1.0" (no correction) exactly.
+        private double GetHenrysLawTemperatureCorrectionFactor(string pollutantCode, double temperatureC)
+        {
+            var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
+            return _henrysLawCalculator.GetTemperatureCorrectedHenrysConstant(
+                referenceHenrysConstantAt25C: 1.0,
+                heatOfSolutionKJmol: data?.HeatOfSolutionKJmol,
+                temperatureC: temperatureC,
+                fallbackTempCoeffK: 0.0);
+        }
+
         private RateBasedFilmResult? TryComputeOndaFilmCoefficients(
             PollutantInputViewModel pollutant,
             CreateDesignViewModel vm,
@@ -701,15 +730,7 @@ namespace WetScrubber.Services
                     HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
                     PollutantMolecularWeight = pollutant.MolecularWeight,
                     HenrysLawTemperatureCorrectionFn = t =>
-                    {
-                        // Van't Hoff correction for this species
-                        var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
-                        if (data?.HeatOfSolutionKJmol == null)
-                            return 1.0;
-                        double tempCoeff = -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
-                        double T = t + 273.15;
-                        return Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
-                    }
+                        GetHenrysLawTemperatureCorrectionFactor(pollutantCode, t)
                 };
 
                 return IterativeTowerSolver.SolveIterative(solverInput, numSegments: 5);
@@ -750,14 +771,7 @@ namespace WetScrubber.Services
                         HenrysLawConstant = effectiveHenry,
                         HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
                         HenrysLawTemperatureCorrectionFn = t =>
-                        {
-                            var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
-                            if (data?.HeatOfSolutionKJmol == null)
-                                return 1.0;
-                            double tempCoeff = -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
-                            double T = t + 273.15;
-                            return Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
-                        }
+                            GetHenrysLawTemperatureCorrectionFactor(pollutantCode, t)
                     });
                 }
 
@@ -819,14 +833,7 @@ namespace WetScrubber.Services
                         HenrysLawConstant = effectiveHenry,
                         HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
                         HenrysLawTemperatureCorrectionFn = t =>
-                        {
-                            var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
-                            if (data?.HeatOfSolutionKJmol == null)
-                                return 1.0;
-                            double tempCoeff = -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
-                            double T = t + 273.15;
-                            return Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
-                        }
+                            GetHenrysLawTemperatureCorrectionFactor(pollutantCode, t)
                     });
                 }
 
@@ -948,10 +955,15 @@ namespace WetScrubber.Services
         // ════════════════════════════════════════════════════════════
         public double GetHenrysLawConstant(double H25, double tempCoeff, double temperatureC)
         {
-            if (H25 <= 0) H25 = 0.83; // default for SO2
-            double T = temperatureC + 273.15;
-            double H_T = H25 * Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
-            return Math.Max(H_T, 0.001);
+            // Delegates to IHenrysLawCalculator: passing heatOfSolutionKJmol
+            // as null makes it use tempCoeff directly via fallbackTempCoeffK,
+            // reproducing this method's original formula exactly (see
+            // HenrysLawCalculator.cs for the shared implementation).
+            return _henrysLawCalculator.GetTemperatureCorrectedHenrysConstant(
+                referenceHenrysConstantAt25C: H25,
+                heatOfSolutionKJmol: null,
+                temperatureC: temperatureC,
+                fallbackTempCoeffK: tempCoeff);
         }
 
         // ════════════════════════════════════════════════════════════

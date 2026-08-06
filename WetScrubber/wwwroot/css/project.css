@@ -1042,7 +1042,25 @@
     border: 0.5px solid #fca5a5;
     color: #dc2626;
 }
+.proj-table-card {
+    max-width: 700px;
+    margin: 0 auto;
+}
 
+.form-label {
+    display: block;
+    margin-bottom: .5rem;
+    font-weight: 600;
+}
+
+.form-control,
+.form-select {
+    width: 100%;
+}
+
+.btn-save {
+    min-width: 180px;
+}
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 900px) {
     .stat-grid {
