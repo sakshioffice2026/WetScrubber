@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using WetScrubber.Business.Thermodynamics;
 
 namespace WetScrubber.Business.MassTransfer
 {
@@ -18,11 +19,30 @@ namespace WetScrubber.Business.MassTransfer
             public double LiquidInletTempC { get; set; }
             public double LiquidMassFlowKgS { get; set; }
             public double LiquidDensityKgM3 { get; set; }
+
+            // ── Phase B: Replace hardcoded 1.2 kg/m³ with EOS calculation ────
+            /// <summary>Gas composition (code → mole fraction). If provided,
+            /// GasDensityKgM3 is computed via Peng-Robinson EOS. If null/empty,
+            /// falls back to LegacyGasDensityKgM3 for backwards compat.</summary>
+            public IReadOnlyDictionary<string, double> GasCompositionMoleFraction { get; set; }
+                = new Dictionary<string, double>();
+
+            /// <summary>Computed gas density from EOS (set by SolveOde if
+            /// GasCompositionMoleFraction is provided). Otherwise use
+            /// LegacyGasDensityKgM3.</summary>
             public double GasDensityKgM3 { get; set; }
+
+            /// <summary>Fallback density (kg/m³) if no composition provided.
+            /// Deprecated: prefer GasCompositionMoleFraction + EOS.</summary>
+            public double LegacyGasDensityKgM3 { get; set; } = 1.2;
+
             public double TowerHeightM { get; set; }
             public double TowerAreaM2 { get; set; }
             public double PackingSpecificAreaM2M3 { get; set; }
             public double PackingNominalSizeM { get; set; }
+
+            /// <summary>Pressure (kPa) — used by EOS. Defaults to 101.3 (1 atm).</summary>
+            public double PressureKPa { get; set; } = 101.3;
 
             /// <summary>Inlet liquid pollutant loading, kg pollutant/kg
             /// liquid, keyed by species code — non-zero when the liquid
@@ -53,6 +73,27 @@ namespace WetScrubber.Business.MassTransfer
 
         public static SolverOutput SolveOde(SolverInput input)
         {
+            // ── Phase B: Compute gas density from EOS if composition provided ────
+            double gasDensityKgM3 = input.GasDensityKgM3;
+            if (input.GasCompositionMoleFraction != null && input.GasCompositionMoleFraction.Count > 0)
+            {
+                var eos = new PengRobinsonEos();
+                var henrysLaw = new HenrysLawCalculator();
+                var activityModel = new NrtlActivityModel();
+                var thermoService = new Thermodynamics.ThermoCalculationService(eos, henrysLaw, activityModel);
+
+                var gasComp = input.GasCompositionMoleFraction
+                    .Select(kvp => (kvp.Key, kvp.Value))
+                    .ToList();
+
+                gasDensityKgM3 = thermoService.CalculateGasDensityKgM3(
+                    gasComp, input.GasTemperatureC, input.PressureKPa);
+            }
+            else
+            {
+                gasDensityKgM3 = input.LegacyGasDensityKgM3;
+            }
+
             var odeInput = new RigourousTowerOdeSolver.SolverInput
             {
                 PollutantCodes = input.Pollutants.Select(p => p.Code).ToList(),
@@ -67,7 +108,7 @@ namespace WetScrubber.Business.MassTransfer
                 GasMassFlowKgS = input.GasMassFlowKgS,
                 LiquidMassFlowKgS = input.LiquidMassFlowKgS,
                 LiquidDensityKgM3 = input.LiquidDensityKgM3,
-                GasDensityKgM3 = input.GasDensityKgM3,
+                GasDensityKgM3 = gasDensityKgM3,
 
                 OndaLookup = (code, Tg, Tl) => OndaMassTransferCorrelation.Calculate(
                     input.PackingSpecificAreaM2M3,
