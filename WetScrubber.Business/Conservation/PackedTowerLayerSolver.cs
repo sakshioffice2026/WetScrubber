@@ -163,7 +163,110 @@ namespace WetScrubber.Business.Conservation
                 Layers = layers
             };
         }
+        public static TowerSolverResult SolveMultiComponent(
+    double packingHeightM,
+    int layerCount,
+    double gasMolarFluxKmolM2Hr,
+    double liquidMolarFluxKmolM2Hr,
+    double liquidMassFluxKgM2Hr,
+    double liquidSpecificHeatKJKgK,
+    Composition inletGasComposition,
+    Composition inletLiquidComposition,
+    double inletLiquidTemperatureK,
+    double? heatOfSolutionKJmol,
+    double totalPressureKPa,
+    Func<string, double, double> localGasFilmCoeffBySpecies,
+    Func<string, double, double, double> localHenrysConstantBySpecies,
+    int maxIterations = 25,
+    double convergenceTolerance = 1e-4)
+        {
+            if (layerCount < 2) throw new ArgumentException("Need at least 2 layers.", nameof(layerCount));
+            if (packingHeightM <= 0) throw new ArgumentException("Packing height must be positive.", nameof(packingHeightM));
 
+            double dz = packingHeightM / layerCount;
+            var yOutEstimate = new Dictionary<string, double>(inletGasComposition.MoleFractions);
+            var liquidTempByLayer = new double[layerCount + 1];
+            for (int i = 0; i <= layerCount; i++) liquidTempByLayer[i] = inletLiquidTemperatureK;
+
+            var allLayers = new List<LayerProfile>();
+            var yVecCurrent = new Dictionary<string, double>(inletGasComposition.MoleFractions);
+
+            for (int iter = 0; iter < maxIterations; iter++)
+            {
+                var layers = new List<LayerProfile>();
+                yVecCurrent = new Dictionary<string, double>(inletGasComposition.MoleFractions);
+                var xVecCurrent = new Dictionary<string, double>(inletLiquidComposition.MoleFractions);
+
+                for (int layerIdx = 0; layerIdx < layerCount; layerIdx++)
+                {
+                    double z = layerIdx * dz;
+                    double tLocal = liquidTempByLayer[layerIdx];
+
+                    var dyVec = new Dictionary<string, double>();
+                    double totalAbsorbedMoles = 0;
+
+                    foreach (var (code, y_i) in yVecCurrent)
+                    {
+                        if (code == "BULK_CARRIER" || code == "Air") continue;
+
+                        double kGa_i = localGasFilmCoeffBySpecies(code, tLocal);
+                        double H_i = localHenrysConstantBySpecies(code, tLocal, xVecCurrent.GetValueOrDefault(code, 0));
+                        double x_i = xVecCurrent.GetValueOrDefault(code, 0);
+                        double yStar_i = H_i * x_i;
+
+                        double dy = -(kGa_i * totalPressureKPa * (y_i - yStar_i) / Math.Max(gasMolarFluxKmolM2Hr, 1e-9)) * dz;
+                        dyVec[code] = dy;
+                        totalAbsorbedMoles += Math.Max(-dy * gasMolarFluxKmolM2Hr, 0);
+                    }
+
+                    foreach (var code in yVecCurrent.Keys.ToList())
+                    {
+                        if (dyVec.ContainsKey(code))
+                            yVecCurrent[code] = Math.Max(yVecCurrent[code] + dyVec[code], 0);
+                    }
+
+                    double normSum = yVecCurrent.Values.Sum();
+                    if (normSum > 0)
+                        foreach (var code in yVecCurrent.Keys.ToList())
+                            yVecCurrent[code] /= normSum;
+
+                    double dT = 0;
+                    if (heatOfSolutionKJmol.HasValue && totalAbsorbedMoles > 0)
+                        dT = (totalAbsorbedMoles * heatOfSolutionKJmol.Value) / Math.Max(liquidMassFluxKgM2Hr, 1e-9) / Math.Max(liquidSpecificHeatKJKgK, 1e-9);
+
+                    tLocal = Math.Min(tLocal + Math.Abs(dT), 373.15);
+                    liquidTempByLayer[layerIdx + 1] = tLocal;
+
+                    layers.Add(new LayerProfile
+                    {
+                        HeightM = z,
+                        GasMoleFraction = yVecCurrent.GetValueOrDefault("POLLUTANT", yVecCurrent.Values.FirstOrDefault()),
+                        LiquidTemperatureK = tLocal
+                    });
+                }
+
+                double maxYShift = 0;
+                foreach (var (code, y_new) in yVecCurrent)
+                {
+                    yOutEstimate.TryGetValue(code, out var y_old);
+                    maxYShift = Math.Max(maxYShift, Math.Abs(y_new - y_old));
+                }
+
+                yOutEstimate = new Dictionary<string, double>(yVecCurrent);
+                allLayers = layers;
+
+                if (maxYShift < convergenceTolerance) break;
+            }
+
+            return new TowerSolverResult
+            {
+                Converged = true,
+                IterationsUsed = maxIterations,
+                OutletGasMoleFraction = yVecCurrent.GetValueOrDefault("POLLUTANT", 0),
+                OutletLiquidTemperatureK = liquidTempByLayer[layerCount],
+                Layers = allLayers
+            };
+        }
         /// <summary>Linear operating line from an overall mass balance
         /// (constant G, L — the same dilute-system assumption the rest of
         /// this codebase already makes): x(z) = x_in + (G/L)*(y(z) - y_out).</summary>

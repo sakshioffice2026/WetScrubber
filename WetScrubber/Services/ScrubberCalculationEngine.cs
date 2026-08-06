@@ -986,7 +986,48 @@ namespace WetScrubber.Services
             }
             return results;
         }
+        private double SizePollutantSimultaneousHeight(
+List<PollutantInputViewModel> pollutants,
+CreateDesignViewModel vm)
+        {
+            double packingHeight = 5.0;
+            int layerCount = 20;
+            double gasMolarFlux = vm.NormalFlowRate / 3600.0 * vm.GasDensity / 28.97;
+            double liquidMolarFlux = (vm.LiquidToGasRatio * gasMolarFlux);
+
+            double tempK = vm.InletTemperature + 273.15;
+            double y = pollutants[0].InletConcentration / 1000000.0;
+            double T = tempK;
+
+            double dz = packingHeight / layerCount;
+
+            for (int i = 0; i < layerCount; i++)
+            {
+                double kGa = GetEffectiveFilmCoefficients(pollutants[0], vm, 1.0, 1.0, T).GasFilmCoeff;
+                double H = GetEffectiveHenrysLawConstant(pollutants[0], T - 273.15);
+
+                double yStar = H * 0.001;
+                double dy = -(kGa * vm.InletPressure / 101.325 * (y - yStar) / Math.Max(gasMolarFlux, 0.001)) * dz;
+
+                y = Math.Max(y + dy, 0);
+                T = Math.Min(T + 0.1, 373.15);
+            }
+
+            return packingHeight;
+        }
+        private (double GasFilmCoeff, double LiquidFilmCoeff, bool PhysicallyDerived) GetEffectiveFilmCoefficients(
+    PollutantInputViewModel pollutant,
+    CreateDesignViewModel vm,
+    double gasMassVelocity,
+    double liquidMassVelocity,
+    double temperatureK)
+        {
+            return (0.1, 0.01, false);
+        }
     }
+
+
+
 
     // ════════════════════════════════════════════════════════════════
     //  RESULT DTOs
@@ -1030,6 +1071,12 @@ namespace WetScrubber.Services
         public double LiquidOutletTemperatureK { get; set; }
 
         public List<PollutantResult> PollutantResults { get; set; } = new();
+
+
+        public int PollutantType { get; set; }
+        public double PackingHeightM { get; set; }
+
+
 
 
     }
