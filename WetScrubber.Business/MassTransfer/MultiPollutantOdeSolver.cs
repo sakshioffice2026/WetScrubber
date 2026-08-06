@@ -36,6 +36,38 @@ namespace WetScrubber.Business.MassTransfer
             /// Deprecated: prefer GasCompositionMoleFraction + EOS.</summary>
             public double LegacyGasDensityKgM3 { get; set; } = 1.2;
 
+            /// <summary>Liquid dynamic viscosity, Pa·s. Water ≈1e-3 at 20°C,
+            /// but slurries/organics differ a lot — must be supplied, not assumed.</summary>
+            public double LiquidViscosityPas { get; set; } = 1e-3;
+
+            /// <summary>Gas dynamic viscosity, Pa·s. Air ≈1.8e-5 at 20°C.</summary>
+            public double GasViscosityPas { get; set; } = 1.8e-5;
+
+            /// <summary>Liquid-phase molecular diffusivity of pollutant, m²/s.
+            /// Should come from Wilke-Chang, not a flat literal.</summary>
+            /// <summary>Fallback liquid diffusivity, used only when a pollutant's
+            /// MolarVolumeCm3Mol is unset (Wilke-Chang can't be computed).</summary>
+            public double LiquidDiffusivityM2S { get; set; } = 2e-9;
+
+            /// <summary>Solvent molecular weight, g/mol, for Wilke-Chang. Water = 18.02.</summary>
+            public double LiquidSolventMolecularWeightGMol { get; set; } = 18.02;
+
+            /// <summary>Wilke-Chang solvent association factor phi. Water = 2.6,
+            /// methanol = 1.9, benzene/unassociated = 1.0.</summary>
+            public double LiquidSolventAssociationFactor { get; set; } = 2.6;
+
+            /// <summary>Gas-phase molecular diffusivity of pollutant, m²/s.
+            /// Should come from Fuller correlation, not a flat literal.</summary>
+            public double GasDiffusivityM2S { get; set; } = 2e-5;
+
+            /// <summary>Critical surface tension of packing material, N/m.
+            /// Polyethylene ≈0.033, ceramic ≈0.061, steel ≈0.075 — NOT water's 0.072.</summary>
+            public double PackingCriticalSurfaceTensionNM { get; set; } = 0.061;
+
+            /// <summary>Liquid surface tension, N/m. Water ≈0.072 at 20°C but
+            /// drops with surfactants/temperature — must be supplied per liquid.</summary>
+            public double LiquidSurfaceTensionNM { get; set; } = 0.072;
+
             public double TowerHeightM { get; set; }
             public double TowerAreaM2 { get; set; }
             public double PackingSpecificAreaM2M3 { get; set; }
@@ -110,18 +142,42 @@ namespace WetScrubber.Business.MassTransfer
                 LiquidDensityKgM3 = input.LiquidDensityKgM3,
                 GasDensityKgM3 = gasDensityKgM3,
 
-                OndaLookup = (code, Tg, Tl) => OndaMassTransferCorrelation.Calculate(
-                    input.PackingSpecificAreaM2M3,
-                    input.PackingNominalSizeM,
-                    72.0,  // sigma_c (water on plastic)
-                    72.0,  // sigma_L (water surface tension)
-                    input.LiquidMassFlowKgS / input.TowerAreaM2,
-                    input.GasMassFlowKgS / input.TowerAreaM2,
-                    input.LiquidDensityKgM3,
-                    input.GasDensityKgM3,
-                    1e-3, 1e-5,  // mu_L, mu_G (placeholders)
-                    2e-9, 2e-5,  // D_L, D_G
-                    (Tg + Tl) / 2.0, 101.325),
+                OndaLookup = (code, Tg, Tl) =>
+                {
+                    var poll = input.Pollutants.First(p => p.Code == code);
+                    double tAvg = (Tg + Tl) / 2.0;
+
+                    double dL = poll.MolarVolumeCm3Mol > 0
+                        ? WilkeChangDiffusivity.Calculate(
+                            poll.MolarVolumeCm3Mol,
+                            input.LiquidSolventAssociationFactor,
+                            input.LiquidSolventMolecularWeightGMol,
+                            input.LiquidViscosityPas * 1000.0, // Pa*s -> cP
+                            tAvg)
+                        : input.LiquidDiffusivityM2S; // no molar volume supplied: fallback
+
+                    double dG = FullerGasDiffusivity.TryGetDiffusionVolume(code, out _)
+                        ? FullerGasDiffusivity.Calculate(
+                            code, poll.MolecularWeight,
+                            "Air", 28.97,
+                            tAvg, input.PressureKPa)
+                        : input.GasDiffusivityM2S; // no Fuller data for this species: fallback
+
+                    return OndaMassTransferCorrelation.Calculate(
+                        input.PackingSpecificAreaM2M3,
+                        input.PackingNominalSizeM,
+                        input.PackingCriticalSurfaceTensionNM,
+                        input.LiquidSurfaceTensionNM,
+                        input.LiquidMassFlowKgS / input.TowerAreaM2,
+                        input.GasMassFlowKgS / input.TowerAreaM2,
+                        input.LiquidDensityKgM3,
+                        input.GasDensityKgM3,
+                        input.LiquidViscosityPas,
+                        input.GasViscosityPas,
+                        dL,
+                        dG,
+                        tAvg, input.PressureKPa);
+                },
 
                 HenrysLawFn = (code, T) =>
                 {
@@ -166,13 +222,18 @@ namespace WetScrubber.Business.MassTransfer
                     Pollutants = new Dictionary<string, PollutantSegmentState>()
                 };
 
+                var inletNode = odeOutput.Profile[0];
                 foreach (var code in input.Pollutants.Select(p => p.Code))
                 {
+                    double c0 = inletNode.PollutantConcKgM3[code];
+                    double cNow = node.PollutantConcKgM3[code];
+                    double removal = c0 > 1e-12 ? (c0 - cNow) / c0 : 0.0;
+
                     seg.Pollutants[code] = new PollutantSegmentState
                     {
                         PollutantCode = code,
-                        GasInletPpm = node.PollutantConcKgM3[code],
-                        RemovalFraction = 0.0 // TODO: compute from inlet/outlet
+                        GasInletPpm = cNow,
+                        RemovalFraction = Math.Clamp(removal, 0.0, 1.0)
                     };
                 }
 

@@ -119,6 +119,25 @@ namespace WetScrubber.Models
 
         public double LimestoneParticleDiameterMicron { get; set; }
 
+        // ── Venturi scrubber design inputs ────────────────────────
+        // Previously hardcoded in ScrubberCalculationEngine
+        // (5 micron / 1500 kg/m3 / 80 m/s regardless of the actual
+        // dust/mist being collected — Calvert-correlation efficiency
+        // is extremely sensitive to particle size, so that hardcoding
+        // silently produced the wrong efficiency for anything but a
+        // coincidental 5-micron particle).
+        [Range(0.1, 200, ErrorMessage = "Must be between 0.1 and 200 microns")]
+        [Display(Name = "Target Particle Diameter (micron)")]
+        public double VenturiParticleDiameterMicron { get; set; } = 5.0;
+
+        [Range(500, 5000, ErrorMessage = "Must be between 500 and 5,000 kg/m3")]
+        [Display(Name = "Particle Density (kg/m³)")]
+        public double VenturiParticleDensityKgM3 { get; set; } = 1500.0;
+
+        [Range(30, 150, ErrorMessage = "Must be between 30 and 150 m/s")]
+        [Display(Name = "Design Throat Velocity (m/s)")]
+        public double VenturiThroatVelocityMs { get; set; } = 80.0;
+
         public CreateDesignViewModel Clone()
         {
             return new CreateDesignViewModel
@@ -152,7 +171,10 @@ namespace WetScrubber.Models
                 Diagnostics = this.Diagnostics,
                 IsLimestoneSlurry = this.IsLimestoneSlurry,
                 SolidsLoadingWtPercent = this.SolidsLoadingWtPercent,
-                LimestoneParticleDiameterMicron = this.LimestoneParticleDiameterMicron
+                LimestoneParticleDiameterMicron = this.LimestoneParticleDiameterMicron,
+                VenturiParticleDiameterMicron = this.VenturiParticleDiameterMicron,
+                VenturiParticleDensityKgM3 = this.VenturiParticleDensityKgM3,
+                VenturiThroatVelocityMs = this.VenturiThroatVelocityMs
             };
         }
     }

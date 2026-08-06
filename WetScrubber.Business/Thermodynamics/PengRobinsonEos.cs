@@ -27,6 +27,24 @@ namespace WetScrubber.Business.Thermodynamics
             IReadOnlyList<EosComponentInput> components,
             double temperatureK,
             double pressureKPa)
+            => Evaluate(components, temperatureK, pressureKPa, kijLookup: null);
+
+        /// <summary>
+        /// Overload accepting an optional binary interaction parameter
+        /// (kij) lookup. Previously kij was hardcoded to 0 for every
+        /// pair with NO way to supply a real value even if one had been
+        /// sourced (DECHEMA, published VLE regression, etc.) — this
+        /// closes that gap without fabricating any kij data itself.
+        /// kijLookup(codeI, codeJ) should return 0 for any pair it
+        /// doesn't have data for (same "known unknown, not silently
+        /// fabricated" discipline as the rest of this codebase). Pass
+        /// null to keep the previous kij=0-for-everything behavior.
+        /// </summary>
+        public EosResult Evaluate(
+            IReadOnlyList<EosComponentInput> components,
+            double temperatureK,
+            double pressureKPa,
+            Func<string, string, double>? kijLookup)
         {
             if (components == null || components.Count == 0)
                 throw new ArgumentException("At least one component is required.", nameof(components));
@@ -47,14 +65,19 @@ namespace WetScrubber.Business.Thermodynamics
                 double alpha = Math.Pow(1 + kappa * (1 - Math.Sqrt(temperatureK / c.CriticalTemperatureK)), 2);
                 double a_i = 0.45724 * R * R * c.CriticalTemperatureK * c.CriticalTemperatureK / pcPa * alpha;
                 double b_i = 0.07780 * R * c.CriticalTemperatureK / pcPa;
-                return (c.MoleFraction, a_i, b_i, c.MolecularWeight);
+                return (c.Code, c.MoleFraction, a_i, b_i, c.MolecularWeight);
             }).ToList();
 
-            // ── van der Waals one-fluid mixing rules (kij = 0) ──────
+            // ── van der Waals one-fluid mixing rules ────────────────
+            //   kij = 0 for any pair kijLookup doesn't cover (or when
+            //   kijLookup is null) — matches previous default behavior.
             double aMix = 0.0;
             foreach (var i in pure)
                 foreach (var j in pure)
-                    aMix += i.MoleFraction * j.MoleFraction * Math.Sqrt(i.a_i * j.a_i);
+                {
+                    double kij = kijLookup?.Invoke(i.Code, j.Code) ?? 0.0;
+                    aMix += i.MoleFraction * j.MoleFraction * Math.Sqrt(i.a_i * j.a_i) * (1.0 - kij);
+                }
 
             double bMix = pure.Sum(p => p.MoleFraction * p.b_i);
             double mwMix = pure.Sum(p => p.MoleFraction * p.MolecularWeight);

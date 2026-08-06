@@ -1,20 +1,23 @@
-﻿@using WetScrubber.Database.Enums
-@model WetScrubber.Models.CreateDesignViewModel
-@{
-    ViewData["Title"] = "New Design";
+﻿@{
+    ViewData["Title"] = "Calculation Results";
     ViewData["ActivePage"] = "NewDesign";
+
+    var design = ViewBag.Design as WetScrubber.Models.DesignDetailViewModel;
+    var calcResult = ViewBag.CalcResult as WetScrubber.Services.CalculationResult;
 }
 
 @section Styles {
     <link rel="stylesheet" href="~/css/project.css" />
     <link rel="stylesheet" href="~/css/scrubber.css" />
+    <link rel="stylesheet" href="~/css/results.css" />
 }
 
 @section TopbarActions {
-    <a asp-controller="Project" asp-action="Detail"
-       asp-route-id="@Model.ProjectId" class="btn-cancel"
+    <a asp-controller="Scrubber" asp-action="DesignDetail"
+       asp-route-id="@design!.DesignId"
+       class="btn-cancel"
        style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">
-        ← Back to Project
+        ← Back to Design
     </a>
 }
 
@@ -22,494 +25,382 @@
 <div class="breadcrumb">
     <a asp-controller="Project" asp-action="Index">Projects</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <a asp-controller="Project" asp-action="Detail" asp-route-id="@Model.ProjectId">@Model.ProjectNumber</a>
+    <a asp-controller="Project" asp-action="Detail" asp-route-id="@design!.ProjectId">@design.ProjectNumber</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <span>New Design</span>
+    <a asp-controller="Scrubber" asp-action="DesignDetail" asp-route-id="@design.DesignId">@design.DesignName</a>
+    <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Results</span>
 </div>
 
-<!-- Step indicator -->
-<div class="steps-bar">
-    <div class="step-item active">
-        <div class="step-num">1</div>
-        <div><div class="step-label">Type &amp; Name</div><div class="step-sub">Scrubber selection</div></div>
+<!-- ── Results header ─────────────────────────────────────────── -->
+<div class="results-header-card">
+    <div class="results-header-left">
+        <div class="results-badge-type">@calcResult!.ScrubberType</div>
+        <div class="results-title">@design!.DesignName — Calculation Results</div>
+        <div class="results-subtitle">
+            @design.ProjectNumber · @design.ProjectName ·
+            Calculated @DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") UTC
+        </div>
     </div>
-    <div class="step-item active">
-        <div class="step-num">2</div>
-        <div><div class="step-label">Gas Stream</div><div class="step-sub">Flow conditions</div></div>
-    </div>
-    <div class="step-item active">
-        <div class="step-num">3</div>
-        <div><div class="step-label">Pollutants</div><div class="step-sub">Concentrations</div></div>
-    </div>
-    <div class="step-item active">
-        <div class="step-num">4</div>
-        <div><div class="step-label">Liquid Specs</div><div class="step-sub">Scrubbing liquid</div></div>
-    </div>
-    <div class="step-item active">
-        <div class="step-num">5</div>
-        <div><div class="step-label">Materials</div><div class="step-sub">Construction</div></div>
+    <div class="results-header-actions">
+        <form asp-controller="Scrubber" asp-action="RunCalculation"
+              asp-route-id="@design.DesignId" method="post" style="margin:0;">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn-recalc">
+                <svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg>
+                Re-run
+            </button>
+        </form>
     </div>
 </div>
 
-<form asp-action="Create" asp-controller="Scrubber" method="post" id="designForm">
-    @Html.AntiForgeryToken()
-    <input type="hidden" asp-for="ProjectId" />
-    <input type="hidden" asp-for="ProjectNumber" />
-    <input type="hidden" asp-for="ProjectName" />
+<!-- ── Report / Redesign / Compare — single action bar ──────────── -->
+<partial name="_DesignActionBar" model="design" />
 
-    <!-- ═══════════════════════════════════════════════════════
-         SECTION 1 — Design Name + Scrubber Type
-    ════════════════════════════════════════════════════════ -->
-    <div class="form-card">
-        <div class="form-card-header">
-            <div class="form-card-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm1 4H7v4l3.5 2.1.7-1.2L8 8.5V5z" /></svg>
-            </div>
-            <div>
-                <div class="form-card-title">Design Name &amp; Scrubber Type</div>
-                <div class="form-card-sub">Choose the scrubber technology for this design</div>
-            </div>
+<!-- ── KPI result cells ───────────────────────────────────────── -->
+<div class="results-kpi-grid">
+
+    <div class="result-kpi green">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
         </div>
-        <div class="form-card-body">
+        <div class="result-kpi-label">Removal Efficiency</div>
+        <div class="result-kpi-value">@calcResult!.RemovalEfficiency.ToString("F2")<span class="result-kpi-unit">%</span></div>
+        <div class="result-kpi-sub">Target achieved</div>
+    </div>
 
-            <!-- Design name -->
-            <div class="fg2" style="margin-bottom:20px;">
-                <div class="form-group fg-full">
-                    <label asp-for="DesignName">Design Name <span class="req">*</span></label>
-                    <input asp-for="DesignName"
-                           id="DesignName"
-                           class="@(ViewData.ModelState["DesignName"]?.Errors.Count > 0 ? "is-invalid" : "")"
-                           placeholder="e.g. Packed Tower Design A"
-                           autofocus />
-                    <span class="field-error">@Html.ValidationMessageFor(m => m.DesignName)</span>
-                </div>
+    <div class="result-kpi blue">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1v14M5 3h6M5 7h6M5 11h6" /></svg>
+        </div>
+        <div class="result-kpi-label">Tower Diameter</div>
+        <div class="result-kpi-value">@calcResult.TowerDiameter.ToString("F3")<span class="result-kpi-unit">m</span></div>
+        <div class="result-kpi-sub">Standard vessel size</div>
+    </div>
+
+    <div class="result-kpi blue">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1v14M4 4h8M4 12h8" /></svg>
+        </div>
+        <div class="result-kpi-label">Tower Height</div>
+        <div class="result-kpi-value">@calcResult.TowerHeight.ToString("F2")<span class="result-kpi-unit">m</span></div>
+        <div class="result-kpi-sub">Including freeboard</div>
+    </div>
+
+    @if (calcResult.PackingHeight > 0)
+    {
+        <div class="result-kpi amber">
+            <div class="result-kpi-icon">
+                <svg viewBox="0 0 16 16"><path d="M2 10h12v2H2zm2-4h8v2H4zm2-4h4v2H6z" /></svg>
             </div>
+            <div class="result-kpi-label">Packing Height</div>
+            <div class="result-kpi-value">@calcResult.PackingHeight.ToString("F2")<span class="result-kpi-unit">m</span></div>
+            <div class="result-kpi-sub">Active packing zone</div>
+        </div>
+    }
 
-            <!-- Hidden select for model binding -->
-            <input type="hidden" asp-for="ScrubberType" id="ScrubberType" value="1" />
+    <div class="result-kpi amber">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 2C5 2 3 4 3 8s2 6 5 6 5-2 5-6-2-6-5-6zm0 2a4 4 0 110 8A4 4 0 018 4z" /></svg>
+        </div>
+        <div class="result-kpi-label">Pressure Drop</div>
+        <div class="result-kpi-value">@calcResult.PressureDrop.ToString("N0")<span class="result-kpi-unit">Pa</span></div>
+        <div class="result-kpi-sub">Total across packing</div>
+    </div>
 
-            <!-- Scrubber type visual cards -->
-            <div class="type-grid">
-                <div class="type-card @(Model.ScrubberType == ScrubberType.PackedTower ? "selected" : "")" data-value="1">
-                    <div class="type-card-icon"><svg viewBox="0 0 16 16"><path d="M8 1v14M5 3h6M5 7h6M5 11h6" /></svg></div>
-                    <div class="type-card-name">Packed Tower</div>
-                    <div class="type-card-desc">Best for gas absorption &amp; SO₂/HCl removal</div>
-                </div>
-                <div class="type-card @(Model.ScrubberType == ScrubberType.VenturiScrubber ? "selected" : "")" data-value="2">
-                    <div class="type-card-icon"><svg viewBox="0 0 16 16"><path d="M2 8c0 0 3-5 6-5s6 5 6 5-3 5-6 5-6-5-6-5z" /></svg></div>
-                    <div class="type-card-name">Venturi Scrubber</div>
-                    <div class="type-card-desc">High efficiency for particles &amp; sticky gases</div>
-                </div>
-                <div class="type-card @(Model.ScrubberType == ScrubberType.SprayTower ? "selected" : "")" data-value="3">
-                    <div class="type-card-icon"><svg viewBox="0 0 16 16"><path d="M8 2v12M4 5l8 0M4 9l8 0M4 12l8 0" /></svg></div>
-                    <div class="type-card-name">Spray Tower</div>
-                    <div class="type-card-desc">Simple, low pressure drop, easy maintenance</div>
-                </div>
-                <div class="type-card @(Model.ScrubberType == ScrubberType.WetCyclone ? "selected" : "")" data-value="4">
-                    <div class="type-card-icon"><svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 2a4 4 0 110 8A4 4 0 018 4z" /></svg></div>
-                    <div class="type-card-name">Wet Cyclone</div>
-                    <div class="type-card-desc">Centrifugal separation for large particles</div>
-                </div>
-                <div class="type-card @(Model.ScrubberType == ScrubberType.JetEjectorScrubber ? "selected" : "")" data-value="5">
-                    <div class="type-card-icon"><svg viewBox="0 0 16 16"><path d="M2 8h4l2-4 2 8 2-4h2" /></svg></div>
-                    <div class="type-card-name">Jet Ejector</div>
-                    <div class="type-card-desc">No moving parts, handles corrosive gases</div>
-                </div>
-                <div class="type-card @(Model.ScrubberType == ScrubberType.ImpingementPlate ? "selected" : "")" data-value="6">
-                    <div class="type-card-icon"><svg viewBox="0 0 16 16"><path d="M2 4h12v2H2zM2 8h12v2H2zM2 12h12v2H2z" /></svg></div>
-                    <div class="type-card-name">Impingement Plate</div>
-                    <div class="type-card-desc">Multi-stage plate column design</div>
-                </div>
-            </div>
+    <div class="result-kpi purple">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm1 4H7v4l3.5 2.1.7-1.2L8 8.5V5z" /></svg>
+        </div>
+        <div class="result-kpi-label">Gas Velocity</div>
+        <div class="result-kpi-value">@calcResult.GasVelocity.ToString("F2")<span class="result-kpi-unit">m/s</span></div>
+        <div class="result-kpi-sub">Operating velocity</div>
+    </div>
 
+    <div class="result-kpi @(calcResult.ExceedsRecommendedFlood ? "amber" : "green")">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
+        </div>
+        <div class="result-kpi-label">Flooding</div>
+        <div class="result-kpi-value">@calcResult.PercentFlood.ToString("F1")<span class="result-kpi-unit">% of flood</span></div>
+        <div class="result-kpi-sub">
+            @if (calcResult.ExceedsRecommendedFlood)
+            {
+                <text>Above recommended 70% limit</text>
+            }
+            else
+            {
+                <text>Flood velocity: @calcResult.FloodingGasVelocity.ToString("F2") m/s</text>
+            }
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════
-         SECTION 2 — Gas Stream
-    ════════════════════════════════════════════════════════ -->
-    <div class="form-card">
-        <div class="form-card-header">
-            <div class="form-card-icon">
-                <svg viewBox="0 0 16 16"><path d="M2 8c0-3 2-5 6-5s6 2 6 5-2 5-6 5-6-2-6-5z" /></svg>
-            </div>
-            <div>
-                <div class="form-card-title">Gas Stream</div>
-                <div class="form-card-sub">Inlet flow conditions and properties</div>
-            </div>
+    <div class="result-kpi purple">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
         </div>
-        <div class="form-card-body">
-            <div class="fg3">
+        <div class="result-kpi-label">Liquid Flow</div>
+        <div class="result-kpi-value">@calcResult.LiquidFlowRateM3Hr.ToString("F2")<span class="result-kpi-unit">m³/hr</span></div>
+        <div class="result-kpi-sub">L/G = @calcResult.ActualLGRatio L/m³</div>
+    </div>
 
-                <div class="form-group">
-                    <label asp-for="NormalFlowRate">
-                        Normal Flow Rate <span class="req">*</span>
-                        <span class="unit">(Nm³/hr)</span>
-                    </label>
-                    <input asp-for="NormalFlowRate"
-                           id="NormalFlowRate"
-                           type="number" step="any"
-                           class="@(ViewData.ModelState["NormalFlowRate"]?.Errors.Count > 0 ? "is-invalid" : "")"
-                           placeholder="5000" />
-                    <span class="field-error">@Html.ValidationMessageFor(m => m.NormalFlowRate)</span>
+    <div class="result-kpi">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M2 12h12M4 8h1v4H4zm3-3h1v7H7zm3-2h1v9h-1zm3-3h1v12h-1z" /></svg>
+        </div>
+        <div class="result-kpi-label">Total Power</div>
+        <div class="result-kpi-value">@calcResult.TotalPowerKW.ToString("F2")<span class="result-kpi-unit">kW</span></div>
+        <div class="result-kpi-sub">Fan @calcResult.FanPowerKW.ToString("F1") + Pump @calcResult.PumpPowerKW.ToString("F1") kW</div>
+    </div>
+
+</div>
+
+<!-- ── Transfer unit data + L/G analysis row ─────────────────── -->
+@if (calcResult.NTU > 0)
+{
+    <div class="results-two-col">
+
+        <!-- NTU/HTU card -->
+        <div class="results-data-card">
+            <div class="results-data-header">
+                <div class="results-data-title">Transfer Unit Analysis</div>
+                <div class="results-data-sub">Colburn equation results</div>
+            </div>
+            <div class="results-data-body">
+                <div class="data-row">
+                    <span class="data-label">Number of Transfer Units (NTU)</span>
+                    <span class="data-value">@calcResult.NTU.ToString("F2")</span>
                 </div>
-
-                <div class="form-group">
-                    <label asp-for="ActualFlowRate">
-                        Actual Flow Rate <span class="req">*</span>
-                        <span class="unit">(m³/hr)</span>
-                    </label>
-                    <input asp-for="ActualFlowRate"
-                           id="ActualFlowRate"
-                           type="number" step="any"
-                           class="@(ViewData.ModelState["ActualFlowRate"]?.Errors.Count > 0 ? "is-invalid" : "")"
-                           placeholder="5800" />
-                    <span class="field-error">@Html.ValidationMessageFor(m => m.ActualFlowRate)</span>
+                <div class="data-row">
+                    <span class="data-label">Height of Transfer Unit (HTU)</span>
+                    <span class="data-value">@calcResult.HTU.ToString("F3") m</span>
                 </div>
-
-                <div class="form-group">
-                    <label asp-for="InletTemperature">
-                        Inlet Temperature <span class="req">*</span>
-                        <span class="unit">(°C)</span>
-                    </label>
-                    <input asp-for="InletTemperature"
-                           id="InletTemperature"
-                           type="number" step="any"
-                           class="@(ViewData.ModelState["InletTemperature"]?.Errors.Count > 0 ? "is-invalid" : "")"
-                           placeholder="150" />
-                    <span class="field-error">@Html.ValidationMessageFor(m => m.InletTemperature)</span>
+                <div class="data-row">
+                    <span class="data-label">Absorption Factor (A = L/mG)</span>
+                    <span class="data-value @(calcResult.AbsorptionFactor >= 1.2 ? "value-good" : "value-warn")">
+                        @calcResult.AbsorptionFactor.ToString("F3")
+                        @(calcResult.AbsorptionFactor >= 1.2 ? "✓" : "⚠ Low")
+                    </span>
                 </div>
-
-                <div class="form-group">
-                    <label asp-for="InletPressure">
-                        Inlet Pressure
-                        <span class="unit">(Pa)</span>
-                    </label>
-                    <input asp-for="InletPressure" type="number" step="any" placeholder="101325" />
+                <div class="data-row">
+                    <span class="data-label">Minimum L/G Ratio</span>
+                    <span class="data-value">@calcResult.MinLGRatio.ToString("F3") L/m³</span>
                 </div>
-
-                <div class="form-group">
-                    <label asp-for="MoistureContent">
-                        Moisture Content
-                        <span class="unit">(% vol)</span>
-                    </label>
-                    <input asp-for="MoistureContent" type="number" step="any" placeholder="8" />
+                <div class="data-row">
+                    <span class="data-label">Actual L/G Ratio</span>
+                    <span class="data-value">@calcResult.ActualLGRatio.ToString("F2") L/m³</span>
                 </div>
-
-                <div class="form-group">
-                    <label asp-for="GasDensity">
-                        Gas Density
-                        <span class="unit">(kg/m³)</span>
-                    </label>
-                    <input asp-for="GasDensity" type="number" step="any" placeholder="1.18" />
-                </div>
-
+                <div class="data-row">
+                    <span class="data-label">L/G Multiplier (Actual/Min)</span>
+                    <span class="data-value">
+                        @(calcResult.MinLGRatio > 0
+                                            ? (calcResult.ActualLGRatio / calcResult.MinLGRatio).ToString("F2") + "×"
+                                            : "—")
+                </span>
             </div>
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════
-         SECTION 3 — Pollutants (dynamic rows)
-    ════════════════════════════════════════════════════════ -->
-    <div class="form-card">
-        <div class="form-card-header">
-            <div class="form-card-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm.75 10.5h-1.5v-5h1.5v5zm0-6.5h-1.5V3.5h1.5V5z" /></svg>
+        <!-- Sizing summary card -->
+        <div class="results-data-card">
+            <div class="results-data-header">
+                <div class="results-data-title">Equipment Sizing Summary</div>
+                <div class="results-data-sub">Final dimensions for procurement</div>
             </div>
-            <div>
-                <div class="form-card-title">Pollutants</div>
-                <div class="form-card-sub">Define inlet concentrations and removal targets</div>
-            </div>
-        </div>
-        <div class="form-card-body">
-
-            <!-- Column headers -->
-            <div class="pollutant-table-head">
-                <span>Pollutant Type</span>
-                <span>Inlet (mg/Nm³)</span>
-                <span>Target Outlet</span>
-                <span>Removal %</span>
-                <span>Mol. Weight</span>
-                <span></span>
-            </div>
-
-            <!-- Dynamic pollutant rows -->
-            <div id="pollutantContainer">
-                @for (int i = 0; i < Model.Pollutants.Count; i++)
+            <div class="results-data-body">
+                <div class="data-row">
+                    <span class="data-label">Tower inside diameter</span>
+                    <span class="data-value highlight">@calcResult.TowerDiameter.ToString("F3") m</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Total tower height (TL/TL)</span>
+                    <span class="data-value highlight">@calcResult.TowerHeight.ToString("F2") m</span>
+                </div>
+            @if (calcResult.PackingHeight > 0)
                 {
-                    <div class="pollutant-row">
-                        <div class="form-group">
-                            <label>Pollutant</label>
-                            <select name="Pollutants[@i].PollutantType">
-                                @foreach (var opt in Model.PollutantOptions)
-                                {
-                                    <option value="@opt.Id" selected="@(Model.Pollutants[i].PollutantType == opt.Id ? "selected" : null)">@Html.Raw(opt.Formula)</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Inlet (mg/Nm³)</label>
-                            <input type="number" step="any"
-                                   name="Pollutants[@i].InletConcentration"
-                                   value="@Model.Pollutants[i].InletConcentration"
-                                   class="inlet-conc" placeholder="1000" />
-                        </div>
-                        <div class="form-group">
-                            <label>Target Outlet</label>
-                            <input type="number" step="any"
-                                   name="Pollutants[@i].TargetOutletConcentration"
-                                   value="@Model.Pollutants[i].TargetOutletConcentration"
-                                   class="outlet-conc" placeholder="50" />
-                        </div>
-                        <div class="form-group">
-                            <label>Removal %</label>
-                            <input type="number" step="any"
-                                   name="Pollutants[@i].TargetRemovalEfficiency"
-                                   value="@Model.Pollutants[i].TargetRemovalEfficiency"
-                                   class="removal-eff" placeholder="95" />
-                        </div>
-                        <div class="form-group">
-                            <label>Mol. Weight</label>
-                            <input type="number" step="any"
-                                   name="Pollutants[@i].MolecularWeight"
-                                   value="@Model.Pollutants[i].MolecularWeight"
-                                   placeholder="64" />
-                        </div>
-                        <button type="button" class="btn-remove-pollutant" title="Remove row">
-                            <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6zM14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 010-2h4a1 1 0 011-1h2a1 1 0 011 1h4a1 1 0 011 1z" /></svg>
-                        </button>
+                    <div class="data-row">
+                        <span class="data-label">Packed bed height</span>
+                        <span class="data-value">@calcResult.PackingHeight.ToString("F2") m</span>
                     </div>
                 }
+                <div class="data-row">
+                    <span class="data-label">Total pressure drop</span>
+                    <span class="data-value">@calcResult.PressureDrop.ToString("N0") Pa (@((calcResult.PressureDrop / 249.09).ToString("F1")) inH₂O)</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Fan power (at 65% efficiency)</span>
+                    <span class="data-value">@calcResult.FanPowerKW.ToString("F2") kW</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Pump power (at 70% efficiency)</span>
+                    <span class="data-value">@calcResult.PumpPowerKW.ToString("F2") kW</span>
+                </div>
+                <div class="data-row total-row">
+                    <span class="data-label">Total power consumption</span>
+                    <span class="data-value highlight">@calcResult.TotalPowerKW.ToString("F2") kW</span>
+                </div>
             </div>
+        </div>
 
-            <button type="button" class="btn-add-pollutant" id="btnAddPollutant">
-                <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" /></svg>
-                Add another pollutant
-            </button>
+    </div>
+}
 
+<!-- ── Sensitivity Chart ──────────────────────────────────────── -->
+@if (calcResult.SensitivityPoints?.Any() == true)
+{
+    <div class="results-data-card" style="margin-bottom:16px;">
+        <div class="results-data-header">
+            <div class="results-data-title">L/G Ratio Sensitivity Analysis</div>
+            <div class="results-data-sub">Removal efficiency vs liquid-to-gas ratio</div>
+        </div>
+        <div style="padding:20px;">
+            <canvas id="sensitivityChart" height="80"></canvas>
         </div>
     </div>
+}
 
-    <!-- ═══════════════════════════════════════════════════════
-         SECTION 4 — Scrubbing Liquid
-    ════════════════════════════════════════════════════════ -->
-    <div class="form-card">
-        <div class="form-card-header">
-            <div class="form-card-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
+<!-- ── Input summary ─────────────────────────────────────────── -->
+<div class="results-data-card" style="margin-bottom:16px;">
+    <div class="results-data-header">
+        <div class="results-data-title">Design Input Summary</div>
+        <div class="results-data-sub">Key inputs used for this calculation</div>
+    </div>
+    <div class="results-data-body">
+        @foreach (var p in design!.Pollutants)
+        {
+            <div class="data-row">
+                <span class="data-label">@p.PollutantType — Inlet concentration</span>
+                <span class="data-value">@p.InletConcentration.ToString("N1") mg/Nm³ → @p.TargetOutletConcentration.ToString("N1") mg/Nm³ (@p.TargetRemovalEfficiency.ToString("F1")% removal)</span>
             </div>
-            <div>
-                <div class="form-card-title">Scrubbing Liquid</div>
-                <div class="form-card-sub">Liquid phase properties and flow</div>
-            </div>
+        }
+        <div class="data-row">
+            <span class="data-label">Gas flow (normal / actual)</span>
+            <span class="data-value">@design.NormalFlowRate.ToString("N0") Nm³/hr / @design.ActualFlowRate.ToString("N0") m³/hr</span>
         </div>
-        <div class="form-card-body">
-            <div class="fg3">
-
-                <div class="form-group">
-                    <label asp-for="LiquidType">Liquid Type <span class="req">*</span></label>
-                    <select name="LiquidType" id="LiquidType">
-                        @foreach (var opt in Model.LiquidOptions)
-                        {
-                            <option value="@opt.Id" selected="@(Model.LiquidType == opt.Id ? "selected" : null)">@opt.DisplayName@(string.IsNullOrEmpty(opt.Formula) ? "" : " (" + opt.Formula + ")")</option>
-                        }
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="LiquidConcentration">
-                        Concentration
-                        <span class="unit">(% wt)</span>
-                    </label>
-                    <input asp-for="LiquidConcentration" type="number" step="any" placeholder="10" />
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="LiquidPH">pH</label>
-                    <input asp-for="LiquidPH" type="number" step="0.1" placeholder="12" />
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="LiquidTemperature">
-                        Temperature
-                        <span class="unit">(°C)</span>
-                    </label>
-                    <input asp-for="LiquidTemperature" type="number" step="any" placeholder="25" />
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="LiquidDensity">
-                        Density
-                        <span class="unit">(kg/m³)</span>
-                    </label>
-                    <input asp-for="LiquidDensity" type="number" step="any" placeholder="1050" />
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="LiquidToGasRatio">
-                        L/G Ratio <span class="req">*</span>
-                        <span class="unit">(L/m³ gas)</span>
-                    </label>
-                    <input asp-for="LiquidToGasRatio" type="number" step="any" placeholder="3.0" />
-                    <span class="field-hint" id="lgRatioHint">Packed Tower: recommended 2–10 L/m³</span>
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="PackingCode">Packing Type</label>
-                    <select name="PackingCode" id="PackingCode">
-                        <option value="">-- Default (Pall Ring 50mm) --</option>
-                        @foreach (var opt in Model.PackingOptions)
-                        {
-                            <option value="@opt.Code" selected="@(Model.PackingCode == opt.Code ? "selected" : null)">@opt.DisplayName</option>
-                        }
-                    </select>
-                    <span class="field-hint">Only used for Packed Tower sizing; ignored for other scrubber types.</span>
-                </div>
-
-                <div class="form-group">
-                    <label><input asp-for="IsLimestoneSlurry" /> Limestone FGD slurry</label>
-                    <span class="field-hint">Applies slurry density and apparent-viscosity corrections to hydraulic calculations.</span>
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="SolidsLoadingWtPercent">Limestone solids <span class="unit">(wt%)</span></label>
-                    <input asp-for="SolidsLoadingWtPercent" type="number" step="0.1" placeholder="15" />
-                </div>
-
-                <div class="form-group">
-                    <label asp-for="LimestoneParticleDiameterMicron">Limestone particle size <span class="unit">(micron)</span></label>
-                    <input asp-for="LimestoneParticleDiameterMicron" type="number" step="1" placeholder="50" />
-                </div>
-
-            </div>
+        <div class="data-row">
+            <span class="data-label">Inlet temperature / pressure</span>
+            <span class="data-value">@design.InletTemperature °C / @design.InletPressure.ToString("N0") Pa</span>
+        </div>
+        <div class="data-row">
+            <span class="data-label">Scrubbing liquid / L/G ratio</span>
+            <span class="data-value">@design.LiquidType / @design.LiquidToGasRatio L/m³ (pH @design.LiquidPH)</span>
+        </div>
+        <div class="data-row">
+            <span class="data-label">Shell / internal material</span>
+            <span class="data-value">@design.ShellMaterial / @design.InternalMaterial</span>
         </div>
     </div>
-
-    <!-- ═══════════════════════════════════════════════════════
-         SECTION 5 — Construction Materials
-    ════════════════════════════════════════════════════════ -->
-    <div class="form-card">
-        <div class="form-card-header">
-            <div class="form-card-icon">
-                <svg viewBox="0 0 16 16"><path d="M2 2h12v12H2z" /></svg>
-            </div>
-            <div>
-                <div class="form-card-title">Construction Materials</div>
-                <div class="form-card-sub">Shell and internal component materials</div>
-            </div>
-        </div>
-        <div class="form-card-body">
-
-            <!-- Hidden inputs for model binding -->
-            <input type="hidden" asp-for="ShellMaterial" id="ShellMaterial" value="1" />
-            <input type="hidden" asp-for="InternalMaterial" id="InternalMaterial" value="2" />
-
-            <div class="section-label">Shell Material</div>
-            <div class="material-grid" style="margin-bottom:20px;">
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.FRP ? "selected" : "")" data-value="1">
-                    <div class="material-name">FRP</div><div class="material-sub">Fibre Reinforced Plastic</div>
-                </div>
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.PP ? "selected" : "")" data-value="2">
-                    <div class="material-name">PP</div><div class="material-sub">Polypropylene</div>
-                </div>
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.SS316 ? "selected" : "")" data-value="5">
-                    <div class="material-name">SS 316</div><div class="material-sub">Stainless Steel</div>
-                </div>
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.HDPE ? "selected" : "")" data-value="3">
-                    <div class="material-name">HDPE</div><div class="material-sub">High Density PE</div>
-                </div>
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.PVC ? "selected" : "")" data-value="4">
-                    <div class="material-name">PVC</div><div class="material-sub">Polyvinyl Chloride</div>
-                </div>
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.HastelloyC ? "selected" : "")" data-value="6">
-                    <div class="material-name">Hastelloy C</div><div class="material-sub">High Alloy</div>
-                </div>
-                <div class="material-card shell-card @(Model.ShellMaterial == ConstructionMaterial.CarbonSteel ? "selected" : "")" data-value="7">
-                    <div class="material-name">Carbon Steel</div><div class="material-sub">With lining</div>
-                </div>
-            </div>
-
-            <div class="section-label">Internal Material</div>
-            <div class="material-grid">
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.FRP ? "selected" : "")" data-value="1">
-                    <div class="material-name">FRP</div><div class="material-sub">Fibre Reinforced Plastic</div>
-                </div>
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.PP ? "selected" : "")" data-value="2">
-                    <div class="material-name">PP</div><div class="material-sub">Polypropylene</div>
-                </div>
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.SS316 ? "selected" : "")" data-value="5">
-                    <div class="material-name">SS 316</div><div class="material-sub">Stainless Steel</div>
-                </div>
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.HDPE ? "selected" : "")" data-value="3">
-                    <div class="material-name">HDPE</div><div class="material-sub">High Density PE</div>
-                </div>
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.PVC ? "selected" : "")" data-value="4">
-                    <div class="material-name">PVC</div><div class="material-sub">Polyvinyl Chloride</div>
-                </div>
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.HastelloyC ? "selected" : "")" data-value="6">
-                    <div class="material-name">Hastelloy C</div><div class="material-sub">High Alloy</div>
-                </div>
-                <div class="material-card internal-card @(Model.InternalMaterial == ConstructionMaterial.CarbonSteel ? "selected" : "")" data-value="7">
-                    <div class="material-name">Carbon Steel</div><div class="material-sub">With lining</div>
-                </div>
-            </div>
-
-        </div>
-    </div>
-
-    <!-- Form actions -->
-    <div class="form-actions">
-        <button type="submit" class="btn-save">
-            <svg viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
-            Save Design
-        </button>
-        <a asp-controller="Project" asp-action="Detail"
-           asp-route-id="@Model.ProjectId" class="btn-cancel">
-            Cancel
-        </a>
-    </div>
-
-</form>
-
-<!-- Template for JS-added pollutant rows -->
-<template id="pollutantRowTemplate">
-    <div class="pollutant-row">
-        <div class="form-group">
-            <label>Pollutant</label>
-            <select name="Pollutants[INDEX].PollutantType">
-                @foreach (var opt in Model.PollutantOptions)
-                {
-                    <option value="@opt.Id">@Html.Raw(opt.Formula)</option>
-                }
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Inlet (mg/Nm³)</label>
-            <input type="number" step="any" name="Pollutants[INDEX].InletConcentration"
-                   class="inlet-conc" placeholder="1000" />
-        </div>
-        <div class="form-group">
-            <label>Target Outlet</label>
-            <input type="number" step="any" name="Pollutants[INDEX].TargetOutletConcentration"
-                   class="outlet-conc" placeholder="50" />
-        </div>
-        <div class="form-group">
-            <label>Removal %</label>
-            <input type="number" step="any" name="Pollutants[INDEX].TargetRemovalEfficiency"
-                   class="removal-eff" placeholder="95" />
-        </div>
-        <div class="form-group">
-            <label>Mol. Weight</label>
-            <input type="number" step="any" name="Pollutants[INDEX].MolecularWeight"
-                   placeholder="64" />
-        </div>
-        <button type="button" class="btn-remove-pollutant" title="Remove row">
-            <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z" /></svg>
-        </button>
-    </div>
-</template>
+</div>
 
 @section Scripts {
+    @if (calcResult.SensitivityPoints?.Any() == true)
+    {
+        var labelsJson = System.Text.Json.JsonSerializer.Serialize(
+                            calcResult.SensitivityPoints.Select(s => s.Label));
+        var effJson = System.Text.Json.JsonSerializer.Serialize(
+                            calcResult.SensitivityPoints.Select(s => Math.Round(s.RemovalEfficiency, 1)));
+        var htJson = System.Text.Json.JsonSerializer.Serialize(
+                            calcResult.SensitivityPoints.Select(s => Math.Round(s.PackingHeight, 2)));
+
+        <script id="chartData"
+                data-labels="@labelsJson"
+                data-eff="@effJson"
+                data-ht="@htJson">
+        </script>
+    }
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="~/js/scrubber.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script>
+        $(document).ready(function () {
+
+            // ── Sensitivity chart ─────────────────────────────────
+            var ctx      = document.getElementById('sensitivityChart');
+            var chartEl  = document.getElementById('chartData');
+            if (!ctx || !chartEl) return;
+
+            var labels  = JSON.parse(chartEl.getAttribute('data-labels'));
+            var effData = JSON.parse(chartEl.getAttribute('data-eff'));
+            var htData  = JSON.parse(chartEl.getAttribute('data-ht'));
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Removal Efficiency (%)',
+                            data: effData,
+                            borderColor: '#00d28c',
+                            backgroundColor: 'rgba(0,210,140,0.08)',
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#00d28c',
+                            pointRadius: 4,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Packing Height (m)',
+                            data: htData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59,130,246,0.06)',
+                            tension: 0.4,
+                            fill: false,
+                            pointBackgroundColor: '#3b82f6',
+                            pointRadius: 4,
+                            borderDash: [5, 3],
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            labels: { font: { size: 12 }, padding: 16 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (ctx) {
+                                    var v = ctx.parsed.y;
+                                    return ctx.dataset.label + ': ' +
+                                        (ctx.datasetIndex === 0
+                                            ? v.toFixed(1) + '%'
+                                            : v.toFixed(2) + ' m');
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            position: 'left',
+                            title: { display: true, text: 'Removal Efficiency (%)', font: { size: 11 } },
+                            min: 80,
+                            max: 100,
+                            grid: { color: 'rgba(0,0,0,0.04)' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            position: 'right',
+                            title: { display: true, text: 'Packing Height (m)', font: { size: 11 } },
+                            grid: { drawOnChartArea: false }
+                        },
+                        x: {
+                            grid: { color: 'rgba(0,0,0,0.04)' },
+                            ticks: { font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+
+            // ── Re-run loading state ──────────────────────────────
+            $('form').has('.btn-recalc').on('submit', function () {
+                $(this).find('.btn-recalc')
+                       .prop('disabled', true)
+                       .html('<span>Calculating…</span>');
+            });
+        });
+    </script>
 }

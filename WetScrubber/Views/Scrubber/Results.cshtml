@@ -117,6 +117,24 @@
         <div class="result-kpi-sub">Operating velocity</div>
     </div>
 
+    <div class="result-kpi @(calcResult.ExceedsRecommendedFlood ? "amber" : "green")">
+        <div class="result-kpi-icon">
+            <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
+        </div>
+        <div class="result-kpi-label">Flooding</div>
+        <div class="result-kpi-value">@calcResult.PercentFlood.ToString("F1")<span class="result-kpi-unit">% of flood</span></div>
+        <div class="result-kpi-sub">
+            @if (calcResult.ExceedsRecommendedFlood)
+            {
+                <text>Above recommended 70% limit</text>
+            }
+            else
+            {
+                <text>Flood velocity: @calcResult.FloodingGasVelocity.ToString("F2") m/s</text>
+            }
+        </div>
+    </div>
+
     <div class="result-kpi purple">
         <div class="result-kpi-icon">
             <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>

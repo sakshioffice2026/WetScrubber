@@ -199,17 +199,47 @@ namespace WetScrubber.Services
             //double gasFlowM3S   = vm.ActualFlowRate / 3600.0;
             result.GasVelocity = Math.Round(gasFlowM3S / crossSection, 2);
 
-            // 6. Pressure drop
+            // 6. Pressure drop — use the ACTUALLY SELECTED packing's
+            // surface area/voidage, not the hardcoded default. Previously
+            // this always used DefaultSurfaceArea/DefaultVoidFraction
+            // regardless of vm.PackingCode, so pressure drop was silently
+            // wrong for any packing other than the one those defaults
+            // happened to represent.
+            var pdPackingData = _packingLookup?.GetByCode(vm.PackingCode);
+            double pdSurfaceArea = pdPackingData?.SpecificAreaM2M3 ?? DefaultSurfaceArea;
+            double pdNominalSizeM = pdPackingData?.NominalSizeM ?? DefaultNominalPackingSizeM;
+            double pdVoidFraction = DefaultVoidFraction; // voidage not yet on PackingData model
+
             result.PressureDrop = Math.Round(
                 CalculatePressureDrop(
                     gasVelocityMs: result.GasVelocity,
                     liquidLoadingM3M2Hr: liquidFlowM3Hr / crossSection,
                     gasDensityKgM3: vm.GasDensity,
                     liquidDensityKgM3: vm.LiquidDensity,
-                    packingSurfaceAreaM2M3: DefaultSurfaceArea,
-                    voidFraction: DefaultVoidFraction,
+                    packingSurfaceAreaM2M3: pdSurfaceArea,
+                    voidFraction: pdVoidFraction,
                     liquidViscosityPas: vm.LiquidViscosity / 1000.0
                 ) * result.PackingHeight, 2);
+
+            // 6b. Flooding check — Sherwood-Shipley-Holloway. Previously
+            // there was no flooding velocity check anywhere: only a fixed
+            // absolute Pa ceiling compared against total pressure drop,
+            // which doesn't catch a tower running dangerously close to
+            // flood at low ΔP (e.g. large diameter, low packing factor).
+            var floodResult = PressureDropFloodingCorrelation.Calculate(
+                packingSpecificAreaM2M3: pdSurfaceArea,
+                voidageFraction: pdVoidFraction,
+                nominalPackingSizeM: pdNominalSizeM,
+                gasMassVelocityKgM2S: gasMassVelocity,
+                liquidMassVelocityKgM2S: liquidMassVelocity,
+                gasDensityKgM3: vm.GasDensity,
+                liquidDensityKgM3: vm.LiquidDensity,
+                gasViscosityPas: vm.GasViscosity,
+                liquidViscosityPas: vm.LiquidViscosity / 1000.0);
+
+            result.PercentFlood = Math.Round(floodResult.PercentFlood, 1);
+            result.FloodingGasVelocity = Math.Round(floodResult.FloodingGasVelocityMS, 3);
+            result.ExceedsRecommendedFlood = floodResult.ExceedsRecommendedFlood;
 
             // 7. Power
             result.FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, result.PressureDrop + 500), 2);
@@ -281,12 +311,13 @@ namespace WetScrubber.Services
 
             var venturi = CalculateVenturiSizing(
                 gasFlowRateM3S: gasFlowM3S,
-                throatVelocityMs: 80.0,   // 80 m/s typical
+                throatVelocityMs: vm.VenturiThroatVelocityMs,
                 liquidToGasRatioLM3: vm.LiquidToGasRatio,
                 gasDensityKgM3: vm.GasDensity,
-                particleDensityKgM3: 1500,
-                particleDiameterMicron: 5.0,
-                liquidDensityKgM3: vm.LiquidDensity
+                particleDensityKgM3: vm.VenturiParticleDensityKgM3,
+                particleDiameterMicron: vm.VenturiParticleDiameterMicron,
+                liquidDensityKgM3: vm.LiquidDensity,
+                gasViscosityPas: vm.GasViscosity
             );
 
             result.TowerDiameter = Math.Round(venturi.ThroatDiameter * 2.5, 3); // body = 2.5x throat
@@ -326,7 +357,18 @@ namespace WetScrubber.Services
             result.GasVelocity = Math.Round(designVelocity, 2);
             result.RemovalEfficiency = Math.Round(
                 (1 - Math.Exp(-0.5 * vm.LiquidToGasRatio)) * 100, 2);
-            result.PressureDrop = Math.Round(gasFlowM3S * 50, 0);  // low ΔP
+            // Pressure drop — velocity-head (dynamic pressure) loss through
+            // the spray chamber. Previously: gasFlowM3S * 50, which used
+            // volumetric flow directly (m3/s * 50 is not even dimensionally
+            // Pa) — a placeholder, not physics.
+            // K_loss = entrance + demister + spray-zone friction losses,
+            // typical range 1.0-2.0 for hollow spray towers (Cooper & Alley,
+            // "Air Pollution Control: A Design Approach"). This is a
+            // dynamic-pressure approximation, not a full droplet-drag model —
+            // droplet size/spray density aren't modeled in this method.
+            const double SprayTowerLossCoefficient = 1.5;
+            double dynamicPressurePa = vm.GasDensity * Math.Pow(designVelocity, 2) / 2.0;
+            result.PressureDrop = Math.Round(dynamicPressurePa * SprayTowerLossCoefficient, 0);
             result.FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, result.PressureDrop + 300), 2);
             result.PumpPowerKW = Math.Round(CalculatePumpPower(vm.ActualFlowRate * vm.LiquidToGasRatio / 1000.0, 8, vm.LiquidDensity), 2);
             result.LiquidFlowRateM3Hr = Math.Round(vm.ActualFlowRate * vm.LiquidToGasRatio / 1000.0, 2);
@@ -926,7 +968,8 @@ namespace WetScrubber.Services
             double gasDensityKgM3,
             double particleDensityKgM3,
             double particleDiameterMicron,
-            double liquidDensityKgM3 = 1000)
+            double liquidDensityKgM3 = 1000,
+            double gasViscosityPas = 1.81e-5)
         {
             double throatArea = gasFlowRateM3S / throatVelocityMs;
             double throatDiam = Math.Sqrt(4.0 * throatArea / Math.PI);
@@ -934,7 +977,10 @@ namespace WetScrubber.Services
             double dp = gasDensityKgM3 * Math.Pow(throatVelocityMs, 2) / 2.0;
             double pressureDrop = dp * (1 + (liquidToGasRatioLM3 / 1000.0) * (liquidDensityKgM3 / gasDensityKgM3));
 
-            double gasVisc = 1.81e-5;
+            // gasViscosityPas previously hardcoded to 1.81e-5 (ambient air)
+            // regardless of actual (often hot, 150-300°C) flue-gas stream —
+            // wrong viscosity shifts Stokes number and thus efficiency.
+            double gasVisc = gasViscosityPas;
             double dpMeters = particleDiameterMicron * 1e-6;
             double Stk = (particleDensityKgM3 * Math.Pow(dpMeters, 2) * throatVelocityMs)
                              / (18.0 * gasVisc * Math.Max(throatDiam, 0.001));
@@ -1146,6 +1192,11 @@ CreateDesignViewModel vm)
         public double RemovalEfficiency { get; set; }
         public double PressureDrop { get; set; }   // Pa total
         public double GasVelocity { get; set; }   // m/s
+
+        // Flooding (Sherwood-Shipley-Holloway) — see PressureDropFloodingCorrelation
+        public double PercentFlood { get; set; }           // % of flooding velocity
+        public double FloodingGasVelocity { get; set; }    // m/s, superficial
+        public bool ExceedsRecommendedFlood { get; set; }  // true if >70% flood
 
         // Transfer unit data
         public double NTU { get; set; }

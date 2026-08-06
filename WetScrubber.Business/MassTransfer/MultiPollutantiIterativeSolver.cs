@@ -46,6 +46,11 @@ namespace WetScrubber.Business.MassTransfer
             public string Code { get; set; } = "";
             public double InletPpm { get; set; }
             public double MolecularWeight { get; set; }
+
+            /// <summary>Solute molar volume at normal boiling point, cm3/mol
+            /// (Le Bas method). Required for Wilke-Chang liquid diffusivity.
+            /// If 0/unset, solver falls back to a flat literal.</summary>
+            public double MolarVolumeCm3Mol { get; set; }
             public double HenrysLawConstant { get; set; }
             public double HeatOfAbsorptionKJKmol { get; set; }
             public Func<double, double> HenrysLawTemperatureCorrectionFn { get; set; } = _ => 1.0;
