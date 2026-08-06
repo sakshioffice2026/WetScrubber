@@ -23,5 +23,7 @@ namespace WetScrubber.Database
         public bool ValidatedFlag { get; set; } = false;  // Sourced from vendor datasheets?
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? UpdatedAt { get; set; }
+
+        public string DisplayName { get; set; }
     }
 }

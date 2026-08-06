@@ -35,6 +35,8 @@ namespace WetScrubber.Database
         public DbSet<Packing> Packings { get; set; }
         public DbSet<ReferenceSource> ReferenceSources { get; set; }
 
+        public DbSet<PackingMaterial> PackingMaterials { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

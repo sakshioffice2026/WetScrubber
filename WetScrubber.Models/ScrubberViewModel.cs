@@ -112,6 +112,24 @@ namespace WetScrubber.Models
         // ── Diagnostics (populated by the controller from the last-run
         // calculation, empty until then) ─────────────────────────
         public List<DesignFindingViewModel> Diagnostics { get; set; } = new();
+
+        public bool IsLimestoneSlurry { get; set; }
+
+        public double SolidsLoadingWtPercent { get; set; }
+
+        public double LimestoneParticleDiameterMicron { get; set; }
+
+        public CreateDesignViewModel Clone()
+        {
+            return new CreateDesignViewModel
+            {
+                IsLimestoneSlurry = this.IsLimestoneSlurry,
+                SolidsLoadingWtPercent = this.SolidsLoadingWtPercent,
+                LimestoneParticleDiameterMicron = this.LimestoneParticleDiameterMicron
+
+                // copy your other properties also
+            };
+        }
     }
 
     // ============================================================
@@ -140,6 +158,12 @@ namespace WetScrubber.Models
     public class EditDesignViewModel : CreateDesignViewModel
     {
         public int DesignId { get; set; }
+
+        public bool IsLimestoneSlurry { get; set; }
+
+        public double SolidsLoadingWtPercent { get; set; }
+
+        public double LimestoneParticleDiameterMicron { get; set; }
     }
 
     // ============================================================

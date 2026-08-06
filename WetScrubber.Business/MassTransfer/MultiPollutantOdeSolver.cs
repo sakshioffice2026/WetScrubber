@@ -33,6 +33,8 @@ namespace WetScrubber.Business.MassTransfer
             public double TotalHeatAbsorbedKW { get; set; }
             public bool Converged { get; set; }
             public int NodeCount { get; set; }
+            public double OutletGasTemperatureK { get; set; }
+            public IReadOnlyDictionary<string, double> OutletConcKgM3 { get; set; }
         }
 
         public static SolverOutput SolveOde(SolverInput input)
@@ -85,7 +87,11 @@ namespace WetScrubber.Business.MassTransfer
                 NodeCount = odeOutput.Profile.Count,
                 LiquidOutletTemperatureC = odeOutput.OutletLiquidTemperatureK - 273.15,
                 OverallRemovalEfficiency = odeOutput.RemovalEfficiency,
-                Segments = new List<MultiPollutantSegment>()
+                Segments = new List<MultiPollutantSegment>(),
+
+                OutletGasTemperatureK = odeOutput.Profile.Last().GasTemperatureK,
+
+                OutletConcKgM3 = odeOutput.Profile.Last().PollutantConcKgM3
             };
 
             // Create synthetic segments from ODE nodes (every 5th node)

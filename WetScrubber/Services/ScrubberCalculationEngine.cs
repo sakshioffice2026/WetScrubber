@@ -1026,6 +1026,12 @@ namespace WetScrubber.Services
 
         // Sensitivity analysis points for chart
         public List<SensitivityPoint> SensitivityPoints { get; set; } = new();
+
+        public double LiquidOutletTemperatureK { get; set; }
+
+        public List<PollutantResult> PollutantResults { get; set; } = new();
+
+
     }
 
     public class NtuHtuResult

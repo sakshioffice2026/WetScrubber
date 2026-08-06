@@ -34,7 +34,7 @@ namespace WetScrubber.Repositories.Repositories
                 ComponentCode = row.ComponentCode,
                 MolarVolumeAtBoilingPointCm3Mol = row.MolarVolumeAtBoilingPointCm3Mol,
                 AssociationFactor = row.AssociationFactor,
-                FullerDiffusionVolumeCm3Mol = row.FullerDiffusionVolumeCm3Mol
+                FullerDiffusionVolumeCm3Mol = row.FullerDiffusionVolumeCm3Mol ?? 0.0
             };
         }
     }
