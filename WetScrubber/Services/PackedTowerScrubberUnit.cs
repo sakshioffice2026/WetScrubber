@@ -1,7 +1,10 @@
-﻿using WetScrubber.Business.Flowsheet;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using WetScrubber.Business.Flowsheet;
 using WetScrubber.Models;
 
-namespace WetScrubber.Services.Flowsheet
+namespace WetScrubber.Services
 {
     /// <summary>
     /// Adapts ScrubberCalculationEngine (a single-tower calculator) into

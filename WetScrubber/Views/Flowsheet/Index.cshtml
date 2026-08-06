@@ -1,0 +1,78 @@
+@model List<WetScrubber.Database.FlowsheetEntity>
+@{
+    ViewData["Title"] = "Flowsheets";
+    ViewData["ActivePage"] = "Flowsheets";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+}
+
+<div class="breadcrumb">
+    <a asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Flowsheets</span>
+</div>
+
+@if (TempData["Success"] != null)
+{
+    <div class="flash-toast success">@TempData["Success"]</div>
+}
+@if (TempData["Error"] != null)
+{
+    <div class="flash-toast error">@TempData["Error"]</div>
+}
+
+<div class="proj-table-card">
+    <div class="proj-table-header">
+        <div class="proj-table-title">Flowsheets</div>
+        <a asp-action="Create" class="btn-save" style="text-decoration:none;">
+            <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none" /></svg>
+            New Flowsheet
+        </a>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table class="proj-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Project</th>
+                    <th>Units</th>
+                    <th>Connections</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var f in Model)
+                {
+                    <tr>
+                        <td><span class="proj-name">@f.Name</span></td>
+                        <td>@(f.Project?.ProjectName ?? "—")</td>
+                        <td>@f.UnitOperations.Count</td>
+                        <td>@f.StreamConnections.Count</td>
+                        <td>@f.UpdatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>
+                            <div class="action-btns">
+                                <a asp-action="Detail" asp-route-id="@f.Id" class="action-btn" title="Open">
+                                    <svg viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 01.708 0l3 3a.5.5 0 010 .708l-10 10a.5.5 0 01-.168.11l-5 2a.5.5 0 01-.65-.65l2-5a.5.5 0 01.11-.168l10-10z" /></svg>
+                                </a>
+                                <form asp-action="Delete" asp-route-id="@f.Id" method="post"
+                                      onsubmit="return confirm('Delete flowsheet @f.Name? This removes all its unit operations and connections.');" style="display:inline;">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="action-btn" title="Delete">
+                                        <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm5.5.5a.5.5 0 00-1 0v6a.5.5 0 001 0V6zM14.5 3a1 1 0 01-1 1H13v9a2 2 0 01-2 2H5a2 2 0 01-2-2V4h-.5a1 1 0 010-2h4a1 1 0 011-1h2a1 1 0 011 1h4a1 1 0 011 1z" /></svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+                @if (Model.Count == 0)
+                {
+                    <tr><td colspan="6" style="text-align:center; color:#888;">No flowsheets yet.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

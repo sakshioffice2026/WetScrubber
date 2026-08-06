@@ -21,6 +21,11 @@ namespace WetScrubber.Database
         public DbSet<ScrubbingLiquid> ScrubbingLiquids { get; set; }
         public DbSet<ChemicalReaction> ChemicalReactions { get; set; }
 
+        // ── Phase 4c — Flowsheet framework ──────────────────────────
+        public DbSet<FlowsheetEntity> Flowsheets { get; set; }
+        public DbSet<UnitOperationEntity> UnitOperations { get; set; }
+        public DbSet<StreamConnectionEntity> StreamConnections { get; set; }
+
         // Phase 2 — uncomment when Project model is added
         // public DbSet<Project> Projects { get; set; }
 

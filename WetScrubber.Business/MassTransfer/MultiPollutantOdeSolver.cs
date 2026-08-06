@@ -120,7 +120,9 @@ namespace WetScrubber.Business.MassTransfer
                 output.Segments.Add(seg);
             }
 
-            output.TotalHeatAbsorbedKW = 0.0; // Could compute from profiles
+            output.TotalHeatAbsorbedKW = Math.Abs(
+                input.LiquidMassFlowKgS * 4.18 *
+                (odeOutput.OutletLiquidTemperatureK - (input.LiquidInletTempC + 273.15)));
             return output;
         }
     }

@@ -123,11 +123,36 @@ namespace WetScrubber.Models
         {
             return new CreateDesignViewModel
             {
+                ProjectId = this.ProjectId,
+                ProjectNumber = this.ProjectNumber,
+                ProjectName = this.ProjectName,
+                DesignName = this.DesignName,
+                ScrubberType = this.ScrubberType,
+                NormalFlowRate = this.NormalFlowRate,
+                ActualFlowRate = this.ActualFlowRate,
+                InletTemperature = this.InletTemperature,
+                InletPressure = this.InletPressure,
+                MoistureContent = this.MoistureContent,
+                GasDensity = this.GasDensity,
+                GasViscosity = this.GasViscosity,
+                Pollutants = this.Pollutants,
+                LiquidType = this.LiquidType,
+                PollutantOptions = this.PollutantOptions,
+                LiquidOptions = this.LiquidOptions,
+                LiquidConcentration = this.LiquidConcentration,
+                LiquidPH = this.LiquidPH,
+                LiquidTemperature = this.LiquidTemperature,
+                LiquidDensity = this.LiquidDensity,
+                LiquidViscosity = this.LiquidViscosity,
+                LiquidToGasRatio = this.LiquidToGasRatio,
+                PackingCode = this.PackingCode,
+                PackingOptions = this.PackingOptions,
+                ShellMaterial = this.ShellMaterial,
+                InternalMaterial = this.InternalMaterial,
+                Diagnostics = this.Diagnostics,
                 IsLimestoneSlurry = this.IsLimestoneSlurry,
                 SolidsLoadingWtPercent = this.SolidsLoadingWtPercent,
                 LimestoneParticleDiameterMicron = this.LimestoneParticleDiameterMicron
-
-                // copy your other properties also
             };
         }
     }

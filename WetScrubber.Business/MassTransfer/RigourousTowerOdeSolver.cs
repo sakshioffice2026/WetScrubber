@@ -130,6 +130,11 @@ namespace WetScrubber.Business.MassTransfer
                 double dCdz = -(kA * (conc - equilibriumConc)) / gasFlow;
                 derivs[code] = dCdz;
 
+                // Liquid-side mass balance: whatever leaves the gas phase
+                // enters the liquid phase. dW/dz = absorbed(kg/s per m) / liquidMassFlow(kg/s)
+                double absorbedKgSPerM = -dCdz * gasFlow * input.TowerAreaM2;
+                derivs["_dW_" + code] = absorbedKgSPerM / Math.Max(input.LiquidMassFlowKgS, 1e-9);
+
                 // Heat: absorbed kmol/s * ΔH_abs
                 double absorbedKmolS = Math.Abs(dCdz) * gasFlow * input.TowerAreaM2 /
                                        (input.MolWeightFn(code) / 1000.0);
@@ -177,7 +182,10 @@ namespace WetScrubber.Business.MassTransfer
             {
                 yNew.PollutantConcKgM3[code] = y.PollutantConcKgM3[code] +
                     (dz / 6.0) * (k1[code] + 2 * k2[code] + 2 * k3[code] + k4[code]);
-                yNew.LiquidMassFraction[code] = y.LiquidMassFraction[code];  // TODO: proper liquid uptake
+
+                string wKey = "_dW_" + code;
+                yNew.LiquidMassFraction[code] = Math.Max(0, y.LiquidMassFraction[code] +
+                    (dz / 6.0) * (k1[wKey] + 2 * k2[wKey] + 2 * k3[wKey] + k4[wKey]));
             }
 
             yNew.GasTemperatureK = y.GasTemperatureK +
@@ -195,7 +203,8 @@ namespace WetScrubber.Business.MassTransfer
             foreach (var code in input.PollutantCodes)
             {
                 result.PollutantConcKgM3[code] = Math.Max(0, y.PollutantConcKgM3[code] + step * dydt[code]);
-                result.LiquidMassFraction[code] = y.LiquidMassFraction[code];
+                string wKey = "_dW_" + code;
+                result.LiquidMassFraction[code] = Math.Max(0, y.LiquidMassFraction[code] + step * dydt[wKey]);
             }
 
             result.GasTemperatureK = y.GasTemperatureK + step * dydt["_dTgas_dz"];

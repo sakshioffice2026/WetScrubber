@@ -228,6 +228,17 @@ namespace WetScrubber.Services
             // or if any lookup fails.
             if (vm.Pollutants.Count > 1)
             {
+                var odeResult = TryComputeMultiPollutantOdeSolution(
+                    vm, henrysTemp, result.TowerHeight, crossSection);
+                if (odeResult?.Converged == true)
+                {
+                    double totalRemovalOde = odeResult.OverallRemovalEfficiency.Values.Average();
+                    result.RemovalEfficiency = Math.Round(totalRemovalOde, 2);
+                    result.LiquidOutletTemperature = Math.Round(odeResult.LiquidOutletTemperatureC, 1);
+                    result.HeatAbsorbedKW = Math.Round(odeResult.TotalHeatAbsorbedKW, 2);
+                    return result;
+                }
+
                 var multiResult = TryComputeMultiPollutantIterativeSolution(vm, henrysTemp);
                 if (multiResult?.Converged == true)
                 {
@@ -769,6 +780,84 @@ namespace WetScrubber.Services
                 };
 
                 return MultiPollutantIterativeSolver.SolveIterative(solverInput, numSegments: 5);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  PHASE 4b — Multi-pollutant RK45 ODE solver
+        // ════════════════════════════════════════════════════════════
+        private MultiPollutantOdeSolver.SolverOutput? TryComputeMultiPollutantOdeSolution(
+            CreateDesignViewModel vm,
+            double henrysLawConstantReference,
+            double towerHeightM,
+            double crossSectionM2)
+        {
+            if (vm.Pollutants.Count == 0)
+                return null;
+
+            try
+            {
+                var pollutantInputs = new List<MultiPollutantIterativeSolver.PollutantInput>();
+
+                foreach (var pollutant in vm.Pollutants)
+                {
+                    string? pollutantCode = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
+                    if (pollutantCode == null)
+                        continue;
+
+                    double effectiveHenry = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
+
+                    pollutantInputs.Add(new MultiPollutantIterativeSolver.PollutantInput
+                    {
+                        Code = pollutantCode,
+                        InletPpm = pollutant.InletConcentration,
+                        MolecularWeight = pollutant.MolecularWeight,
+                        HenrysLawConstant = effectiveHenry,
+                        HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
+                        HenrysLawTemperatureCorrectionFn = t =>
+                        {
+                            var data = _henrysLawLookup?.GetByPollutantCode(pollutantCode);
+                            if (data?.HeatOfSolutionKJmol == null)
+                                return 1.0;
+                            double tempCoeff = -(data.HeatOfSolutionKJmol.Value * 1000.0) / GasConstant;
+                            double T = t + 273.15;
+                            return Math.Exp(tempCoeff * (1.0 / T - 1.0 / 298.15));
+                        }
+                    });
+                }
+
+                if (pollutantInputs.Count == 0)
+                    return null;
+
+                double gasFlowM3S = vm.ActualFlowRate / 3600.0;
+                double gasMassFlowKgS = gasFlowM3S * vm.GasDensity;
+                double liquidFlowM3S = (vm.LiquidToGasRatio * gasFlowM3S) / 1000.0;
+                double liquidMassFlowKgS = liquidFlowM3S * vm.LiquidDensity;
+
+                var packingData = _packingLookup?.GetByCode(vm.PackingCode);
+                double packingSpecificAreaM2M3 = packingData?.SpecificAreaM2M3 ?? DefaultSurfaceArea;
+                double packingNominalSizeM = packingData?.NominalSizeM ?? DefaultNominalPackingSizeM;
+
+                var odeInput = new MultiPollutantOdeSolver.SolverInput
+                {
+                    Pollutants = pollutantInputs,
+                    GasTemperatureC = vm.InletTemperature,
+                    GasMassFlowKgS = gasMassFlowKgS,
+                    LiquidInletTempC = vm.LiquidTemperature,
+                    LiquidMassFlowKgS = liquidMassFlowKgS,
+                    LiquidDensityKgM3 = vm.LiquidDensity,
+                    GasDensityKgM3 = vm.GasDensity,
+                    TowerHeightM = towerHeightM,
+                    TowerAreaM2 = crossSectionM2,
+                    PackingSpecificAreaM2M3 = packingSpecificAreaM2M3,
+                    PackingNominalSizeM = packingNominalSizeM
+                };
+
+                return MultiPollutantOdeSolver.SolveOde(odeInput);
             }
             catch
             {

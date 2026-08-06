@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Linq;
 using WetScrubber.Business.AI;
 using WetScrubber.Business.Diagnostics;
 using WetScrubber.Business.MassTransfer;
@@ -472,6 +473,22 @@ namespace WetScrubber.Controllers
             ViewBag.CalcResult = calcResult;
 
             return View();
+        }
+
+        // ── GET /Scrubber/PredictChemistry ────────────────────────
+        [HttpGet]
+        public IActionResult PredictChemistry()
+        {
+            var redirect = RedirectIfNotLoggedIn();
+            if (redirect != null) return redirect;
+
+            var vm = new ChemistryIndexViewModel
+            {
+                Pollutants = _dbContext.Pollutants.ToList(),
+                Liquids = _dbContext.ScrubbingLiquids.ToDictionary(l => l.Id)
+            };
+
+            return View(vm);
         }
 
         // ── POST /Scrubber/PredictChemistry ──────────────────────

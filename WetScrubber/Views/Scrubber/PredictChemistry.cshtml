@@ -1,4 +1,4 @@
-﻿@* @model WetScrubber.Models.ChemistryIndexViewModel
+﻿@model WetScrubber.Models.ChemistryIndexViewModel
 @{
     ViewData["Title"] = "Predict Chemistry";
     ViewData["ActivePage"] = "Chemistry";
@@ -61,7 +61,7 @@
             <label for="liquidSelect">Scrubbing Liquid</label>
             <select id="liquidSelect">
                 <option value="">Select liquid…</option>
-                @foreach (var liquid in Model.ScrubbingLiquids)
+                @foreach (var liquid in Model.Liquids.Values)
                 {
                     <option value="@liquid.Id" data-name="@liquid.DisplayName">
                         @liquid.DisplayName (@liquid.Formula)
@@ -119,4 +119,4 @@
 
 @section Scripts {
     <script src="~/js/predict-chemistry.js"></script>
-} *@
+}
