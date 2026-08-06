@@ -22,13 +22,16 @@ namespace WetScrubber.Business.Flowsheet
 
     /// <summary>
     /// One node in the flowsheet chain (pre-cooler, scrubber, mist
-    /// eliminator...). Pure transform: inlet stream in, outlet stream
+    /// eliminator...). Pure transform: inlet ports in, outlet ports
     /// out — no shared mutable state between calls, so a unit op is
-    /// safe to re-invoke across recycle iterations.
+    /// safe to re-invoke across recycle iterations. Takes both gas and
+    /// liquid streams (FlowsheetPorts) so liquid-side recycle (e.g.
+    /// scrubbing liquid recirculation) is a real wired connection
+    /// instead of a fixed per-unit parameter.
     /// </summary>
     public interface IUnitOperation
     {
         string Name { get; }
-        ProcessStream Process(ProcessStream inlet);
+        FlowsheetPorts Process(FlowsheetPorts inlet);
     }
 }

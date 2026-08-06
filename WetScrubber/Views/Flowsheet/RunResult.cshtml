@@ -2,7 +2,8 @@
 @using System.Linq
 @{
     var flowsheet = ViewBag.Flowsheet as WetScrubber.Database.FlowsheetEntity;
-    var feed = ViewBag.Feed as WetScrubber.Business.Flowsheet.ProcessStream;
+    var feedPorts = ViewBag.Feed as WetScrubber.Business.Flowsheet.FlowsheetPorts;
+    var feed = feedPorts?.Gas;
     ViewData["Title"] = "Run Result";
     ViewData["ActivePage"] = "Flowsheets";
     var pollutantCodes = feed?.PollutantPpmByCode.Keys.ToList() ?? new List<string>();
@@ -48,13 +49,21 @@
                 <thead>
                     <tr>
                         <th>Unit</th>
-                        <th>Flow (m³/hr)</th>
-                        <th>Temp (°C)</th>
+                        <th>Gas Flow (m³/hr)</th>
+                        <th>Gas Temp (°C)</th>
                         <th>Pressure (Pa)</th>
 
                         @foreach (var code in pollutantCodes)
                         {
                             <th>@code (ppm)</th>
+                        }
+
+                        <th>Liquid Flow (kg/s)</th>
+                        <th>Liquid Temp (°C)</th>
+
+                        @foreach (var code in pollutantCodes)
+                        {
+                            <th>@code liquid (mg/kg)</th>
                         }
                     </tr>
                 </thead>
@@ -63,13 +72,21 @@
                     {
                         <tr>
                             <td><span class="proj-name">@kv.Key</span></td>
-                            <td>@kv.Value.ActualFlowM3Hr.ToString("F0")</td>
-                            <td>@kv.Value.TemperatureC.ToString("F1")</td>
-                            <td>@kv.Value.PressurePa.ToString("F0")</td>
+                            <td>@kv.Value.Gas.ActualFlowM3Hr.ToString("F0")</td>
+                            <td>@kv.Value.Gas.TemperatureC.ToString("F1")</td>
+                            <td>@kv.Value.Gas.PressurePa.ToString("F0")</td>
 
                             @foreach (var code in pollutantCodes)
                             {
-                                <td>@(kv.Value.PollutantPpmByCode.TryGetValue(code, out var v) ? v.ToString("F1") : "—")</td>
+                                <td>@(kv.Value.Gas.PollutantPpmByCode.TryGetValue(code, out var v) ? v.ToString("F1") : "—")</td>
+                            }
+
+                            <td>@kv.Value.Liquid.MassFlowKgS.ToString("F1")</td>
+                            <td>@kv.Value.Liquid.TemperatureC.ToString("F1")</td>
+
+                            @foreach (var code in pollutantCodes)
+                            {
+                                <td>@(kv.Value.Liquid.PollutantLoadingKgKg.TryGetValue(code, out var lv) ? (lv * 1e6).ToString("F1") : "—")</td>
                             }
                         </tr>
                     }

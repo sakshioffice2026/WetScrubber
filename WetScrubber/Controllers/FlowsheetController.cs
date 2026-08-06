@@ -253,15 +253,24 @@ namespace WetScrubber.Controllers
 
             try
             {
-                var feed = new ProcessStream
+                var feed = new FlowsheetPorts
                 {
-                    ActualFlowM3Hr = model.ActualFlowM3Hr,
-                    TemperatureC = model.TemperatureC,
-                    PressurePa = model.PressurePa,
-                    PollutantPpmByCode = ParsePollutants(model.Pollutants)
+                    Gas = new ProcessStream
+                    {
+                        ActualFlowM3Hr = model.ActualFlowM3Hr,
+                        TemperatureC = model.TemperatureC,
+                        PressurePa = model.PressurePa,
+                        PollutantPpmByCode = ParsePollutants(model.Pollutants)
+                    },
+                    Liquid = new LiquidStream
+                    {
+                        MassFlowKgS = model.LiquidFlowKgS,
+                        TemperatureC = model.LiquidTemperatureC,
+                        PollutantLoadingKgKg = new Dictionary<string, double>()
+                    }
                 };
 
-                var output = SolveFlowsheet(flowsheet, feed);
+                var output = SolveFlowsheet(flowsheet, feed, model.LiquidRecycleFraction);
 
                 ViewBag.Flowsheet = flowsheet;
                 ViewBag.Feed = feed;
@@ -300,7 +309,7 @@ namespace WetScrubber.Controllers
         }
 
         private static FlowsheetTopologicalSolver.SolveOutput SolveFlowsheet(
-            FlowsheetEntity flowsheet, ProcessStream feed)
+            FlowsheetEntity flowsheet, FlowsheetPorts feed, double liquidRecycleFraction)
         {
             var orderedUnits = flowsheet.UnitOperations.OrderBy(u => u.SequenceOrder).ToList();
 
@@ -347,8 +356,9 @@ namespace WetScrubber.Controllers
             var solveInput = new FlowsheetTopologicalSolver.SolveInput
             {
                 Units = nodes,
-                FeedStream = feed,
-                TearStreamNames = hasRecycle ? new List<string> { "recycle" } : new List<string>()
+                FeedPorts = feed,
+                TearStreamNames = hasRecycle ? new List<string> { "recycle" } : new List<string>(),
+                LiquidRecycleFraction = liquidRecycleFraction
             };
 
             return FlowsheetTopologicalSolver.Solve(solveInput);

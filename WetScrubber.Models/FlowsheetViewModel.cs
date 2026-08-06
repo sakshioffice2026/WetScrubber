@@ -63,5 +63,15 @@ namespace WetScrubber.Models
 
         // "SO2:500,H2S:200"
         public string Pollutants { get; set; } = "";
+
+        // Liquid feed — 0 flow means "not wired", so each unit falls
+        // back to its own configured liquid parameters (unchanged
+        // behavior from before liquid streams existed).
+        public double LiquidFlowKgS { get; set; } = 0;
+        public double LiquidTemperatureC { get; set; } = 25;
+
+        // Recycle a fraction of final-outlet liquid back into the
+        // liquid feed each tear iteration (0 = no recycle, single pass).
+        public double LiquidRecycleFraction { get; set; } = 0;
     }
 }

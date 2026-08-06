@@ -6,17 +6,18 @@ namespace WetScrubber.Business.Flowsheet
 {
     public sealed class FlowsheetResult
     {
-        public List<(string UnitName, ProcessStream Outlet)> StageOutlets { get; } = new();
-        public ProcessStream FinalOutlet { get; set; } = null!;
+        public List<(string UnitName, FlowsheetPorts Outlet)> StageOutlets { get; } = new();
+        public FlowsheetPorts FinalOutlet { get; set; } = null!;
         public bool RecycleConverged { get; set; } = true; // true (trivially) when there's no recycle
         public int RecycleIterations { get; set; } = 1;
     }
 
     /// <summary>
-    /// Chains unit ops with a shared ProcessStream (pre-cooler -> scrubber
-    /// -> mist eliminator, per the roadmap's Phase 4 example). Pure
-    /// sequencing — no DB/IO, mirrors PackedTowerLayerSolver's "pure
-    /// math, callers own the wiring" stance.
+    /// Chains unit ops with a shared FlowsheetPorts (gas + liquid stream)
+    /// (pre-cooler -> scrubber -> mist eliminator, per the roadmap's
+    /// Phase 4 example). Pure sequencing — no DB/IO, mirrors
+    /// PackedTowerLayerSolver's "pure math, callers own the wiring"
+    /// stance.
     /// </summary>
     public sealed class Flowsheet
     {
@@ -25,66 +26,74 @@ namespace WetScrubber.Business.Flowsheet
         public Flowsheet(IEnumerable<IUnitOperation> units) => _units = units.ToList();
 
         /// <summary>Single pass, no recycle — the common case.</summary>
-        public FlowsheetResult Run(ProcessStream feed)
+        public FlowsheetResult Run(FlowsheetPorts feed)
         {
             var result = new FlowsheetResult();
-            var stream = feed;
+            var ports = feed;
             foreach (var unit in _units)
             {
-                stream = unit.Process(stream);
-                result.StageOutlets.Add((unit.Name, stream));
+                ports = unit.Process(ports);
+                result.StageOutlets.Add((unit.Name, ports));
             }
-            result.FinalOutlet = stream;
+            result.FinalOutlet = ports;
             return result;
         }
 
         /// <summary>
-        /// Tear-stream successive substitution: a fraction of the final
-        /// outlet's pollutant loading is blended back into the feed
-        /// before the next pass — e.g. mist-eliminator drain recirculated
-        /// as pre-cooler spray water, which re-strips some pollutant back
-        /// into the gas. Converges when the recycled loading stops moving
-        /// between passes. This is the "even a simple successive-
-        /// substitution solver" step the roadmap calls out for Phase 4.
+        /// Physical liquid recycle: a fraction of the fresh liquid feed's
+        /// mass flow is replaced by the previous pass's final-outlet
+        /// liquid stream (its temperature and accumulated pollutant
+        /// loading intact) — e.g. mist-eliminator drain / sump liquid
+        /// recirculated as pre-cooler spray or scrubber liquid, which
+        /// re-strips less pollutant on the next pass because it's
+        /// already partially loaded. Converges when the recycled
+        /// stream's temperature and loading stop moving between passes.
+        /// This replaces the old gas-ppm-blend approximation with an
+        /// actual liquid-stream tear.
         /// </summary>
         public FlowsheetResult RunWithRecycle(
-            ProcessStream feed,
-            double recycleFraction,
+            FlowsheetPorts feed,
+            double liquidRecycleFraction,
             int maxIterations = 15,
             double convergenceTolerance = 1e-4)
         {
             var result = new FlowsheetResult { RecycleConverged = false };
-            var recycleLoadPpm = new Dictionary<string, double>(); // empty on pass 1 = no recycle yet
+            LiquidStream recycledLiquid = null;
 
             for (int iter = 1; iter <= maxIterations; iter++)
             {
                 result.RecycleIterations = iter;
 
-                var mixedFeed = MixInRecycle(feed, recycleLoadPpm, recycleFraction);
+                var mixedLiquidFeed = LiquidStream.RecycleBlend(feed.Liquid, recycledLiquid, liquidRecycleFraction);
+                var portsIn = new FlowsheetPorts { Gas = feed.Gas, Liquid = mixedLiquidFeed };
 
-                var stageOutlets = new List<(string, ProcessStream)>();
-                var stream = mixedFeed;
+                var stageOutlets = new List<(string, FlowsheetPorts)>();
+                var ports = portsIn;
                 foreach (var unit in _units)
                 {
-                    stream = unit.Process(stream);
-                    stageOutlets.Add((unit.Name, stream));
+                    ports = unit.Process(ports);
+                    stageOutlets.Add((unit.Name, ports));
                 }
 
-                var newRecycleLoadPpm = stream.PollutantPpmByCode.ToDictionary(kv => kv.Key, kv => kv.Value);
+                var newRecycledLiquid = ports.Liquid;
 
-                double maxShift = 0.0;
-                foreach (var kv in newRecycleLoadPpm)
+                double maxShift = double.MaxValue; // force at least 2 passes before checking convergence
+                if (recycledLiquid != null)
                 {
-                    recycleLoadPpm.TryGetValue(kv.Key, out var prev);
-                    maxShift = Math.Max(maxShift, Math.Abs(kv.Value - prev));
+                    maxShift = Math.Abs(newRecycledLiquid.TemperatureC - recycledLiquid.TemperatureC);
+                    foreach (var kv in newRecycledLiquid.PollutantLoadingKgKg)
+                    {
+                        recycledLiquid.PollutantLoadingKgKg.TryGetValue(kv.Key, out var prev);
+                        maxShift = Math.Max(maxShift, Math.Abs(kv.Value - prev));
+                    }
                 }
 
-                recycleLoadPpm = newRecycleLoadPpm;
+                recycledLiquid = newRecycledLiquid;
                 result.StageOutlets.Clear();
                 result.StageOutlets.AddRange(stageOutlets);
-                result.FinalOutlet = stream;
+                result.FinalOutlet = ports;
 
-                if (maxShift < convergenceTolerance)
+                if (iter > 1 && maxShift < convergenceTolerance)
                 {
                     result.RecycleConverged = true;
                     break;
@@ -92,27 +101,6 @@ namespace WetScrubber.Business.Flowsheet
             }
 
             return result;
-        }
-
-        private static ProcessStream MixInRecycle(
-            ProcessStream feed, Dictionary<string, double> recycleLoadPpm, double recycleFraction)
-        {
-            if (recycleLoadPpm.Count == 0 || recycleFraction <= 0) return feed;
-
-            var blended = new Dictionary<string, double>();
-            foreach (var kv in feed.PollutantPpmByCode)
-            {
-                double recycled = recycleLoadPpm.TryGetValue(kv.Key, out var r) ? r : 0.0;
-                blended[kv.Key] = kv.Value * (1 - recycleFraction) + recycled * recycleFraction;
-            }
-
-            return new ProcessStream
-            {
-                ActualFlowM3Hr = feed.ActualFlowM3Hr,
-                TemperatureC = feed.TemperatureC,
-                PressurePa = feed.PressurePa,
-                PollutantPpmByCode = blended
-            };
         }
     }
 }

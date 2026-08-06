@@ -23,6 +23,14 @@ namespace WetScrubber.Business.MassTransfer
             public double TowerAreaM2 { get; set; }
             public double PackingSpecificAreaM2M3 { get; set; }
             public double PackingNominalSizeM { get; set; }
+
+            /// <summary>Inlet liquid pollutant loading, kg pollutant/kg
+            /// liquid, keyed by species code — non-zero when the liquid
+            /// feed is recycled sump water rather than fresh makeup.
+            /// Pollutants not present here fall back to the old
+            /// near-zero (0.0001) fresh-liquid assumption.</summary>
+            public IReadOnlyDictionary<string, double> InletLiquidLoadingKgKg { get; set; }
+                = new Dictionary<string, double>();
         }
 
         public sealed class SolverOutput
@@ -35,6 +43,12 @@ namespace WetScrubber.Business.MassTransfer
             public int NodeCount { get; set; }
             public double OutletGasTemperatureK { get; set; }
             public IReadOnlyDictionary<string, double> OutletConcKgM3 { get; set; }
+
+            /// <summary>Outlet liquid pollutant loading, kg pollutant/kg
+            /// liquid — feeds a downstream LiquidStream so it can be
+            /// recirculated with its accumulated loading intact.</summary>
+            public IReadOnlyDictionary<string, double> OutletLiquidLoadingKgKg { get; set; }
+                = new Dictionary<string, double>();
         }
 
         public static SolverOutput SolveOde(SolverInput input)
@@ -43,7 +57,9 @@ namespace WetScrubber.Business.MassTransfer
             {
                 PollutantCodes = input.Pollutants.Select(p => p.Code).ToList(),
                 InletConcKgM3 = input.Pollutants.ToDictionary(p => p.Code, p => p.InletPpm),
-                InitialLiquidFraction = input.Pollutants.ToDictionary(p => p.Code, p => 0.0001),
+                InitialLiquidFraction = input.Pollutants.ToDictionary(
+                    p => p.Code,
+                    p => input.InletLiquidLoadingKgKg.TryGetValue(p.Code, out var loaded) ? loaded : 0.0001),
                 GasTemperatureK = input.GasTemperatureC + 273.15,
                 LiquidInletTemperatureK = input.LiquidInletTempC + 273.15,
                 TowerHeightM = input.TowerHeightM,
@@ -91,7 +107,9 @@ namespace WetScrubber.Business.MassTransfer
 
                 OutletGasTemperatureK = odeOutput.Profile.Last().GasTemperatureK,
 
-                OutletConcKgM3 = odeOutput.Profile.Last().PollutantConcKgM3
+                OutletConcKgM3 = odeOutput.Profile.Last().PollutantConcKgM3,
+
+                OutletLiquidLoadingKgKg = odeOutput.OutletLiquidFraction
             };
 
             // Create synthetic segments from ODE nodes (every 5th node)

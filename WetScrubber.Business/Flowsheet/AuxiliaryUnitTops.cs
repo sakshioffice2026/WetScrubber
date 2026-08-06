@@ -17,19 +17,24 @@ namespace WetScrubber.Business.Flowsheet
 
         public PreCoolerUnit(double outletTemperatureC) => _outletTemperatureC = outletTemperatureC;
 
-        public ProcessStream Process(ProcessStream inlet)
+        public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
-            double tInK = inlet.TemperatureC + 273.15;
+            var gasIn = inlet.Gas;
+            double tInK = gasIn.TemperatureC + 273.15;
             double tOutK = _outletTemperatureC + 273.15;
-            double scaledFlow = inlet.ActualFlowM3Hr * (tOutK / Math.Max(tInK, 1e-6));
+            double scaledFlow = gasIn.ActualFlowM3Hr * (tOutK / Math.Max(tInK, 1e-6));
 
-            return new ProcessStream
+            var gasOut = new ProcessStream
             {
                 ActualFlowM3Hr = scaledFlow,
                 TemperatureC = _outletTemperatureC,
-                PressurePa = inlet.PressurePa,
-                PollutantPpmByCode = inlet.PollutantPpmByCode
+                PressurePa = gasIn.PressurePa,
+                PollutantPpmByCode = gasIn.PollutantPpmByCode
             };
+
+            // Direct-contact quench does wet the gas, but spray-water
+            // pickup isn't modeled yet — liquid passes through unchanged.
+            return new FlowsheetPorts { Gas = gasOut, Liquid = inlet.Liquid };
         }
     }
 
@@ -48,15 +53,18 @@ namespace WetScrubber.Business.Flowsheet
 
         public MistEliminatorUnit(double pressureDropPa = 250.0) => _pressureDropPa = pressureDropPa;
 
-        public ProcessStream Process(ProcessStream inlet)
+        public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
-            return new ProcessStream
+            var gasIn = inlet.Gas;
+            var gasOut = new ProcessStream
             {
-                ActualFlowM3Hr = inlet.ActualFlowM3Hr,
-                TemperatureC = inlet.TemperatureC,
-                PressurePa = Math.Max(inlet.PressurePa - _pressureDropPa, 0.0),
-                PollutantPpmByCode = inlet.PollutantPpmByCode
+                ActualFlowM3Hr = gasIn.ActualFlowM3Hr,
+                TemperatureC = gasIn.TemperatureC,
+                PressurePa = Math.Max(gasIn.PressurePa - _pressureDropPa, 0.0),
+                PollutantPpmByCode = gasIn.PollutantPpmByCode
             };
+
+            return new FlowsheetPorts { Gas = gasOut, Liquid = inlet.Liquid };
         }
     }
 }

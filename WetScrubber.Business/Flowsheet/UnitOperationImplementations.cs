@@ -16,9 +16,21 @@ namespace WetScrubber.Business.Flowsheet
         public double PackingSpecificAreaM2M3 { get; set; } = 250;
         public double PackingNominalSizeM { get; set; } = 0.025;
 
-        public ProcessStream Process(ProcessStream inlet)
+        public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
-            var pollutants = inlet.PollutantPpmByCode
+            var gasIn = inlet.Gas;
+            var liquidIn = inlet.Liquid;
+
+            // Fall back to this unit's configured liquid parameters when
+            // no liquid stream has actually been wired in (first pass of
+            // a flowsheet with no liquid feed connected, or a caller that
+            // hasn't adopted liquid wiring yet) — same contract as before.
+            bool liquidWired = liquidIn != null && liquidIn.MassFlowKgS > 0;
+            double liquidFlowKgS = liquidWired ? liquidIn.MassFlowKgS : LiquidFlowKgS;
+            double liquidInTempC = liquidWired ? liquidIn.TemperatureC : LiquidInletTempC;
+            var liquidLoading = liquidWired ? liquidIn.PollutantLoadingKgKg : new Dictionary<string, double>();
+
+            var pollutants = gasIn.PollutantPpmByCode
                 .Select(kv => new MultiPollutantIterativeSolver.PollutantInput
                 {
                     Code = kv.Key,
@@ -33,27 +45,37 @@ namespace WetScrubber.Business.Flowsheet
             var odeInput = new MultiPollutantOdeSolver.SolverInput
             {
                 Pollutants = pollutants,
-                GasTemperatureC = inlet.TemperatureC,
-                GasMassFlowKgS = inlet.ActualFlowM3Hr / 3600.0 * GasDensityKgM3,
-                LiquidInletTempC = LiquidInletTempC,
-                LiquidMassFlowKgS = LiquidFlowKgS,
+                GasTemperatureC = gasIn.TemperatureC,
+                GasMassFlowKgS = gasIn.ActualFlowM3Hr / 3600.0 * GasDensityKgM3,
+                LiquidInletTempC = liquidInTempC,
+                LiquidMassFlowKgS = liquidFlowKgS,
                 LiquidDensityKgM3 = 1000,
                 GasDensityKgM3 = GasDensityKgM3,
                 TowerHeightM = TowerHeightM,
                 TowerAreaM2 = TowerAreaM2,
                 PackingSpecificAreaM2M3 = PackingSpecificAreaM2M3,
-                PackingNominalSizeM = PackingNominalSizeM
+                PackingNominalSizeM = PackingNominalSizeM,
+                InletLiquidLoadingKgKg = liquidLoading
             };
 
             var result = MultiPollutantOdeSolver.SolveOde(odeInput);
 
-            return new ProcessStream
+            var gasOut = new ProcessStream
             {
-                ActualFlowM3Hr = inlet.ActualFlowM3Hr,
+                ActualFlowM3Hr = gasIn.ActualFlowM3Hr,
                 TemperatureC = result.OutletGasTemperatureK - 273.15,
-                PressurePa = inlet.PressurePa,
+                PressurePa = gasIn.PressurePa,
                 PollutantPpmByCode = result.OutletConcKgM3
             };
+
+            var liquidOut = new LiquidStream
+            {
+                MassFlowKgS = liquidFlowKgS,
+                TemperatureC = result.LiquidOutletTemperatureC,
+                PollutantLoadingKgKg = result.OutletLiquidLoadingKgKg
+            };
+
+            return new FlowsheetPorts { Gas = gasOut, Liquid = liquidOut };
         }
 
         private double MolWeight(string code) => code switch { "SO2" => 64, "H2S" => 34, "NH3" => 17, _ => 50 };
@@ -66,18 +88,24 @@ namespace WetScrubber.Business.Flowsheet
         public string Name { get; set; }
         public double CoolingDutyKW { get; set; }
 
-        public ProcessStream Process(ProcessStream inlet)
+        public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
-            double m_gas = inlet.ActualFlowM3Hr / 3600.0 * 1.2;
+            var gasIn = inlet.Gas;
+            double m_gas = gasIn.ActualFlowM3Hr / 3600.0 * 1.2;
             double dT = CoolingDutyKW * 3600.0 / (m_gas * 1.05);
 
-            return new ProcessStream
+            var gasOut = new ProcessStream
             {
-                ActualFlowM3Hr = inlet.ActualFlowM3Hr,
-                TemperatureC = Math.Max(inlet.TemperatureC - dT, 15),
-                PressurePa = inlet.PressurePa,
-                PollutantPpmByCode = inlet.PollutantPpmByCode
+                ActualFlowM3Hr = gasIn.ActualFlowM3Hr,
+                TemperatureC = Math.Max(gasIn.TemperatureC - dT, 15),
+                PressurePa = gasIn.PressurePa,
+                PollutantPpmByCode = gasIn.PollutantPpmByCode
             };
+
+            // Indirect heat exchanger — no gas/liquid contact, so the
+            // liquid stream (if any is being wired through the chain
+            // for downstream recycle) passes through untouched.
+            return new FlowsheetPorts { Gas = gasOut, Liquid = inlet.Liquid };
         }
     }
 
@@ -86,18 +114,24 @@ namespace WetScrubber.Business.Flowsheet
         public string Name { get; set; }
         public double SeparationEfficiency { get; set; } = 0.98;
 
-        public ProcessStream Process(ProcessStream inlet)
+        public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
-            var cleaned = inlet.PollutantPpmByCode
+            var gasIn = inlet.Gas;
+            var cleaned = gasIn.PollutantPpmByCode
                 .ToDictionary(kv => kv.Key, kv => kv.Value * (1.0 - SeparationEfficiency));
 
-            return new ProcessStream
+            var gasOut = new ProcessStream
             {
-                ActualFlowM3Hr = inlet.ActualFlowM3Hr * SeparationEfficiency,
-                TemperatureC = inlet.TemperatureC,
-                PressurePa = inlet.PressurePa,
+                ActualFlowM3Hr = gasIn.ActualFlowM3Hr * SeparationEfficiency,
+                TemperatureC = gasIn.TemperatureC,
+                PressurePa = gasIn.PressurePa,
                 PollutantPpmByCode = cleaned
             };
+
+            // Droplet carryover to the liquid stream isn't modeled yet
+            // (same unsourced-data stance as before) — liquid passes
+            // through unchanged.
+            return new FlowsheetPorts { Gas = gasOut, Liquid = inlet.Liquid };
         }
     }
 }

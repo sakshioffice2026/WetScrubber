@@ -19,16 +19,21 @@ namespace WetScrubber.Business.Flowsheet
         public sealed class SolveInput
         {
             public List<UnitNode> Units { get; set; } = new();
-            public ProcessStream FeedStream { get; set; }
+            public FlowsheetPorts FeedPorts { get; set; }
             public List<string> TearStreamNames { get; set; } = new(); // names of recycle streams
             public int MaxTearIterations { get; set; } = 15;
             public double TearConvergenceTol { get; set; } = 1e-4;
+
+            /// <summary>Fraction of the liquid feed's mass flow that gets
+            /// replaced by recirculated final-outlet liquid on each tear
+            /// iteration. Only used when TearStreamNames is non-empty.</summary>
+            public double LiquidRecycleFraction { get; set; } = 0.2;
         }
 
         public sealed class SolveOutput
         {
-            public Dictionary<string, ProcessStream> UnitOutlets { get; set; } = new();
-            public ProcessStream FinalOutlet { get; set; }
+            public Dictionary<string, FlowsheetPorts> UnitOutlets { get; set; } = new();
+            public FlowsheetPorts FinalOutlet { get; set; }
             public bool TearConverged { get; set; }
             public int TearIterations { get; set; }
         }
@@ -41,66 +46,55 @@ namespace WetScrubber.Business.Flowsheet
             if (input.TearStreamNames.Count == 0)
             {
                 // No recycle: single pass
-                var stream = input.FeedStream;
+                var ports = input.FeedPorts;
                 foreach (var unitName in order)
                 {
                     var unit = input.Units.First(u => u.Name == unitName);
-                    stream = unit.Operation.Process(stream);
-                    output.UnitOutlets[unitName] = stream;
+                    ports = unit.Operation.Process(ports);
+                    output.UnitOutlets[unitName] = ports;
                 }
-                output.FinalOutlet = stream;
+                output.FinalOutlet = ports;
                 output.TearConverged = true;
                 output.TearIterations = 1;
             }
             else
             {
-                // With recycle: Wegstein/successive substitution
-                var tearValues = new Dictionary<string, Dictionary<string, double>>();
+                // With recycle: successive substitution on the liquid
+                // stream — a fraction of the feed's liquid mass is
+                // replaced by the previous pass's outlet liquid (its
+                // temperature and pollutant loading intact) each round.
+                LiquidStream recycledLiquid = null;
+
                 for (int iter = 0; iter < input.MaxTearIterations; iter++)
                 {
-                    var stream = input.FeedStream;
-
-                    // Inject tear stream guesses if available
-                    if (iter > 0 && tearValues.TryGetValue("_tear", out var prevComposition))
-                    {
-                        var blended = new Dictionary<string, double>(stream.PollutantPpmByCode.ToDictionary(kv => kv.Key, kv => kv.Value));
-                        foreach (var (code, conc) in prevComposition)
-                            if (blended.ContainsKey(code))
-                                blended[code] = blended[code] * 0.8 + conc * 0.2; // damping
-
-                        stream = new ProcessStream
-                        {
-                            ActualFlowM3Hr = stream.ActualFlowM3Hr,
-                            TemperatureC = stream.TemperatureC,
-                            PressurePa = stream.PressurePa,
-                            PollutantPpmByCode = blended
-                        };
-                    }
+                    var liquidFeed = LiquidStream.RecycleBlend(input.FeedPorts.Liquid, recycledLiquid, input.LiquidRecycleFraction);
+                    var ports = new FlowsheetPorts { Gas = input.FeedPorts.Gas, Liquid = liquidFeed };
 
                     foreach (var unitName in order)
                     {
                         var unit = input.Units.First(u => u.Name == unitName);
-                        stream = unit.Operation.Process(stream);
-                        output.UnitOutlets[unitName] = stream;
+                        ports = unit.Operation.Process(ports);
+                        output.UnitOutlets[unitName] = ports;
                     }
 
-                    var newTearComp = stream.PollutantPpmByCode.ToDictionary(kv => kv.Key, kv => kv.Value);
+                    var newRecycledLiquid = ports.Liquid;
 
-                    double maxShift = 0.0;
-                    if (tearValues.TryGetValue("_tear", out var oldTear))
+                    double maxShift = double.MaxValue; // force at least 2 passes before checking convergence
+                    if (recycledLiquid != null)
                     {
-                        foreach (var (code, newVal) in newTearComp)
+                        maxShift = Math.Abs(newRecycledLiquid.TemperatureC - recycledLiquid.TemperatureC);
+                        foreach (var kv in newRecycledLiquid.PollutantLoadingKgKg)
                         {
-                            oldTear.TryGetValue(code, out var oldVal);
-                            maxShift = Math.Max(maxShift, Math.Abs(newVal - oldVal));
+                            recycledLiquid.PollutantLoadingKgKg.TryGetValue(kv.Key, out var oldVal);
+                            maxShift = Math.Max(maxShift, Math.Abs(kv.Value - oldVal));
                         }
                     }
 
-                    tearValues["_tear"] = newTearComp;
-                    output.FinalOutlet = stream;
+                    recycledLiquid = newRecycledLiquid;
+                    output.FinalOutlet = ports;
                     output.TearIterations = iter + 1;
 
-                    if (maxShift < input.TearConvergenceTol)
+                    if (iter > 0 && maxShift < input.TearConvergenceTol)
                     {
                         output.TearConverged = true;
                         break;
