@@ -6,178 +6,237 @@
     var units = Model.UnitOperations.OrderBy(u => u.SequenceOrder).ToList();
 }
 @section Styles {
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/flowsheet.css" asp-append-version="true" />
 }
 
-<div class="breadcrumb">
-    <a asp-action="Index">Flowsheets</a>
-    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <span>@Model.Name</span>
-</div>
-
-@if (TempData["Success"] != null)
-{
-    <div class="flash-toast success">@TempData["Success"]</div>
-}
-@if (TempData["Error"] != null)
-{
-    <div class="flash-toast error">@TempData["Error"]</div>
-}
-
-<!-- Unit operations -->
-<div class="proj-table-card">
-    <div class="proj-table-header">
-        <div class="proj-table-title">Unit Operations</div>
+<div class="flowsheet-page">
+    <div class="breadcrumb">
+        <a asp-action="Index">Flowsheets</a>
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+        <span>@Model.Name</span>
     </div>
 
-    <div style="overflow-x:auto;">
-        <table class="proj-table">
-            <thead>
-                <tr><th>Order</th><th>Name</th><th>Type</th><th>Config</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var u in units)
-                {
-                    <tr>
-                        <td>@u.SequenceOrder</td>
-                        <td><span class="proj-name">@u.Name</span></td>
-                        <td>@u.Type</td>
-                        <td><code style="font-size:12px;">@u.ConfigJson</code></td>
-                        <td>
-                            <form asp-action="DeleteUnit" method="post" onsubmit="return confirm('Remove unit @u.Name?');">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="id" value="@u.Id" />
-                                <input type="hidden" name="flowsheetId" value="@Model.Id" />
-                                <button type="submit" class="action-btn" title="Remove">✕</button>
-                            </form>
-                        </td>
-                    </tr>
-                }
-                @if (units.Count == 0)
-                {
-                    <tr><td colspan="5" style="text-align:center; color:#888;">No unit operations yet.</td></tr>
-                }
-            </tbody>
-        </table>
-    </div>
-
-    <form asp-action="AddUnit" method="post" style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
-        @Html.AntiForgeryToken()
-        <input type="hidden" name="FlowsheetId" value="@Model.Id" />
-        <div class="predict-field"><label>Name</label><input name="Name" class="form-control" required /></div>
-        <div class="predict-field">
-            <label>Type</label>
-            <select name="Type" class="form-control">
-                <option value="precooler">Pre-Cooler (fixed outlet T)</option>
-                <option value="cooler">Cooler (duty-based)</option>
-                <option value="scrubber">Scrubber (packed tower, RK45)</option>
-                <option value="misteliminator">Mist Eliminator</option>
-                <option value="separator">Separator</option>
-            </select>
-        </div>
-        <div class="predict-field"><label>Order</label><input name="SequenceOrder" type="number" class="form-control" value="@(units.Count + 1)" style="width:80px;" /></div>
-        <div class="predict-field" style="flex:1; min-width:260px;">
-            <label>Config JSON</label>
-            <input name="ConfigJson" class="form-control" placeholder='e.g. {"TowerHeightM":5,"TowerAreaM2":2,"LiquidFlowKgS":50,"LiquidInletTempC":25,"PackingSpecificAreaM2M3":250}' />
-        </div>
-        <button type="submit" class="btn-save">Add Unit</button>
-    </form>
-    <div class="chem-intro-desc" style="margin-top:8px;">
-        Config fields per type — cooler: <code>CoolingDutyKW</code>. separator: <code>SeparationEfficiency</code> (0–1).
-        precooler: <code>OutletTemperatureC</code>. misteliminator: <code>PressureDropPa</code>.
-        scrubber: <code>TowerHeightM, TowerAreaM2, LiquidFlowKgS, LiquidInletTempC, GasDensityKgM3, PackingSpecificAreaM2M3, PackingNominalSizeM</code>.
-    </div>
-</div>
-
-<!-- Stream connections -->
-<div class="proj-table-card">
-    <div class="proj-table-header">
-        <div class="proj-table-title">Stream Connections</div>
-    </div>
-
-    <div style="overflow-x:auto;">
-        <table class="proj-table">
-            <thead>
-                <tr><th>Source</th><th>Sink</th><th>Type</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var c in Model.StreamConnections)
-                {
-                    var src = units.FirstOrDefault(u => u.Id == c.SourceUnitId)?.Name ?? "?";
-                    var sink = units.FirstOrDefault(u => u.Id == c.SinkUnitId)?.Name ?? "?";
-                    <tr>
-                        <td>@src</td>
-                        <td>@sink</td>
-                        <td><span class="status-badge @(c.StreamType == "recycle" ? "badge-draft" : "badge-completed")">@c.StreamType</span></td>
-                        <td>
-                            <form asp-action="DeleteConnection" method="post">
-                                @Html.AntiForgeryToken()
-                                <input type="hidden" name="id" value="@c.Id" />
-                                <input type="hidden" name="flowsheetId" value="@Model.Id" />
-                                <button type="submit" class="action-btn" title="Remove">✕</button>
-                            </form>
-                        </td>
-                    </tr>
-                }
-                @if (Model.StreamConnections.Count == 0)
-                {
-                    <tr><td colspan="4" style="text-align:center; color:#888;">No connections yet — units run in Order sequence by default.</td></tr>
-                }
-            </tbody>
-        </table>
-    </div>
-
-    @if (units.Count >= 2)
+    @if (TempData["Success"] != null)
     {
-        <form asp-action="AddConnection" method="post" style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+        <div class="flash-toast flash-success">@TempData["Success"]</div>
+    }
+
+    @if (TempData["Error"] != null)
+    {
+        <div class="flash-toast flash-error">@TempData["Error"]</div>
+    }
+
+    <div class="proj-table-card">
+        <div class="proj-table-header">
+            <div class="proj-table-title">Unit Operations</div>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="proj-table">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Config</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var u in units)
+                    {
+                        <tr>
+                            <td>@u.SequenceOrder</td>
+                            <td><span class="proj-name">@u.Name</span></td>
+                            <td>@u.Type</td>
+                            <td><code style="font-size:12px;">@u.ConfigJson</code></td>
+                            <td>
+                                <form asp-action="DeleteUnit" method="post" onsubmit="return confirm('Remove unit @u.Name?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@u.Id" />
+                                    <input type="hidden" name="flowsheetId" value="@Model.Id" />
+                                    <button type="submit" class="action-btn delete" title="Remove">×</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+
+                    @if (units.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" style="text-align:center; color:#888;">No unit operations yet.</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <form asp-action="AddUnit" method="post" class="flowsheet-inline-form">
             @Html.AntiForgeryToken()
             <input type="hidden" name="FlowsheetId" value="@Model.Id" />
-            <div class="predict-field">
-                <label>Source</label>
-                <select name="SourceUnitId" class="form-control">
-                    @foreach (var u in units)
-                    {
-                        <option value="@u.Id">@u.Name</option>
-                    }
-                </select>
-            </div>
-            <div class="predict-field">
-                <label>Sink</label>
-                <select name="SinkUnitId" class="form-control">
-                    @foreach (var u in units)
-                    {
-                        <option value="@u.Id">@u.Name</option>
-                    }
-                </select>
-            </div>
-            <div class="predict-field">
-                <label>Stream Type</label>
-                <select name="StreamType" class="form-control">
-                    <option value="gas">Gas</option>
-                    <option value="liquid">Liquid</option>
-                    <option value="recycle">Recycle (tear stream)</option>
-                </select>
-            </div>
-            <button type="submit" class="btn-save">Connect</button>
-        </form>
-    }
-</div>
 
-<!-- Run -->
-<div class="proj-table-card">
-    <div class="proj-table-header"><div class="proj-table-title">Run Flowsheet</div></div>
-    <form asp-action="Run" method="post" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
-        @Html.AntiForgeryToken()
-        <input type="hidden" name="Id" value="@Model.Id" />
-        <div class="predict-field"><label>Actual Flow (m³/hr)</label><input name="ActualFlowM3Hr" type="number" step="any" class="form-control" value="10000" /></div>
-        <div class="predict-field"><label>Inlet Temp (°C)</label><input name="TemperatureC" type="number" step="any" class="form-control" value="50" /></div>
-        <div class="predict-field"><label>Inlet Pressure (Pa)</label><input name="PressurePa" type="number" step="any" class="form-control" value="101325" /></div>
-        <div class="predict-field" style="flex:1; min-width:220px;">
-            <label>Pollutants (code:ppm,code:ppm)</label>
-            <input name="Pollutants" class="form-control" placeholder="SO2:500,H2S:200" />
+            <div class="predict-field">
+                <label>Name</label>
+                <input name="Name" class="form-control" required />
+            </div>
+
+            <div class="predict-field">
+                <label>Type</label>
+                <select name="Type" class="form-control">
+                    <option value="precooler">Pre-Cooler (fixed outlet T)</option>
+                    <option value="cooler">Cooler (duty-based)</option>
+                    <option value="scrubber">Scrubber (packed tower, RK45)</option>
+                    <option value="misteliminator">Mist Eliminator</option>
+                    <option value="separator">Separator</option>
+                </select>
+            </div>
+
+            <div class="predict-field" style="flex:0 1 100px;">
+                <label>Order</label>
+                <input name="SequenceOrder" type="number" class="form-control" value="@(units.Count + 1)" />
+            </div>
+
+            <div class="predict-field" style="flex:2 1 320px;">
+                <label>Config JSON</label>
+                <input name="ConfigJson" class="form-control"
+                       placeholder='e.g. {"TowerHeightM":5,"TowerAreaM2":2,"LiquidFlowKgS":50,"LiquidInletTempC":25,"PackingSpecificAreaM2M3":250}' />
+            </div>
+
+            <button type="submit" class="btn-save">Add Unit</button>
+        </form>
+
+        <div class="chem-intro-desc" style="padding:0 20px 20px;">
+            Config fields per type — cooler: <code>CoolingDutyKW</code>. separator:
+            <code>SeparationEfficiency</code> (0–1). precooler:
+            <code>OutletTemperatureC</code>. misteliminator:
+            <code>PressureDropPa</code>. scrubber:
+            <code>TowerHeightM, TowerAreaM2, LiquidFlowKgS, LiquidInletTempC, GasDensityKgM3, PackingSpecificAreaM2M3, PackingNominalSizeM</code>.
         </div>
-        <button type="submit" class="btn-predict">Run</button>
-    </form>
+    </div>
+
+    <div class="proj-table-card">
+        <div class="proj-table-header">
+            <div class="proj-table-title">Stream Connections</div>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="proj-table">
+                <thead>
+                    <tr>
+                        <th>Source</th>
+                        <th>Sink</th>
+                        <th>Type</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Model.StreamConnections)
+                    {
+                        var src = units.FirstOrDefault(u => u.Id == c.SourceUnitId)?.Name ?? "?";
+                        var sink = units.FirstOrDefault(u => u.Id == c.SinkUnitId)?.Name ?? "?";
+
+                        <tr>
+                            <td>@src</td>
+                            <td>@sink</td>
+                            <td>
+                                <span class="status-badge @(c.StreamType == "recycle" ? "badge-draft" : "badge-completed")">
+                                    @c.StreamType
+                                </span>
+                            </td>
+                            <td>
+                                <form asp-action="DeleteConnection" method="post">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@c.Id" />
+                                    <input type="hidden" name="flowsheetId" value="@Model.Id" />
+                                    <button type="submit" class="action-btn delete" title="Remove">×</button>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+
+                    @if (Model.StreamConnections.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4" style="text-align:center; color:#888;">
+                                No connections yet — units run in Order sequence by default.
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (units.Count >= 2)
+        {
+            <form asp-action="AddConnection" method="post" class="flowsheet-inline-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="FlowsheetId" value="@Model.Id" />
+
+                <div class="predict-field">
+                    <label>Source</label>
+                    <select name="SourceUnitId" class="form-control">
+                        @foreach (var u in units)
+                        {
+                            <option value="@u.Id">@u.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="predict-field">
+                    <label>Sink</label>
+                    <select name="SinkUnitId" class="form-control">
+                        @foreach (var u in units)
+                        {
+                            <option value="@u.Id">@u.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="predict-field">
+                    <label>Stream Type</label>
+                    <select name="StreamType" class="form-control">
+                        <option value="gas">Gas</option>
+                        <option value="liquid">Liquid</option>
+                        <option value="recycle">Recycle (tear stream)</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-save">Connect</button>
+            </form>
+        }
+    </div>
+
+    <div class="proj-table-card">
+        <div class="proj-table-header">
+            <div class="proj-table-title">Run Flowsheet</div>
+        </div>
+
+        <form asp-action="Run" method="post" class="flowsheet-inline-form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="Id" value="@Model.Id" />
+
+            <div class="predict-field">
+                <label>Actual Flow (m³/hr)</label>
+                <input name="ActualFlowM3Hr" type="number" step="any" class="form-control" value="10000" />
+            </div>
+
+            <div class="predict-field">
+                <label>Inlet Temp (°C)</label>
+                <input name="TemperatureC" type="number" step="any" class="form-control" value="50" />
+            </div>
+
+            <div class="predict-field">
+                <label>Inlet Pressure (Pa)</label>
+                <input name="PressurePa" type="number" step="any" class="form-control" value="101325" />
+            </div>
+
+            <div class="predict-field" style="flex:2 1 250px;">
+                <label>Pollutants (code:ppm,code:ppm)</label>
+                <input name="Pollutants" class="form-control" placeholder="SO2:500,H2S:200" />
+            </div>
+
+            <button type="submit" class="btn-predict">Run</button>
+        </form>
+    </div>
 </div>

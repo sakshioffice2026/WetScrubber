@@ -9,64 +9,78 @@
 }
 @section Styles {
     <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/flowsheet.css" asp-append-version="true" />
 }
 
-<div class="breadcrumb">
-    <a asp-action="Index">Flowsheets</a>
-    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <a asp-action="Detail" asp-route-id="@flowsheet?.Id">@flowsheet?.Name</a>
-    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <span>Run Result</span>
-</div>
+<div class="flowsheet-page">
+    <div class="breadcrumb">
+        <a asp-action="Index">Flowsheets</a>
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+        <a asp-action="Detail" asp-route-id="@flowsheet?.Id">@flowsheet?.Name</a>
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+        <span>Run Result</span>
+    </div>
 
-<div class="chem-intro-card">
-    <div>
-        <div class="chem-intro-title">
-            @(Model.TearConverged ? "Converged" : "Did not converge")
-            @if (Model.TearIterations > 1)
-            {
-                <span>— @Model.TearIterations tear iterations</span>
-            }
-        </div>
-        <div class="chem-intro-desc">
-            Feed: @feed?.ActualFlowM3Hr m³/hr @@ @feed?.TemperatureC °C, @feed?.PressurePa Pa
+    <div class="chem-intro-card">
+        <div>
+            <div class="chem-intro-title">
+                @(Model.TearConverged ? "Converged" : "Did not converge")
+
+                @if (Model.TearIterations > 1)
+                {
+                    <span>— @Model.TearIterations tear iterations</span>
+                }
+            </div>
+
+            <div class="chem-intro-desc">
+                Feed: @feed?.ActualFlowM3Hr m³/hr at @feed?.TemperatureC °C, @feed?.PressurePa Pa
+            </div>
         </div>
     </div>
-</div>
 
-<div class="proj-table-card">
-    <div class="proj-table-header"><div class="proj-table-title">Stage-by-Stage Outlet Streams</div></div>
-    <div style="overflow-x:auto;">
-        <table class="proj-table">
-            <thead>
-                <tr>
-                    <th>Unit</th>
-                    <th>Flow (m³/hr)</th>
-                    <th>Temp (°C)</th>
-                    <th>Pressure (Pa)</th>
-                    @foreach (var code in pollutantCodes)
-                    {
-                        <th>@code (ppm)</th>
-                    }
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var kv in Model.UnitOutlets)
-                {
+    <div class="proj-table-card">
+        <div class="proj-table-header">
+            <div class="proj-table-title">Stage-by-Stage Outlet Streams</div>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="proj-table">
+                <thead>
                     <tr>
-                        <td><span class="proj-name">@kv.Key</span></td>
-                        <td>@kv.Value.ActualFlowM3Hr.ToString("F0")</td>
-                        <td>@kv.Value.TemperatureC.ToString("F1")</td>
-                        <td>@kv.Value.PressurePa.ToString("F0")</td>
+                        <th>Unit</th>
+                        <th>Flow (m³/hr)</th>
+                        <th>Temp (°C)</th>
+                        <th>Pressure (Pa)</th>
+
                         @foreach (var code in pollutantCodes)
                         {
-                            <td>@(kv.Value.PollutantPpmByCode.TryGetValue(code, out var v) ? v.ToString("F1") : "—")</td>
+                            <th>@code (ppm)</th>
                         }
                     </tr>
-                }
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    @foreach (var kv in Model.UnitOutlets)
+                    {
+                        <tr>
+                            <td><span class="proj-name">@kv.Key</span></td>
+                            <td>@kv.Value.ActualFlowM3Hr.ToString("F0")</td>
+                            <td>@kv.Value.TemperatureC.ToString("F1")</td>
+                            <td>@kv.Value.PressurePa.ToString("F0")</td>
+
+                            @foreach (var code in pollutantCodes)
+                            {
+                                <td>@(kv.Value.PollutantPpmByCode.TryGetValue(code, out var v) ? v.ToString("F1") : "—")</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div>
+        <a asp-action="Detail" asp-route-id="@flowsheet?.Id" class="btn-cancel">
+            Back to Flowsheet
+        </a>
     </div>
 </div>
-
-<a asp-action="Detail" asp-route-id="@flowsheet?.Id" class="btn-cancel" style="text-decoration:none;">Back to Flowsheet</a>

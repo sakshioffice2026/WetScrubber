@@ -1,98 +1,55 @@
 @model WetScrubber.Models.FlowsheetFormViewModel
-
 @{
     ViewData["Title"] = "New Flowsheet";
     ViewData["ActivePage"] = "Flowsheets";
     var projects = ViewBag.Projects as List<WetScrubber.Database.Project>;
 }
-
 @section Styles {
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/flowsheet.css" asp-append-version="true" />
 }
 
-
-<div class="breadcrumb">
-    <a asp-action="Index">Flowsheets</a>
-    <svg viewBox="0 0 16 16" width="12" height="12">
-        <path d="M6 4l4 4-4 4"
-              stroke="#ccc"
-              stroke-width="1.5"
-              fill="none"
-              stroke-linecap="round" />
-    </svg>
-    <span>New Flowsheet</span>
-</div>
-
-<div class="proj-table-card mx-auto" style="max-width:700px;">
-
-    <div class="proj-table-header">
-        <h2>Create Flowsheet</h2>
+<div class="flowsheet-page">
+    <div class="breadcrumb">
+        <a asp-action="Index">Flowsheets</a>
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+        <span>New Flowsheet</span>
     </div>
 
-    <div class="p-4">
-
-        <form asp-action="Create" method="post">
-
+    <div class="proj-table-card" style="max-width:600px;">
+        <form asp-action="Create" method="post" class="flowsheet-create-form">
             @Html.AntiForgeryToken()
 
-            <div class="mb-3">
-                <label asp-for="Name" class="form-label fw-semibold"></label>
-                <input asp-for="Name"
-                       class="form-control"
-                       placeholder="e.g. SO₂ / H₂S Train A" />
-                <span asp-validation-for="Name" class="text-danger"></span>
+            <div asp-validation-summary="ModelOnly" style="color:#c0392b;"></div>
+
+            <div class="predict-field" style="margin-bottom:14px;">
+                <label for="Name">Flowsheet Name</label>
+                <input asp-for="Name" class="form-control" placeholder="e.g. SO2/H2S Train A" />
             </div>
 
-            <div class="mb-3">
-                <label asp-for="Description" class="form-label fw-semibold"></label>
-                <textarea asp-for="Description"
-                          class="form-control"
-                          rows="4"></textarea>
-                <span asp-validation-for="Description" class="text-danger"></span>
+            <div class="predict-field" style="margin-bottom:14px;">
+                <label for="Description">Description</label>
+                <textarea asp-for="Description" class="form-control" rows="3"></textarea>
             </div>
 
-            <div class="mb-4">
-                <label asp-for="ProjectId" class="form-label fw-semibold">
-                    Project
-                </label>
-
-                <select asp-for="ProjectId" class="form-select">
-                    <option value="">Select Project</option>
-
-                    @foreach (var p in projects)
+            <div class="predict-field" style="margin-bottom:18px;">
+                <label for="ProjectId">Project</label>
+                <select asp-for="ProjectId" class="form-control">
+                    <option value="">Select project…</option>
+                    @if (projects != null)
                     {
-                        <option value="@p.ProjectId">
-                            @p.ProjectName
-                        </option>
+                        foreach (var p in projects)
+                        {
+                            <option value="@p.ProjectId">@p.ProjectName</option>
+                        }
                     }
-
                 </select>
-
-                <span asp-validation-for="ProjectId"
-                      class="text-danger"></span>
             </div>
 
-            <div class="d-flex gap-2">
-
-                <button type="submit" class="btn-save">
-                    Create Flowsheet
-                </button>
-
-                <a asp-action="Index"
-                   class="btn btn-outline-secondary">
-                    Cancel
-                </a>
-
+            <div class="form-actions">
+                <button type="submit" class="btn-save">Create Flowsheet</button>
+                <a asp-action="Index" class="btn-cancel">Cancel</a>
             </div>
-
         </form>
-
     </div>
-
 </div>
-
-@section Scripts {
-    <partial name="_ValidationScriptsPartial" />
-}

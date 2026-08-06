@@ -35,9 +35,11 @@ namespace WetScrubber.Controllers
             var redirect = RedirectIfNotLoggedIn();
             if (redirect != null) return redirect;
 
-            var query = _dbContext.Flowsheets.Include(f => f.Project).AsQueryable();
-            if (projectId.HasValue)
-                query = query.Where(f => f.ProjectId == projectId.Value);
+            var query = _dbContext.Flowsheets
+             .Include(f => f.Project)
+             .Include(f => f.UnitOperations)
+             .Include(f => f.StreamConnections)
+             .AsQueryable();
 
             ViewBag.ProjectId = projectId;
             return View(await query.OrderByDescending(f => f.UpdatedAt).ToListAsync());
