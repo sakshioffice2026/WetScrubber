@@ -105,6 +105,8 @@ namespace WetScrubber.Controllers
             var keys = ModelState.Keys.Where(k => k.StartsWith("Pollutants")).ToList();
             foreach (var k in keys) ModelState.Remove(k);
 
+            NormalizeOptionalDefaults(model);
+
             if (!ModelState.IsValid)
             {
                 var proj = await _dbContext.Projects.FirstOrDefaultAsync(p => p.ProjectId == model.ProjectId);
@@ -121,6 +123,7 @@ namespace WetScrubber.Controllers
                 ScrubberType = model.ScrubberType,
                 ShellMaterial = model.ShellMaterial,
                 InternalMaterial = model.InternalMaterial,
+                PackingCode = model.PackingCode,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -248,6 +251,8 @@ namespace WetScrubber.Controllers
             var keys = ModelState.Keys.Where(k => k.StartsWith("Pollutants")).ToList();
             foreach (var k in keys) ModelState.Remove(k);
 
+            NormalizeOptionalDefaults(model);
+
             var design = await LoadDesign(model.DesignId);
             if (design == null)
             {
@@ -275,6 +280,7 @@ namespace WetScrubber.Controllers
             design.ScrubberType = model.ScrubberType;
             design.ShellMaterial = model.ShellMaterial;
             design.InternalMaterial = model.InternalMaterial;
+            design.PackingCode = model.PackingCode;
             design.UpdatedAt = DateTime.UtcNow;
 
             // 2. Gas stream
@@ -876,6 +882,30 @@ namespace WetScrubber.Controllers
                 SuggestedValue = f.SuggestedValue,
                 SuggestedValueLabel = f.SuggestedValueLabel
             }).ToList();
+        }
+
+        // Two fields on the form are meant to be optional-with-a-default
+        // rather than truly required, but plain HTML posts don't carry
+        // that nuance, so the model binder fills in the "empty" values
+        // below before validation is read. Left as-is, both silently
+        // fail the field's own Range/Required check instead of falling
+        // back to the sensible default the form already shows:
+        //   • InletPressure (double, non-nullable): an empty number
+        //     input binds to 0, which then fails [Range(50000, 300000)].
+        //   • PackingCode (string, "-- Default --" option posts ""):
+        //     harmless on its own now that it allows empty strings, but
+        //     downstream packing lookups need the real default code.
+        // Called right after binding, before ModelState.IsValid is
+        // checked, so a design saved with these left alone behaves the
+        // same as one saved with the values that were pre-filled in
+        // the form.
+        private void NormalizeOptionalDefaults(CreateDesignViewModel model)
+        {
+            if (model.InletPressure <= 0)
+                model.InletPressure = 101325;
+
+            if (string.IsNullOrWhiteSpace(model.PackingCode))
+                model.PackingCode = "PallRing50";
         }
 
         // Fill pollutant + liquid dropdowns from the master tables.

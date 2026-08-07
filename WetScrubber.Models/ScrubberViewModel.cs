@@ -98,6 +98,13 @@ namespace WetScrubber.Models
         public double LiquidToGasRatio { get; set; } = 3.0;
 
         // ── Phase 2: Packing type (for Onda rate-based correlation) ──
+        // AllowEmptyStrings: the form's "-- Default --" option posts "".
+        // Without this, ASP.NET Core's implicit required-validator for
+        // non-nullable reference types (Nullable enable) rejects that
+        // empty post with "The Packing Type field is required," even
+        // though an empty value is meant to fall back to PallRing50
+        // (see ScrubberController.Create/Edit, which normalize it).
+        [Required(AllowEmptyStrings = true)]
         [Display(Name = "Packing Type")]
         public string PackingCode { get; set; } = "PallRing50";  // FK -> packing.Code, default to common choice
         public List<Packing> PackingOptions { get; set; } = new();  // populated by controller
