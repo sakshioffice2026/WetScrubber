@@ -96,6 +96,7 @@ builder.Services.AddScoped<IDesignReportRepository, DesignReportRepository>();
 
 // Register Repositories
 builder.Services.AddScoped<IUnitOfWork, UnitOfWorks>();
+builder.Services.AddScoped<WetScrubber.Services.ChemistryUIService>();
 
 #endregion
 var app = builder.Build();

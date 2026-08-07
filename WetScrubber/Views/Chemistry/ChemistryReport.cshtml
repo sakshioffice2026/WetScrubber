@@ -1,0 +1,190 @@
+@model WetScrubber.Models.ChemistryReportViewModel
+@{
+    ViewData["Title"] = "Chemistry Report";
+    ViewData["ActivePage"] = "ChemistryCalculation";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/scrubber.css" />
+    <link rel="stylesheet" href="~/css/chemistry.css" />
+    <link rel="stylesheet" href="~/css/chemistry-crud.css" />
+}
+
+<!-- Breadcrumb -->
+<div class="breadcrumb">
+    <a asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <a asp-action="Index">Chemical Reactions</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Report</span>
+</div>
+
+<div class="chem-intro-card">
+    <div class="chem-intro-icon">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#00d28c" stroke-width="2" stroke-linecap="round">
+            <path d="M12 2a4 4 0 014 4c0 1.5-.8 2.4-1.6 3.2C13.6 10 13 10.7 13 12v1h-2v-1c0-1.8 1-2.8 1.8-3.6.7-.7 1.2-1.2 1.2-2.4a2 2 0 10-4 0H8a4 4 0 014-4zM11 15h2v2h-2z" />
+        </svg>
+    </div>
+    <div>
+        <div class="chem-intro-title">@Model.PollutantName (@Html.Raw(Model.PollutantFormula)) + @Model.LiquidName (@Html.Raw(Model.LiquidFormula))</div>
+        <div class="chem-intro-desc">
+            Generated @Model.GeneratedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC.
+            @if (Model.ReadyForIndustrialUse)
+            {
+                <strong>Ready for engineering sign-off.</strong>
+            }
+            else
+            {
+                <strong>Not ready — review the findings below.</strong>
+            }
+        </div>
+    </div>
+    <span class="hazard-tag @(Model.ReadyForIndustrialUse ? "" : "danger")">
+        @(Model.ReadyForIndustrialUse ? "PASS" : "REVIEW")
+    </span>
+</div>
+
+@if (Model.AllFindings.Any())
+{
+    <div class="flash-toast @(Model.IsValid ? "success" : "error")">
+        @foreach (var f in Model.AllFindings)
+        {
+            <div>@f</div>
+        }
+    </div>
+}
+
+<!-- Operating conditions -->
+<div class="chem-section-label">Operating Conditions</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        <div class="rxn-grid">
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Inlet Concentration</div><div class="rxn-cell-val">@Model.InletConcentrationValue.ToString("F4") @Model.InletConcentrationUnits</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Outlet Concentration</div><div class="rxn-cell-val">@Model.OutletConcentrationValue.ToString("F4") @Model.OutletConcentrationUnits</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Removal Efficiency</div><div class="rxn-cell-val">@Model.RemovalEfficiencyPercent.ToString("F2") %</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Gas Flow</div><div class="rxn-cell-val">@Model.GasFlowKmolPerHr.ToString("F2") kmol/hr</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Liquid Flow</div><div class="rxn-cell-val">@Model.LiquidFlowKmolPerHr.ToString("F2") kmol/hr</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">L/G Ratio</div><div class="rxn-cell-val">@Model.LiquidToGasRatio.ToString("F3")</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Temperature</div><div class="rxn-cell-val">@Model.TemperatureC.ToString("F1") °C</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Pressure</div><div class="rxn-cell-val">@Model.PressureKPa.ToString("F2") kPa</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Models -->
+<div class="chem-section-label">Models &amp; Thermodynamic Framework</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        <div class="rxn-grid">
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Henry's Law</div><div class="rxn-cell-val">@Model.HenryLawModel</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Convention</div><div class="rxn-cell-val">@Model.HenryConvention</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Activity Model</div><div class="rxn-cell-val">@Model.ActivityModel</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Reaction Model</div><div class="rxn-cell-val">@Model.ReactionModel</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Mass Transfer Model</div><div class="rxn-cell-val">@Model.MassTransferModel</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Salting-Out</div><div class="rxn-cell-val">@(Model.SaltingOutConsidered ? "Considered" : "Neglected")</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Equilibrium -->
+<div class="chem-section-label">Equilibrium</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        <div class="rxn-grid">
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Driving Force (inlet)</div><div class="rxn-cell-val">@Model.DrivingForceInletMolFraction.ToString("E4")</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Driving Force (outlet)</div><div class="rxn-cell-val">@Model.DrivingForceOutletMolFraction.ToString("E4")</div></div>
+        </div>
+        @if (Model.PinchPointDetected)
+        {
+            <div class="rxn-note">⚠ Pinch condition: @Model.PinchWarning</div>
+        }
+    </div>
+</div>
+
+<!-- Mass transfer -->
+<div class="chem-section-label">Mass Transfer</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        <div class="rxn-grid">
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Gas-side Resistance</div><div class="rxn-cell-val">@Model.GasSideResistanceFraction.ToString("F1") %</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Liquid-side Resistance</div><div class="rxn-cell-val">@Model.LiquidSideResistanceFraction.ToString("F1") %</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Controlling Resistance</div><div class="rxn-cell-val">@Model.ControllingResistance</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Enhancement Factor</div><div class="rxn-cell-val">@Model.EnhancementFactorFromReaction.ToString("F2")</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Reagent -->
+<div class="chem-section-label">Reagent Consumption</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        <div class="rxn-grid">
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Absorbed Pollutant</div><div class="rxn-cell-val">@Model.AbsorbedPollutantKmolPerHr.ToString("F4") kmol/hr</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Stoich Demand</div><div class="rxn-cell-val">@Model.StoichiometricReagentDemandKmolPerHr.ToString("F4") kmol/hr</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Reagent Supplied</div><div class="rxn-cell-val">@Model.ReagentSuppliedKmolPerHr.ToString("F4") kmol/hr</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Excess Factor</div><div class="rxn-cell-val">@Model.ExcessReagentFactor.ToString("F2")×</div></div>
+            <div class="rxn-cell"><div class="rxn-cell-lbl">Utilization</div><div class="rxn-cell-val">@((Model.ReagentUtilizationFraction * 100).ToString("F1")) %</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Material balance -->
+<div class="chem-section-label">Material Balance Verification</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        <div class="compliance-row">
+            <span class="comp-lbl">Closure Error</span>
+            <span class="comp-badge @(Model.IsBalanced ? "ok" : "bad")">@((Model.ClosureErrorFraction * 100).ToString("F3")) %</span>
+        </div>
+        <div class="rxn-note">@Model.ClosureStatement</div>
+    </div>
+</div>
+
+<!-- Validity -->
+<div class="chem-section-label">Chemistry Validity Assessment</div>
+<div class="rxn-card">
+    <div class="rxn-body">
+        @if (Model.CriticalErrors.Any())
+        {
+            <div class="rxn-note">
+                <strong>@Model.CriticalErrorCount critical error(s):</strong>
+                <ul>
+                    @foreach (var e in Model.CriticalErrors)
+                    {
+                        <li>@e</li>
+                    }
+                </ul>
+            </div>
+        }
+        @if (Model.Warnings.Any())
+        {
+            <div class="rxn-note">
+                <strong>@Model.WarningCount warning(s):</strong>
+                <ul>
+                    @foreach (var w in Model.Warnings)
+                    {
+                        <li>@w</li>
+                    }
+                </ul>
+            </div>
+        }
+        @if (Model.HiddenAssumptions.Any())
+        {
+            <div class="rxn-note">
+                <strong>Hidden assumptions:</strong>
+                <ul>
+                    @foreach (var a in Model.HiddenAssumptions)
+                    {
+                        <li>@a</li>
+                    }
+                </ul>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="form-actions">
+    <a asp-action="Calculation" class="btn-save">Run Another Calculation</a>
+    <a asp-action="Index" class="btn-cancel">Back to Chemical Reactions</a>
+</div>

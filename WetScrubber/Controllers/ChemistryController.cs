@@ -4,6 +4,7 @@ using WetScrubber.Database;
 using WetScrubber.Models;
 using WetScrubber.Repositories.Contracts;
 using WetScrubber.Repositories.Repositories;
+using WetScrubber.Services;
 
 namespace WetScrubber.Controllers
 {
@@ -12,10 +13,12 @@ namespace WetScrubber.Controllers
     public class ChemistryController : Controller
     {
         private readonly UnitOfWorks _uow;
+        private readonly ChemistryUIService _chemistryUIService;
 
-        public ChemistryController(IUnitOfWork uow)
+        public ChemistryController(IUnitOfWork uow, ChemistryUIService chemistryUIService)
         {
             _uow = uow as UnitOfWorks;
+            _chemistryUIService = chemistryUIService;
         }
 
         // The "key data from session" bit: read the logged-in user id from
@@ -127,6 +130,37 @@ namespace WetScrubber.Controllers
 
             TempData["Success"] = "Reaction removed.";
             return RedirectToAction(nameof(Index));
+        }
+
+        // ── CALCULATION ──────────────────────────────────────────
+        [HttpGet]
+        public IActionResult Calculation()
+        {
+            var vm = _chemistryUIService.BuildForm();
+            return View("ChemistryCalculation", vm);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult Calculation(ChemistryCalculationFormViewModel model)
+        {
+            if (!ModelState.IsValid)
+            {
+                _chemistryUIService.PopulateDropdowns(model);
+                return View("ChemistryCalculation", model);
+            }
+
+            try
+            {
+                var report = _chemistryUIService.RunCalculation(model);
+                return View("ChemistryReport", report);
+            }
+            catch (InvalidOperationException ex)
+            {
+                ModelState.AddModelError("", ex.Message);
+                _chemistryUIService.PopulateDropdowns(model);
+                return View("ChemistryCalculation", model);
+            }
         }
 
         // ── AJAX lookup for the design page ──────────────────────

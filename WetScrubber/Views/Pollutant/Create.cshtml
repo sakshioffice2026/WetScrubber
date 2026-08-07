@@ -20,6 +20,12 @@
 <div class="form-page-wrap">
     <form asp-action="Create" method="post">
         @Html.AntiForgeryToken()
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div class="flash-toast error">
+                <div asp-validation-summary="All"></div>
+            </div>
+        }
         <partial name="_PollutantForm" model="Model" />
         <div class="form-actions">
             <button type="submit" class="btn-save">Save Pollutant</button>

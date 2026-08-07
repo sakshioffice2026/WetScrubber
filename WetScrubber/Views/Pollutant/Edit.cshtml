@@ -21,6 +21,12 @@
     <form asp-action="Edit" method="post">
         @Html.AntiForgeryToken()
         <input type="hidden" asp-for="Id" />
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div class="flash-toast error">
+                <div asp-validation-summary="All"></div>
+            </div>
+        }
         <partial name="_PollutantForm" model="Model" />
         <div class="form-actions">
             <button type="submit" class="btn-save">Save Changes</button>
