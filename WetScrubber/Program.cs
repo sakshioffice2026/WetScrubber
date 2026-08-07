@@ -68,6 +68,22 @@ builder.Services.AddHttpClient<WetScrubber.Business.AI.IChemistryPredictionClien
     client.Timeout = TimeSpan.FromSeconds(5);
 });
 
+// ── Self-learning models: design-outcome calibration predictions, and the
+// retrain trigger fired after curated data changes (ChemicalReaction
+// promoted, DesignOutcome recorded). Same host/port as chemistry
+// predictions — it's the same Python service (chemistrypredictor.py). ──
+builder.Services.AddHttpClient<WetScrubber.Business.AI.IDesignOutcomePredictionClient, WetScrubber.Business.AI.DesignOutcomePredictionClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WetScrubber.Business.AI.ChemistryPredictionOptions>>().Value;
+    client.BaseAddress = new Uri(string.IsNullOrEmpty(options.BaseUrl) ? "http://localhost:8500/" : options.BaseUrl);
+});
+
+builder.Services.AddHttpClient<WetScrubber.Business.AI.IModelRetrainTrigger, WetScrubber.Business.AI.ModelRetrainClient>((serviceProvider, client) =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WetScrubber.Business.AI.ChemistryPredictionOptions>>().Value;
+    client.BaseAddress = new Uri(string.IsNullOrEmpty(options.BaseUrl) ? "http://localhost:8500/" : options.BaseUrl);
+});
+
 
 
 builder.Services.AddScoped<IAiPromptBuilder, AiPromptBuilder>();

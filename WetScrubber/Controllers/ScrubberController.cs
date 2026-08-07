@@ -24,16 +24,22 @@ namespace WetScrubber.Controllers
         private readonly IDesignDiagnosticsEngine _diagnosticsEngine;
         private readonly IDesignReportRepository _reportRepository;
         private readonly IChemistryPredictionClient _chemistryPredictor;
+        private readonly IDesignOutcomePredictionClient _designPredictor;
+        private readonly IModelRetrainTrigger _retrainTrigger;
 
         public ScrubberController(
             ApplicationDbContext dbContext,
             ILogger<ScrubberController> logger,
             IDesignDiagnosticsEngine diagnosticsEngine,
             IDesignReportRepository reportRepository,
-            IChemistryPredictionClient chemistryPredictor)
+            IChemistryPredictionClient chemistryPredictor,
+            IDesignOutcomePredictionClient designPredictor,
+            IModelRetrainTrigger retrainTrigger)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _designPredictor = designPredictor;
+            _retrainTrigger = retrainTrigger;
             // Phase 1: real-gas density wherever ComponentProperties has
             // the pollutant; per-species Van't Hoff Henry's Law wherever
             // HenrysLawData.HeatOfSolutionKJmol is populated; NRTL
@@ -538,6 +544,100 @@ namespace WetScrubber.Controllers
                 confidenceBand = prediction.ConfidenceBand,
                 nearestMatches = prediction.NearestMatches
             });
+        }
+
+        // ── POST /Scrubber/PredictDesignOutcome ──────────────────
+        // Calibrated efficiency/pressure-drop prediction from the
+        // self-learning design model, alongside the deterministic
+        // engine's own numbers from ScrubberGeometry. Advisory only.
+        [HttpPost]
+        public async Task<IActionResult> PredictDesignOutcome(int designId, CancellationToken ct)
+        {
+            var design = await _dbContext.ScrubberDesigns
+                .Include(d => d.GasStream)
+                .Include(d => d.LiquidSpec)
+                .Include(d => d.Geometry)
+                .FirstOrDefaultAsync(d => d.DesignId == designId, ct);
+
+            if (design?.GasStream == null || design.LiquidSpec == null || design.Geometry == null)
+                return Json(new { status = "incomplete" });
+
+            var request = new DesignOutcomePredictionRequest
+            {
+                ScrubberType = design.ScrubberType.ToString(),
+                DesignGasFlowRate = design.GasStream.ActualFlowRate,
+                InletTemperature = design.GasStream.InletTemperature,
+                MoistureContent = design.GasStream.MoistureContent,
+                LiquidPh = design.LiquidSpec.pH,
+                LiquidTemperature = design.LiquidSpec.Temperature,
+                DesignLgRatio = design.LiquidSpec.LiquidToGasRatio,
+                TowerDiameter = design.Geometry.TowerDiameter,
+                TowerHeight = design.Geometry.TowerHeight,
+                PackingHeight = design.Geometry.PackingHeight,
+                DesignPredictedEfficiency = design.Geometry.RemovalEfficiency,
+                DesignPredictedPressureDrop = design.Geometry.PressureDrop
+            };
+
+            var prediction = await _designPredictor.PredictAsync(request, ct);
+            if (prediction == null)
+                return Json(new { status = "unavailable" });
+
+            return Json(new
+            {
+                status = "predicted",
+                predictedRemovalEfficiency = prediction.PredictedRemovalEfficiency,
+                predictedPressureDrop = prediction.PredictedPressureDrop,
+                confidenceBand = prediction.ConfidenceBand,
+                source = prediction.Source,
+                trainedOnNSamples = prediction.TrainedOnNSamples,
+                message = prediction.Message
+            });
+        }
+
+        // ── POST /Scrubber/RecordDesignOutcome ────────────────────
+        // Captures a field/measured result against a design. Every row
+        // saved here is training data for the self-learning design
+        // calibration model — triggers an immediate retrain afterward.
+        [HttpPost]
+        public async Task<IActionResult> RecordDesignOutcome(
+            int designId,
+            double measuredRemovalEfficiency,
+            double? measuredPressureDrop,
+            double? measuredGasFlowRate,
+            double? measuredLiquidToGasRatio,
+            string? fieldNotes,
+            CancellationToken ct)
+        {
+            var redirect = RedirectIfNotLoggedIn();
+            if (redirect != null) return Json(new { status = "unauthorized" });
+
+            var geometry = await _dbContext.ScrubberGeometries
+                .FirstOrDefaultAsync(g => g.DesignId == designId, ct);
+            if (geometry == null)
+                return Json(new { status = "unknown_design" });
+
+            var userId = HttpContext.Session.GetInt32("UserId") ?? 0;
+
+            var outcome = new DesignOutcome
+            {
+                DesignId = designId,
+                Source = OutcomeDataSource.FieldMeasurement,
+                MeasurementDate = DateTime.UtcNow,
+                PredictedRemovalEfficiency = geometry.RemovalEfficiency,
+                MeasuredRemovalEfficiency = measuredRemovalEfficiency,
+                MeasuredPressureDrop = measuredPressureDrop,
+                MeasuredGasFlowRate = measuredGasFlowRate,
+                MeasuredLiquidToGasRatio = measuredLiquidToGasRatio,
+                FieldNotes = fieldNotes,
+                CreatedByUserId = userId
+            };
+
+            _dbContext.DesignOutcomes.Add(outcome);
+            await _dbContext.SaveChangesAsync(ct);
+
+            await _retrainTrigger.TriggerAsync(RetrainTarget.Design, ct);
+
+            return Json(new { status = "recorded", outcomeId = outcome.Id });
         }
 
         // ── GET /Scrubber/ChemicalReactions ──────────────────────

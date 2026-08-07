@@ -21,6 +21,10 @@ namespace WetScrubber.Database
         public DbSet<ScrubbingLiquid> ScrubbingLiquids { get; set; }
         public DbSet<ChemicalReaction> ChemicalReactions { get; set; }
 
+        // ── Phase 6 — field-outcome capture, feeds the self-learning
+        // design-calibration model in WetScrubber.Business/GNN. ────────
+        public DbSet<DesignOutcome> DesignOutcomes { get; set; }
+
         // ── Phase 4c — Flowsheet framework ──────────────────────────
         public DbSet<FlowsheetEntity> Flowsheets { get; set; }
         public DbSet<UnitOperationEntity> UnitOperations { get; set; }

@@ -13,6 +13,7 @@ namespace WetScrubber.Repositories.Repositories
         public PollutantRepository pollutantRepository { get; private set; }
         public ScrubbingLiquidRepository scrubbingLiquidRepository { get; private set; }
         public ChemicalReactionRepository chemicalReactionRepository { get; private set; }
+        public DesignOutcomeRepository designOutcomeRepository { get; private set; }
 
         public UnitOfWorks(ApplicationDbContext context)
         {
@@ -20,6 +21,7 @@ namespace WetScrubber.Repositories.Repositories
             pollutantRepository = new PollutantRepository(_DbContext);
             scrubbingLiquidRepository = new ScrubbingLiquidRepository(_DbContext);
             chemicalReactionRepository = new ChemicalReactionRepository(_DbContext);
+            designOutcomeRepository = new DesignOutcomeRepository(_DbContext);
         }
 
         public async Task Commit()

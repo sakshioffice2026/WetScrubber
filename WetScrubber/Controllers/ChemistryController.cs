@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using WetScrubber.Business.AI;
 using WetScrubber.Database;
 using WetScrubber.Models;
 using WetScrubber.Repositories.Contracts;
@@ -14,11 +15,13 @@ namespace WetScrubber.Controllers
     {
         private readonly UnitOfWorks _uow;
         private readonly ChemistryUIService _chemistryUIService;
+        private readonly IModelRetrainTrigger _retrainTrigger;
 
-        public ChemistryController(IUnitOfWork uow, ChemistryUIService chemistryUIService)
+        public ChemistryController(IUnitOfWork uow, ChemistryUIService chemistryUIService, IModelRetrainTrigger retrainTrigger)
         {
             _uow = uow as UnitOfWorks;
             _chemistryUIService = chemistryUIService;
+            _retrainTrigger = retrainTrigger;
         }
 
         // The "key data from session" bit: read the logged-in user id from
@@ -59,6 +62,10 @@ namespace WetScrubber.Controllers
 
             _uow.chemicalReactionRepository.Add(ToEntity(model), CurrentUserId());
             await _uow.Commit();
+
+            // Curated chemistry data just changed — let the self-learning
+            // model refresh now instead of waiting for its next poll.
+            await _retrainTrigger.TriggerAsync(RetrainTarget.Chemistry);
 
             TempData["Success"] = "Reaction added.";
             return RedirectToAction(nameof(Index));
@@ -114,6 +121,8 @@ namespace WetScrubber.Controllers
                 TempData["Error"] = "Reaction not found.";
                 return RedirectToAction(nameof(Index));
             }
+
+            await _retrainTrigger.TriggerAsync(RetrainTarget.Chemistry);
             await _uow.Commit();
 
             TempData["Success"] = "Reaction updated.";
@@ -127,6 +136,8 @@ namespace WetScrubber.Controllers
         {
             _uow.chemicalReactionRepository.Delete(id);
             await _uow.Commit();
+
+            await _retrainTrigger.TriggerAsync(RetrainTarget.Chemistry);
 
             TempData["Success"] = "Reaction removed.";
             return RedirectToAction(nameof(Index));
