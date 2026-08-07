@@ -280,7 +280,8 @@ namespace WetScrubber.Services
                     return result;
                 }
 
-                var multiResult = TryComputeMultiPollutantIterativeSolution(vm, henrysTemp);
+                var multiResult = TryComputeMultiPollutantIterativeSolution(
+                    vm, henrysTemp, result.TowerHeight, crossSection);
                 if (multiResult?.Converged == true)
                 {
                     // Sum across pollutants: overall removal is weighted avg
@@ -531,12 +532,18 @@ namespace WetScrubber.Services
             double A = liquidToGasRatioMolar / Math.Max(henrysLawConstant, 0.001);
 
             // ─────────────────────────────────────────────
-            // 3. NTU calculation (correct)
+            // 3. NTU calculation
             // ─────────────────────────────────────────────
+            // A→1 limiting case: L'Hopital on the Kremser/Colburn
+            // equation NTU = A/(A-1)*ln[(y1/y2)(1-1/A)+1/A] with x2=0
+            // gives NTU = (y1-y2)/y2 as A→1, not 2*(y1-y2)/(y1+y2)
+            // (that alternate form doesn't match this equation's limit
+            // and understated NTU/packing height whenever a design
+            // landed near A=1 — e.g. y1/y2=10 gives 9 vs. the old 1.64).
             double NTU;
             if (Math.Abs(A - 1.0) < 0.01)
             {
-                NTU = 2.0 * (y1 - y2) / (y1 + y2);
+                NTU = (y1 - y2) / y2;
             }
             else
             {
@@ -609,10 +616,12 @@ namespace WetScrubber.Services
 
             double A = liquidToGasRatioMolar / Math.Max(henrysLawConstant, 0.001);
 
+            // A→1 limiting case — see CalculateNtuHtu for the derivation;
+            // same fix applied here so both entry points agree.
             double NTU;
             if (Math.Abs(A - 1.0) < 0.01)
             {
-                NTU = 2.0 * (y1 - y2) / (y1 + y2);
+                NTU = (y1 - y2) / y2;
             }
             else
             {
@@ -788,7 +797,9 @@ namespace WetScrubber.Services
         // ════════════════════════════════════════════════════════════
         private MultiPollutantIterativeSolver.SolverOutput? TryComputeMultiPollutantIterativeSolution(
             CreateDesignViewModel vm,
-            double henrysLawConstantReference)
+            double henrysLawConstantReference,
+            double towerHeightM,
+            double crossSectionM2)
         {
             if (vm.Pollutants.Count == 0)
                 return null;
@@ -805,11 +816,18 @@ namespace WetScrubber.Services
 
                     double effectiveHenry = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
 
+                    // Wilke-Chang liquid diffusivity needs the solute's molar
+                    // volume — previously never set here, so both multi-pollutant
+                    // solvers always fell back to the flat 2e-9 m2/s literal.
+                    double molarVolume = _diffusionLookup?.GetByCode(pollutantCode)
+                        ?.MolarVolumeAtBoilingPointCm3Mol ?? 0.0;
+
                     pollutantInputs.Add(new MultiPollutantIterativeSolver.PollutantInput
                     {
                         Code = pollutantCode,
                         InletPpm = pollutant.InletConcentration,
                         MolecularWeight = pollutant.MolecularWeight,
+                        MolarVolumeCm3Mol = molarVolume,
                         HenrysLawConstant = effectiveHenry,
                         HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
                         HenrysLawTemperatureCorrectionFn = t =>
@@ -825,6 +843,10 @@ namespace WetScrubber.Services
                 double liquidFlowM3S = (vm.LiquidToGasRatio * gasFlowM3S) / 1000.0;
                 double liquidMassFlowKgS = liquidFlowM3S * vm.LiquidDensity;
 
+                var packingData = _packingLookup?.GetByCode(vm.PackingCode);
+                double packingSpecificAreaM2M3 = packingData?.SpecificAreaM2M3 ?? DefaultSurfaceArea;
+                double packingNominalSizeM = packingData?.NominalSizeM ?? DefaultNominalPackingSizeM;
+
                 var solverInput = new MultiPollutantIterativeSolver.SolverInput
                 {
                     Pollutants = pollutantInputs,
@@ -832,7 +854,14 @@ namespace WetScrubber.Services
                     GasMassFlowKgS = gasMassFlowKgS,
                     LiquidInletTempC = vm.LiquidTemperature,
                     LiquidMassFlowKgS = liquidMassFlowKgS,
-                    LiquidDensityKgM3 = vm.LiquidDensity
+                    LiquidDensityKgM3 = vm.LiquidDensity,
+                    GasDensityKgM3 = vm.GasDensity,
+                    TowerHeightM = towerHeightM,
+                    TowerAreaM2 = crossSectionM2,
+                    PackingSpecificAreaM2M3 = packingSpecificAreaM2M3,
+                    PackingNominalSizeM = packingNominalSizeM,
+                    LiquidViscosityPas = vm.LiquidViscosity / 1000.0,
+                    GasViscosityPas = vm.GasViscosity
                 };
 
                 return MultiPollutantIterativeSolver.SolveIterative(solverInput, numSegments: 5);
@@ -867,11 +896,18 @@ namespace WetScrubber.Services
 
                     double effectiveHenry = GetEffectiveHenrysLawConstant(pollutant, vm.InletTemperature);
 
+                    // Wilke-Chang liquid diffusivity needs the solute's molar
+                    // volume — previously never set here, so both multi-pollutant
+                    // solvers always fell back to the flat 2e-9 m2/s literal.
+                    double molarVolume = _diffusionLookup?.GetByCode(pollutantCode)
+                        ?.MolarVolumeAtBoilingPointCm3Mol ?? 0.0;
+
                     pollutantInputs.Add(new MultiPollutantIterativeSolver.PollutantInput
                     {
                         Code = pollutantCode,
                         InletPpm = pollutant.InletConcentration,
                         MolecularWeight = pollutant.MolecularWeight,
+                        MolarVolumeCm3Mol = molarVolume,
                         HenrysLawConstant = effectiveHenry,
                         HeatOfAbsorptionKJKmol = HeatOfAbsorption.GetByPollutantCode(pollutantCode),
                         HenrysLawTemperatureCorrectionFn = t =>

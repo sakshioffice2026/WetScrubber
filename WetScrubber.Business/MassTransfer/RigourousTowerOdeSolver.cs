@@ -125,9 +125,18 @@ namespace WetScrubber.Business.MassTransfer
                 // Equilibrium: C_eq = p_i / H = y_i * P / H
                 double equilibriumConc = Math.Max(1e-12, conc / hLocal);
 
-                // Mass transfer: dC/dz = -(ka * Aw/V) * (C - C_eq) / v_gas
-                double kA = onda.LiquidFilmCoeffMS * onda.WettedAreaM2M3;
-                double dCdz = -(kA * (conc - equilibriumConc)) / gasFlow;
+                // Two-film theory: combine gas-side (kG) and liquid-side (kL)
+                // resistances into one overall coefficient — 1/KGa = 1/kGa + H/kLa,
+                // same combination CalculateNtuHtu uses. Previously this used
+                // kL alone and ignored kG entirely, i.e. assumed zero gas-film
+                // resistance — overstated absorption for gas-film-controlled
+                // (poorly soluble) species.
+                double kGa = Math.Max(onda.GasFilmCoeffKmolM2SPa * onda.WettedAreaM2M3, 1e-12);
+                double kLa = Math.Max(onda.LiquidFilmCoeffMS * onda.WettedAreaM2M3, 1e-12);
+                double overallKa = 1.0 / (1.0 / kGa + hLocal / kLa);
+
+                // Mass transfer: dC/dz = -(KGa * Aw/V) * (C - C_eq) / v_gas
+                double dCdz = -(overallKa * (conc - equilibriumConc)) / gasFlow;
                 derivs[code] = dCdz;
 
                 // Liquid-side mass balance: whatever leaves the gas phase
