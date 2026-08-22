@@ -175,60 +175,18 @@
                     <span class="data-label">Height of Transfer Unit (HTU)</span>
                     <span class="data-value">@calcResult.HTU.ToString("F3") m</span>
                 </div>
-                <div class="data-row">
-                    <span class="data-label">Absorption Factor (A = L/mG)</span>
-                    <span class="data-value @(calcResult.AbsorptionFactor >= 1.2 ? "value-good" : "value-warn")">
-                        @calcResult.AbsorptionFactor.ToString("F3")
-                        @(calcResult.AbsorptionFactor >= 1.2 ? "✓" : "⚠ Low")
-                    </span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Minimum L/G Ratio</span>
-                    <span class="data-value">@calcResult.MinLGRatio.ToString("F3") L/m³</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Actual L/G Ratio</span>
-                    <span class="data-value">@calcResult.ActualLGRatio.ToString("F2") L/m³</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">L/G Multiplier (Actual/Min)</span>
-                    <span class="data-value">
-                        @(calcResult.MinLGRatio > 0
-                                            ? (calcResult.ActualLGRatio / calcResult.MinLGRatio).ToString("F2") + "×"
-                                            : "—")
-                </span>
             </div>
         </div>
-    </div>
 
-        <!-- Sizing summary card -->
+        <!-- Power card -->
         <div class="results-data-card">
             <div class="results-data-header">
-                <div class="results-data-title">Equipment Sizing Summary</div>
-                <div class="results-data-sub">Final dimensions for procurement</div>
+                <div class="results-data-title">Power Consumption</div>
+                <div class="results-data-sub">Fan + pump estimate</div>
             </div>
             <div class="results-data-body">
                 <div class="data-row">
-                    <span class="data-label">Tower inside diameter</span>
-                    <span class="data-value highlight">@calcResult.TowerDiameter.ToString("F3") m</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Total tower height (TL/TL)</span>
-                    <span class="data-value highlight">@calcResult.TowerHeight.ToString("F2") m</span>
-                </div>
-            @if (calcResult.PackingHeight > 0)
-                {
-                    <div class="data-row">
-                        <span class="data-label">Packed bed height</span>
-                        <span class="data-value">@calcResult.PackingHeight.ToString("F2") m</span>
-                    </div>
-                }
-                <div class="data-row">
-                    <span class="data-label">Total pressure drop</span>
-                    <span class="data-value">@calcResult.PressureDrop.ToString("N0") Pa (@((calcResult.PressureDrop / 249.09).ToString("F1")) inH₂O)</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Fan power (at 65% efficiency)</span>
+                    <span class="data-label">Fan power</span>
                     <span class="data-value">@calcResult.FanPowerKW.ToString("F2") kW</span>
                 </div>
                 <div class="data-row">
@@ -292,6 +250,48 @@
     </div>
 </div>
 
+<!-- ── Record Field Outcome (feeds the self-learning design model) ── -->
+<div class="results-data-card" id="recordOutcomeSection" style="margin-bottom:16px;">
+    <div class="results-data-header">
+        <div class="results-data-title">Record Field Outcome</div>
+        <div class="results-data-sub">Log measured performance to train the design calibration model (needs 8+ records)</div>
+    </div>
+    <div class="results-data-body" style="padding:20px;">
+        <form id="recordOutcomeForm" method="post" action="/Scrubber/RecordDesignOutcome">
+            <input type="hidden" id="outcomeDesignId" value="@design.DesignId" />
+
+            <div class="data-row">
+                <span class="data-label">Measured Removal Efficiency (%)</span>
+                <input type="number" step="0.01" id="measuredRemovalEfficiency" required
+                       style="width:160px;padding:6px;" />
+            </div>
+            <div class="data-row">
+                <span class="data-label">Measured Pressure Drop (Pa)</span>
+                <input type="number" step="0.01" id="measuredPressureDrop"
+                       style="width:160px;padding:6px;" />
+            </div>
+            <div class="data-row">
+                <span class="data-label">Measured Gas Flow Rate (m³/hr)</span>
+                <input type="number" step="0.01" id="measuredGasFlowRate"
+                       style="width:160px;padding:6px;" />
+            </div>
+            <div class="data-row">
+                <span class="data-label">Measured Liquid-to-Gas Ratio</span>
+                <input type="number" step="0.01" id="measuredLiquidToGasRatio"
+                       style="width:160px;padding:6px;" />
+            </div>
+            <div class="data-row">
+                <span class="data-label">Field Notes</span>
+                <textarea id="fieldNotes" style="width:100%;min-height:60px;padding:6px;"></textarea>
+            </div>
+
+            <div style="margin-top:12px;">
+                <button type="submit" class="btn-recalc">Save Outcome</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 @section Scripts {
     @if (calcResult.SensitivityPoints?.Any() == true)
     {
@@ -311,6 +311,7 @@
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="~/js/record-outcome.js"></script>
     <script>
         $(document).ready(function () {
 

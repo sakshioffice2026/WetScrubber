@@ -51,7 +51,7 @@ from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
 import db
-from ml_models import ChemistryModel, DesignOutcomeModel
+from ml_models import ChemistryModel, DesignOutcomeModel, _json_safe
 from training_state import load_state, save_state
 
 logging.basicConfig(level=logging.INFO)
@@ -283,19 +283,19 @@ def retrain(target: str = Query("all", pattern="^(all|chemistry|design)$")):
         state["design_row_count"] = counts["design"]
         save_state(state)
 
-    return result
+    return _json_safe(result)
 
 
 @app.get("/model/status")
 def model_status():
-    return {
+    return _json_safe({
         "db_configured": db.db_available(),
         "chemistry": chemistry_model.meta,
         "design": design_model.meta,
         "min_rows_chemistry": db.MIN_ROWS_CHEMISTRY,
         "min_rows_design": db.MIN_ROWS_DESIGN,
         "auto_retrain_poll_minutes": RETRAIN_POLL_MINUTES,
-    }
+    })
 
 
 @app.get("/health")

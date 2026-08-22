@@ -18,6 +18,7 @@ lookup over those same 3 rows.
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,33 @@ from db import MIN_ROWS_CHEMISTRY, MIN_ROWS_DESIGN
 
 STORE_DIR = Path(__file__).parent / "model_store"
 STORE_DIR.mkdir(exist_ok=True)
+
+
+def _json_safe(value):
+    """Recursively replace NaN/Infinity with None so meta dicts are always
+    valid JSON — protects against both writing bad values and, just as
+    importantly, loading an old meta.json that was written before this
+    guard existed."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def _safe_load_meta(path: Path) -> Optional[dict]:
+    """Read a meta.json file defensively — a corrupt or NaN-containing
+    file (e.g. left over from before this fix) is treated as 'no model
+    trained yet' instead of crashing the service."""
+    if not path.exists():
+        return None
+    try:
+        raw = json.loads(path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return _json_safe(raw)
 
 
 def _confidence_band(n_samples: int, min_rows: int, cv_r2: Optional[float]) -> str:
@@ -87,14 +115,15 @@ class ChemistryModel:
 
     # -- persistence -----------------------------------------------------
     def load(self) -> bool:
-        if not self.MODEL_PATH.exists() or not self.META_PATH.exists():
+        meta = _safe_load_meta(self.META_PATH)
+        if meta is None or not self.MODEL_PATH.exists() or not meta.get("trained"):
             return False
         bundle = joblib.load(self.MODEL_PATH)
         self.pipeline = bundle["pipeline"]
         self.henrys_pipeline = bundle["henrys_pipeline"]
         self._liquid_catalog = bundle.get("liquid_catalog", {})
         self._pollutant_catalog = bundle.get("pollutant_catalog", {})
-        self.meta = json.loads(self.META_PATH.read_text())
+        self.meta = meta
         return True
 
     def _save(self):
@@ -107,14 +136,14 @@ class ChemistryModel:
             },
             self.MODEL_PATH,
         )
-        self.META_PATH.write_text(json.dumps(self.meta, indent=2))
+        self.META_PATH.write_text(json.dumps(_json_safe(self.meta), indent=2))
 
     # -- training ----------------------------------------------------------
     def train(self, df: pd.DataFrame) -> TrainResult:
         n = len(df)
         if n < MIN_ROWS_CHEMISTRY:
             self.meta = {"trained": False, "n_samples": n, "trained_at": time.time()}
-            self.META_PATH.write_text(json.dumps(self.meta, indent=2))
+            self.META_PATH.write_text(json.dumps(_json_safe(self.meta), indent=2))
             return TrainResult(False, n, None, message=f"Need {MIN_ROWS_CHEMISTRY} curated reactions, have {n}")
 
         features = df[["pollutant_molecular_weight", "liquid_code", "liquid_default_ph"]].copy()
@@ -139,7 +168,8 @@ class ChemistryModel:
             k = min(5, n)
             if k >= 2:
                 scores = cross_val_score(pipeline, features, targets, cv=KFold(n_splits=k, shuffle=True, random_state=42), scoring="r2")
-                cv_r2 = float(np.mean(scores))
+                mean_score = float(np.mean(scores))
+                cv_r2 = mean_score if np.isfinite(mean_score) else None
         except Exception:
             cv_r2 = None
 
@@ -208,42 +238,74 @@ class DesignOutcomeModel:
     MODEL_PATH = STORE_DIR / "design_model.joblib"
     META_PATH = STORE_DIR / "design_meta.json"
 
-    FEATURES_NUM = [
-        "design_gas_flow_rate", "inlet_temperature", "moisture_content",
-        "liquid_ph", "liquid_temperature", "design_lg_ratio",
+    # Core features that MUST exist (come from ScrubberGeometries, always
+    # present once a design is saved) — rows missing these are dropped.
+    FEATURES_CORE = [
         "tower_diameter", "tower_height", "packing_height",
         "design_predicted_efficiency", "design_predicted_pressure_drop",
     ]
+    # Optional features (from GasStreams / ScrubbingLiquidSpecs) — often
+    # missing in practice if a design was captured without those steps.
+    # Imputed with column-median rather than dropping the row, so a
+    # design missing e.g. GasStream doesn't throw away otherwise-useful
+    # training data.
+    FEATURES_OPTIONAL = [
+        "design_gas_flow_rate", "inlet_temperature", "moisture_content",
+        "liquid_ph", "liquid_temperature", "design_lg_ratio",
+    ]
+    FEATURES_NUM = FEATURES_CORE + FEATURES_OPTIONAL
     FEATURES_CAT = ["scrubber_type"]
 
     def __init__(self):
         self.pipeline: Optional[Pipeline] = None
         self.meta: dict = {"trained": False, "n_samples": 0}
+        self._optional_medians: dict = {}
 
     def load(self) -> bool:
-        if not self.MODEL_PATH.exists() or not self.META_PATH.exists():
+        meta = _safe_load_meta(self.META_PATH)
+        if meta is None or not self.MODEL_PATH.exists() or not meta.get("trained"):
             return False
-        self.pipeline = joblib.load(self.MODEL_PATH)
-        self.meta = json.loads(self.META_PATH.read_text())
+        bundle = joblib.load(self.MODEL_PATH)
+        self.pipeline = bundle["pipeline"]
+        self._optional_medians = bundle.get("optional_medians", {})
+        self.meta = meta
         return True
 
     def _save(self):
-        joblib.dump(self.pipeline, self.MODEL_PATH)
-        self.META_PATH.write_text(json.dumps(self.meta, indent=2))
+        joblib.dump({"pipeline": self.pipeline, "optional_medians": self._optional_medians}, self.MODEL_PATH)
+        self.META_PATH.write_text(json.dumps(_json_safe(self.meta), indent=2))
 
     def train(self, df: pd.DataFrame) -> TrainResult:
-        required_cols = self.FEATURES_NUM + self.TARGETS
+        required_cols = self.FEATURES_CORE + self.TARGETS
         if df.empty or not set(required_cols).issubset(df.columns):
             self.meta = {"trained": False, "n_samples": 0, "trained_at": time.time()}
-            self.META_PATH.write_text(json.dumps(self.meta, indent=2))
+            self.META_PATH.write_text(json.dumps(_json_safe(self.meta), indent=2))
             return TrainResult(False, 0, None, message=f"Need {MIN_ROWS_DESIGN} recorded outcomes, have 0")
 
+        # Only drop rows missing the core (always-present) columns or the
+        # targets. Optional columns (gas stream / liquid spec) get
+        # imputed with their column median so a design saved without
+        # those steps still contributes training data.
         df = df.dropna(subset=required_cols)
         n = len(df)
         if n < MIN_ROWS_DESIGN:
             self.meta = {"trained": False, "n_samples": n, "trained_at": time.time()}
-            self.META_PATH.write_text(json.dumps(self.meta, indent=2))
+            self.META_PATH.write_text(json.dumps(_json_safe(self.meta), indent=2))
             return TrainResult(False, n, None, message=f"Need {MIN_ROWS_DESIGN} recorded outcomes, have {n}")
+
+        # Compute medians for optional columns from whatever data exists,
+        # then fill gaps — a row missing gas-flow-rate still trains on
+        # its geometry/target values, just with a "typical" gas-flow-rate
+        # standing in.
+        self._optional_medians = {
+            col: float(df[col].median()) if col in df.columns and df[col].notna().any() else 0.0
+            for col in self.FEATURES_OPTIONAL
+        }
+        for col in self.FEATURES_OPTIONAL:
+            if col not in df.columns:
+                df[col] = self._optional_medians[col]
+            else:
+                df[col] = df[col].fillna(self._optional_medians[col])
 
         x = df[self.FEATURES_NUM + self.FEATURES_CAT]
         y = df[self.TARGETS]
@@ -263,7 +325,8 @@ class DesignOutcomeModel:
             k = min(5, n)
             if k >= 2:
                 scores = cross_val_score(pipeline, x, y, cv=KFold(n_splits=k, shuffle=True, random_state=42), scoring="r2")
-                cv_r2 = float(np.mean(scores))
+                mean_score = float(np.mean(scores))
+                cv_r2 = mean_score if np.isfinite(mean_score) else None
         except Exception:
             cv_r2 = None
 
@@ -276,7 +339,13 @@ class DesignOutcomeModel:
     def predict(self, design_inputs: dict) -> Optional[dict]:
         if self.pipeline is None or not self.meta.get("trained"):
             return None
-        x = pd.DataFrame([{**{k: design_inputs.get(k) for k in self.FEATURES_NUM + self.FEATURES_CAT}}])
+        row = {}
+        for k in self.FEATURES_NUM + self.FEATURES_CAT:
+            v = design_inputs.get(k)
+            if v is None and k in self._optional_medians:
+                v = self._optional_medians[k]
+            row[k] = v
+        x = pd.DataFrame([row])
         pred = self.pipeline.predict(x)[0]
         eff, dp = pred
         n = self.meta.get("n_samples", 0)
