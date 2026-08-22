@@ -9,12 +9,12 @@ document.addEventListener("DOMContentLoaded", function () {
         if (submitBtn) submitBtn.disabled = true;
 
         var params = new URLSearchParams({
-            designId: document.getElementById("outcomeDesignId").value,
-            measuredRemovalEfficiency: document.getElementById("measuredRemovalEfficiency").value,
-            measuredPressureDrop: document.getElementById("measuredPressureDrop").value || "",
-            measuredGasFlowRate: document.getElementById("measuredGasFlowRate").value || "",
-            measuredLiquidToGasRatio: document.getElementById("measuredLiquidToGasRatio").value || "",
-            fieldNotes: document.getElementById("fieldNotes").value || ""
+            designId: document.querySelector('input[name="designId"]').value,
+            measuredRemovalEfficiency: document.querySelector('input[name="measuredRemovalEfficiency"]').value,
+            measuredPressureDrop: document.querySelector('input[name="measuredPressureDrop"]').value || "",
+            measuredGasFlowRate: document.querySelector('input[name="measuredGasFlowRate"]').value || "",
+            measuredLiquidToGasRatio: document.querySelector('input[name="measuredLiquidToGasRatio"]').value || "",
+            fieldNotes: document.querySelector('textarea[name="fieldNotes"]').value || ""
         });
 
         try {
@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 alert("Failed to record outcome: " + data.status);
             }
         } catch (err) {
-            alert("Network error while recording outcome.");
+            alert("Network error while recording outcome: " + err.message);
         } finally {
             if (submitBtn) submitBtn.disabled = false;
         }

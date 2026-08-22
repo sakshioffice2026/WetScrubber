@@ -484,6 +484,14 @@ namespace WetScrubber.Controllers
             ViewBag.Design = BuildDetailViewModel(design, report);
             ViewBag.CalcResult = calcResult;
 
+            // Fetch recorded field outcomes for this design
+            var outcomes = await _dbContext.DesignOutcomes
+                .Where(o => o.DesignId == id)
+                .OrderByDescending(o => o.CreatedAt)
+                .ToListAsync();
+            ViewBag.Outcomes = outcomes;
+            ViewBag.OutcomeCount = outcomes.Count;
+
             return View();
         }
 
@@ -609,35 +617,57 @@ namespace WetScrubber.Controllers
             CancellationToken ct)
         {
             var redirect = RedirectIfNotLoggedIn();
-            if (redirect != null) return Json(new { status = "unauthorized" });
+            if (redirect != null) return redirect;
 
-            var geometry = await _dbContext.ScrubberGeometries
-                .FirstOrDefaultAsync(g => g.DesignId == designId, ct);
-            if (geometry == null)
-                return Json(new { status = "unknown_design" });
-
-            var userId = HttpContext.Session.GetInt32("UserId") ?? 0;
-
-            var outcome = new DesignOutcome
+            try
             {
-                DesignId = designId,
-                Source = OutcomeDataSource.FieldMeasurement,
-                MeasurementDate = DateTime.UtcNow,
-                PredictedRemovalEfficiency = geometry.RemovalEfficiency,
-                MeasuredRemovalEfficiency = measuredRemovalEfficiency,
-                MeasuredPressureDrop = measuredPressureDrop,
-                MeasuredGasFlowRate = measuredGasFlowRate,
-                MeasuredLiquidToGasRatio = measuredLiquidToGasRatio,
-                FieldNotes = fieldNotes,
-                CreatedByUserId = userId
-            };
+                var geometry = await _dbContext.ScrubberGeometries
+                    .FirstOrDefaultAsync(g => g.DesignId == designId, ct);
+                if (geometry == null)
+                {
+                    TempData["Error"] = "Design geometry not found.";
+                    return RedirectToAction(nameof(Results), new { id = designId });
+                }
 
-            _dbContext.DesignOutcomes.Add(outcome);
-            await _dbContext.SaveChangesAsync(ct);
+                var userId = HttpContext.Session.GetInt32("UserId") ?? 0;
 
-            await _retrainTrigger.TriggerAsync(RetrainTarget.Design, ct);
+                var outcome = new DesignOutcome
+                {
+                    DesignId = designId,
+                    Source = OutcomeDataSource.FieldMeasurement,
+                    MeasurementDate = DateTime.UtcNow,
+                    PredictedRemovalEfficiency = geometry.RemovalEfficiency,
+                    MeasuredRemovalEfficiency = measuredRemovalEfficiency,
+                    MeasuredPressureDrop = measuredPressureDrop,
+                    MeasuredGasFlowRate = measuredGasFlowRate,
+                    MeasuredLiquidToGasRatio = measuredLiquidToGasRatio,
+                    FieldNotes = fieldNotes,
+                    CreatedByUserId = userId
+                };
 
-            return Json(new { status = "recorded", outcomeId = outcome.Id });
+                _dbContext.DesignOutcomes.Add(outcome);
+                await _dbContext.SaveChangesAsync(ct);
+
+                TempData["Success"] = $"Outcome recorded successfully (ID: {outcome.Id}).";
+
+                // Trigger retrain in background
+                try
+                {
+                    await _retrainTrigger.TriggerAsync(RetrainTarget.Design, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"Failed to trigger retrain: {ex.Message}");
+                }
+
+                return RedirectToAction(nameof(Results), new { id = designId });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error recording outcome: {ex.Message}");
+                TempData["Error"] = $"Error recording outcome: {ex.Message}";
+                return RedirectToAction(nameof(Results), new { id = designId });
+            }
         }
 
         // ── GET /Scrubber/ChemicalReactions ──────────────────────
