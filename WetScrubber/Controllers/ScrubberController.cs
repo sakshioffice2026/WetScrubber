@@ -415,6 +415,7 @@ namespace WetScrubber.Controllers
                 existing.ActualLGRatio = calcResult.ActualLGRatio;
                 existing.MinLGRatio = calcResult.MinLGRatio;
                 existing.GasVelocity = calcResult.GasVelocity;
+                existing.PackingCode = design.PackingCode;
             }
             else
             {
@@ -429,7 +430,8 @@ namespace WetScrubber.Controllers
                     AbsorptionFactor = calcResult.AbsorptionFactor,
                     ActualLGRatio = calcResult.ActualLGRatio,
                     MinLGRatio = calcResult.MinLGRatio,
-                    GasVelocity = calcResult.GasVelocity
+                    GasVelocity = calcResult.GasVelocity,
+                    PackingCode = design.PackingCode
                 });
             }
 
@@ -700,6 +702,29 @@ namespace WetScrubber.Controllers
             }
 
             int projectId = design.ProjectId;
+
+            // Same FK issue as Project delete: DesignReports/DesignOutcomes
+            // have no cascade rule, so remove them explicitly first.
+            var reports = await _dbContext.DesignReports
+                .Where(r => r.DesignId == id)
+                .ToListAsync();
+            if (reports.Count > 0)
+                _dbContext.DesignReports.RemoveRange(reports);
+
+            var outcomes = await _dbContext.DesignOutcomes
+                .Where(o => o.DesignId == id)
+                .ToListAsync();
+            if (outcomes.Count > 0)
+                _dbContext.DesignOutcomes.RemoveRange(outcomes);
+
+            // Self-referencing FK (design revisions) — null out any design
+            // that points back to this one before deleting it.
+            var revisions = await _dbContext.ScrubberDesigns
+                .Where(d => d.PreviousDesignId == id)
+                .ToListAsync();
+            foreach (var r in revisions)
+                r.PreviousDesignId = null;
+
             _dbContext.ScrubberDesigns.Remove(design);
             await _dbContext.SaveChangesAsync();
 

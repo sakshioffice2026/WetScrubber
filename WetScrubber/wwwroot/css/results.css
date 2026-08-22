@@ -64,8 +64,33 @@
     transition: background 0.15s;
 }
 
-.btn-recalc:hover { background: rgba(255, 255, 255, 0.15); }
-.btn-recalc svg   { width: 12px; height: 12px; fill: #00d28c; }
+    .btn-recalc:hover {
+        background: rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-recalc svg {
+        width: 12px;
+        height: 12px;
+        fill: #00d28c;
+    }
+
+.btn-save-outcome {
+    height: 36px;
+    padding: 0 18px;
+    background: #00d28c;
+    color: #ffffff;
+    border: 0;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+
+    .btn-save-outcome:hover {
+        background: #00b87a;
+    }
 
 /* ── KPI result grid ─────────────────────────────────────────── */
 .results-kpi-grid {
@@ -84,19 +109,32 @@
     overflow: hidden;
 }
 
-.result-kpi::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: #e0e0e0;
-    border-radius: 2px 2px 0 0;
-}
+    .result-kpi::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: #e0e0e0;
+        border-radius: 2px 2px 0 0;
+    }
 
-.result-kpi.green::before  { background: #00d28c; }
-.result-kpi.blue::before   { background: #3b82f6; }
-.result-kpi.amber::before  { background: #f59e0b; }
-.result-kpi.purple::before { background: #8b5cf6; }
+    .result-kpi.green::before {
+        background: #00d28c;
+    }
+
+    .result-kpi.blue::before {
+        background: #3b82f6;
+    }
+
+    .result-kpi.amber::before {
+        background: #f59e0b;
+    }
+
+    .result-kpi.purple::before {
+        background: #8b5cf6;
+    }
 
 .result-kpi-icon {
     position: absolute;
@@ -111,11 +149,27 @@
     justify-content: center;
 }
 
-.result-kpi-icon svg { width: 14px; height: 14px; fill: #ccc; }
-.result-kpi.green  .result-kpi-icon svg { fill: #00d28c; }
-.result-kpi.blue   .result-kpi-icon svg { fill: #3b82f6; }
-.result-kpi.amber  .result-kpi-icon svg { fill: #f59e0b; }
-.result-kpi.purple .result-kpi-icon svg { fill: #8b5cf6; }
+    .result-kpi-icon svg {
+        width: 14px;
+        height: 14px;
+        fill: #ccc;
+    }
+
+.result-kpi.green .result-kpi-icon svg {
+    fill: #00d28c;
+}
+
+.result-kpi.blue .result-kpi-icon svg {
+    fill: #3b82f6;
+}
+
+.result-kpi.amber .result-kpi-icon svg {
+    fill: #f59e0b;
+}
+
+.result-kpi.purple .result-kpi-icon svg {
+    fill: #8b5cf6;
+}
 
 .result-kpi-label {
     font-size: 10px;
@@ -195,7 +249,9 @@
     gap: 16px;
 }
 
-.data-row:last-child { border-bottom: none; }
+    .data-row:last-child {
+        border-bottom: none;
+    }
 
 .data-label {
     font-size: 12.5px;
@@ -211,37 +267,63 @@
     white-space: nowrap;
 }
 
-.data-value.highlight {
-    color: #00d28c;
-    font-size: 13.5px;
-}
+    .data-value.highlight {
+        color: #00d28c;
+        font-size: 13.5px;
+    }
 
-.data-value.value-good { color: #059669; }
-.data-value.value-warn { color: #d97706; }
+    .data-value.value-good {
+        color: #059669;
+    }
+
+    .data-value.value-warn {
+        color: #d97706;
+    }
 
 .total-row {
     background: #f8f9fb;
     border-top: 1px solid #f0f0f0 !important;
 }
 
-.total-row .data-label {
-    font-weight: 600;
-    color: #0b1120;
-}
+    .total-row .data-label {
+        font-weight: 600;
+        color: #0b1120;
+    }
 
 /* ── Responsive ──────────────────────────────────────────────── */
 @media (max-width: 1100px) {
-    .results-kpi-grid { grid-template-columns: repeat(3, 1fr); }
+    .results-kpi-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 @media (max-width: 900px) {
-    .results-kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .results-two-col  { grid-template-columns: 1fr; }
+    .results-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .results-two-col {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 600px) {
-    .results-kpi-grid    { grid-template-columns: 1fr; }
-    .results-header-card { flex-direction: column; align-items: flex-start; }
-    .data-row            { flex-direction: column; align-items: flex-start; gap: 4px; }
-    .data-value          { text-align: left; }
+    .results-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .results-header-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .data-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .data-value {
+        text-align: left;
+    }
 }

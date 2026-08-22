@@ -174,7 +174,11 @@ namespace WetScrubber.Business.Reports
                 GasVelocity = geometry.GasVelocity,
                 PackingHeight = geometry.PackingHeight,
                 RemovalEfficiency = geometry.RemovalEfficiency,
-                TargetRemovalEfficiency = pollutant?.TargetRemovalEfficiency
+                TargetRemovalEfficiency = pollutant?.TargetRemovalEfficiency,
+                PackingCode = geometry.PackingCode ?? design.PackingCode,
+                PackingSizingMethod = geometry.PackingSizingMethod,
+                IsLimestoneSlurry = geometry.IsLimestoneSlurry,
+                SolidsLoadingWtPercent = geometry.SolidsLoadingWtPercent
             };
 
             var findings = _diagnosticsEngine.Evaluate(metrics);

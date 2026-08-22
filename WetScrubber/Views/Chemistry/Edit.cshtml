@@ -1,0 +1,113 @@
+@model WetScrubber.Models.ReactionFormViewModel
+@{
+    ViewData["Title"] = "Edit Reaction";
+    ViewData["ActivePage"] = "Chemistry";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/scrubber.css" />
+    <link rel="stylesheet" href="~/css/chemistry.css" />
+    <link rel="stylesheet" href="~/css/chemistry-crud.css" />
+}
+
+<div class="breadcrumb">
+    <a asp-controller="Dashboard" asp-action="Index">Dashboard</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <a asp-action="Index">Chemical Reactions</a>
+    <svg viewBox="0 0 16 16" width="12" height="12"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
+    <span>Edit</span>
+</div>
+
+<div class="form-page-wrap">
+    <form asp-action="Edit" method="post">
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="Id" />
+
+        @if (!ViewData.ModelState.IsValid)
+        {
+            <div class="flash-toast error">
+                <div asp-validation-summary="All"></div>
+            </div>
+        }
+
+        <div class="form-row">
+            <label asp-for="PollutantId">Pollutant</label>
+            <select asp-for="PollutantId" asp-items="@(new SelectList(Model.Pollutants, "Id", "DisplayName"))">
+                <option value="">-- Select pollutant --</option>
+            </select>
+            <span class="field-error">@Html.ValidationMessageFor(m => m.PollutantId)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="ScrubbingLiquidId">Scrubbing Liquid</label>
+            <select asp-for="ScrubbingLiquidId" asp-items="@(new SelectList(Model.Liquids, "Id", "DisplayName"))">
+                <option value="">-- Select liquid --</option>
+            </select>
+            <span class="field-error">@Html.ValidationMessageFor(m => m.ScrubbingLiquidId)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="Equation">Reaction Equation</label>
+            <input asp-for="Equation" type="text" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.Equation)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="ReactionType">Reaction Type</label>
+            <input asp-for="ReactionType" type="text" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.ReactionType)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="ProductName">Product Formed</label>
+            <input asp-for="ProductName" type="text" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.ProductName)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="StoichiometricRatio">Stoichiometric Ratio <span class="unit">(mol reagent / mol pollutant)</span></label>
+            <input asp-for="StoichiometricRatio" type="number" step="any" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.StoichiometricRatio)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="MaxRemovalEfficiency">Max Removal Efficiency <span class="unit">(%)</span></label>
+            <input asp-for="MaxRemovalEfficiency" type="number" step="any" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.MaxRemovalEfficiency)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="MinOperatingPH">Min Operating pH</label>
+            <input asp-for="MinOperatingPH" type="number" step="any" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.MinOperatingPH)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="MaxOperatingPH">Max Operating pH</label>
+            <input asp-for="MaxOperatingPH" type="number" step="any" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.MaxOperatingPH)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="HeatOfReaction">Heat of Reaction <span class="unit">(kJ/mol, optional)</span></label>
+            <input asp-for="HeatOfReaction" type="number" step="any" />
+            <span class="field-error">@Html.ValidationMessageFor(m => m.HeatOfReaction)</span>
+        </div>
+
+        <div class="form-row">
+            <label asp-for="DesignNotes">Design Notes</label>
+            <textarea asp-for="DesignNotes" rows="3"></textarea>
+            <span class="field-error">@Html.ValidationMessageFor(m => m.DesignNotes)</span>
+        </div>
+
+        <div class="form-row-inline">
+            <label><input asp-for="IsPrimary" type="checkbox" /> Primary reaction</label>
+            <label><input asp-for="IsActive" type="checkbox" /> Active</label>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn-save">Save Changes</button>
+            <a asp-action="Index" class="btn-cancel">Cancel</a>
+        </div>
+    </form>
+</div>

@@ -17,7 +17,7 @@ namespace WetScrubber.Controllers
         public ProjectController(ApplicationDbContext dbContext, ILogger<ProjectController> logger)
         {
             _dbContext = dbContext;
-            _logger    = logger;
+            _logger = logger;
         }
 
         // ── Auth helper ───────────────────────────────────────────
@@ -50,7 +50,7 @@ namespace WetScrubber.Controllers
             {
                 search = search.Trim().ToLower();
                 query = query.Where(p =>
-                    p.ProjectName.ToLower().Contains(search)   ||
+                    p.ProjectName.ToLower().Contains(search) ||
                     p.ProjectNumber.ToLower().Contains(search) ||
                     p.ClientName.ToLower().Contains(search));
             }
@@ -68,16 +68,16 @@ namespace WetScrubber.Controllers
             // Map to summary VMs
             var summaries = projects.Select(p => new ProjectSummaryViewModel
             {
-                ProjectId     = p.ProjectId,
+                ProjectId = p.ProjectId,
                 ProjectNumber = p.ProjectNumber,
-                ProjectName   = p.ProjectName,
-                ClientName    = p.ClientName,
-                EngineerName  = p.EngineerName,
-                Status        = p.Status,
-                UnitSystem    = p.UnitSystem,
-                DesignCount   = p.Designs.Count,
-                CreatedAt     = p.CreatedAt,
-                UpdatedAt     = p.UpdatedAt
+                ProjectName = p.ProjectName,
+                ClientName = p.ClientName,
+                EngineerName = p.EngineerName,
+                Status = p.Status,
+                UnitSystem = p.UnitSystem,
+                DesignCount = p.Designs.Count,
+                CreatedAt = p.CreatedAt,
+                UpdatedAt = p.UpdatedAt
             }).ToList();
 
             // All projects for stats (ignore filters)
@@ -88,13 +88,13 @@ namespace WetScrubber.Controllers
 
             var vm = new ProjectListViewModel
             {
-                Projects          = summaries,
-                TotalProjects     = allProjects.Count,
-                ActiveProjects    = allProjects.Count(p => p.Status == ProjectStatus.InProgress),
+                Projects = summaries,
+                TotalProjects = allProjects.Count,
+                ActiveProjects = allProjects.Count(p => p.Status == ProjectStatus.InProgress),
                 CompletedProjects = allProjects.Count(p => p.Status == ProjectStatus.Completed),
-                TotalDesigns      = allProjects.Sum(p => p.Designs.Count),
-                SearchTerm        = search,
-                StatusFilter      = status
+                TotalDesigns = allProjects.Sum(p => p.Designs.Count),
+                SearchTerm = search,
+                StatusFilter = status
             };
 
             return View(vm);
@@ -180,31 +180,31 @@ namespace WetScrubber.Controllers
 
             var vm = new ProjectDetailViewModel
             {
-                ProjectId     = project.ProjectId,
+                ProjectId = project.ProjectId,
                 ProjectNumber = project.ProjectNumber,
-                ProjectName   = project.ProjectName,
-                ClientName    = project.ClientName,
-                EngineerName  = project.EngineerName,
-                Description   = project.Description,
-                Status        = project.Status,
-                UnitSystem    = project.UnitSystem,
-                CreatedAt     = project.CreatedAt,
-                UpdatedAt     = project.UpdatedAt,
-                TotalDesigns  = project.Designs.Count,
+                ProjectName = project.ProjectName,
+                ClientName = project.ClientName,
+                EngineerName = project.EngineerName,
+                Description = project.Description,
+                Status = project.Status,
+                UnitSystem = project.UnitSystem,
+                CreatedAt = project.CreatedAt,
+                UpdatedAt = project.UpdatedAt,
+                TotalDesigns = project.Designs.Count,
                 CompletedDesigns = project.Designs.Count(d => d.Geometry != null),
 
                 Designs = project.Designs
                     .OrderByDescending(d => d.UpdatedAt)
                     .Select(d => new DesignSummaryViewModel
                     {
-                        DesignId          = d.DesignId,
-                        DesignName        = d.DesignName,
-                        ScrubberType      = d.ScrubberType.ToString(),
-                        ShellMaterial     = d.ShellMaterial.ToString(),
-                        HasResults        = d.Geometry != null,
+                        DesignId = d.DesignId,
+                        DesignName = d.DesignName,
+                        ScrubberType = d.ScrubberType.ToString(),
+                        ShellMaterial = d.ShellMaterial.ToString(),
+                        HasResults = d.Geometry != null,
                         RemovalEfficiency = d.Geometry?.RemovalEfficiency ?? 0,
-                        CreatedAt         = d.CreatedAt,
-                        UpdatedAt         = d.UpdatedAt
+                        CreatedAt = d.CreatedAt,
+                        UpdatedAt = d.UpdatedAt
                     }).ToList()
             };
 
@@ -298,7 +298,7 @@ namespace WetScrubber.Controllers
             var redirect = RedirectIfNotLoggedIn();
             if (redirect != null) return redirect;
 
-            var userId  = GetUserId()!.Value;
+            var userId = GetUserId()!.Value;
             var project = await _dbContext.Projects
                 .FirstOrDefaultAsync(p => p.ProjectId == id && p.CreatedByUserId == userId);
 
@@ -306,6 +306,40 @@ namespace WetScrubber.Controllers
             {
                 TempData["Error"] = "Project not found.";
                 return RedirectToAction(nameof(Index));
+            }
+
+            // DesignReports has no cascade-delete rule at the DB level, so
+            // removing a project whose designs have reports fails with an
+            // FK violation. Delete those rows explicitly first.
+            var designIds = await _dbContext.ScrubberDesigns
+                .Where(d => d.ProjectId == id)
+                .Select(d => d.DesignId)
+                .ToListAsync();
+
+            if (designIds.Count > 0)
+            {
+                var reports = await _dbContext.DesignReports
+                    .Where(r => designIds.Contains(r.DesignId))
+                    .ToListAsync();
+                if (reports.Count > 0)
+                    _dbContext.DesignReports.RemoveRange(reports);
+
+                var outcomes = await _dbContext.DesignOutcomes
+                    .Where(o => designIds.Contains(o.DesignId))
+                    .ToListAsync();
+                if (outcomes.Count > 0)
+                    _dbContext.DesignOutcomes.RemoveRange(outcomes);
+
+                // ScrubberDesigns.PreviousDesignId is a self-referencing FK
+                // (design revisions). It blocks deletion of the design a
+                // revision points back to, so null it out first — including
+                // revisions that might point to a design outside this
+                // project's own id list.
+                var revisions = await _dbContext.ScrubberDesigns
+                    .Where(d => d.PreviousDesignId != null && designIds.Contains(d.PreviousDesignId.Value))
+                    .ToListAsync();
+                foreach (var r in revisions)
+                    r.PreviousDesignId = null;
             }
 
             _dbContext.Projects.Remove(project);

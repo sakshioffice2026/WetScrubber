@@ -277,25 +277,25 @@
                 <div class="data-row">
                     <span class="data-label">Measured Removal Efficiency (%)</span>
                     <input type="number" step="0.01" id="measuredRemovalEfficiency" name="measuredRemovalEfficiency" required
-                           style="width:160px;padding:6px;" />
+                           value="@calcResult!.RemovalEfficiency.ToString("F2")" style="width:160px;padding:6px;" />
                 </div>
                 
                 <div class="data-row">
                     <span class="data-label">Measured Pressure Drop (Pa)</span>
                     <input type="number" step="0.01" id="measuredPressureDrop" name="measuredPressureDrop"
-                           style="width:160px;padding:6px;" />
+                           value="@calcResult.PressureDrop.ToString("F2")" style="width:160px;padding:6px;" />
                 </div>
                 
                 <div class="data-row">
                     <span class="data-label">Measured Gas Flow Rate (m³/hr)</span>
                     <input type="number" step="0.01" id="measuredGasFlowRate" name="measuredGasFlowRate"
-                           style="width:160px;padding:6px;" />
+                           value="@design.ActualFlowRate.ToString("F2")" style="width:160px;padding:6px;" />
                 </div>
                 
                 <div class="data-row">
                     <span class="data-label">Measured Liquid-to-Gas Ratio</span>
                     <input type="number" step="0.01" id="measuredLiquidToGasRatio" name="measuredLiquidToGasRatio"
-                           style="width:160px;padding:6px;" />
+                           value="@calcResult.ActualLGRatio.ToString("F2")" style="width:160px;padding:6px;" />
                 </div>
                 
                 <div class="data-row">
@@ -304,7 +304,7 @@
                 </div>
 
                 <div style="margin-top:12px;">
-                    <button type="submit" class="btn-recalc">Save Outcome</button>
+                    <button type="submit" class="btn-save-outcome">Save Outcome</button>
                 </div>
             </form>
         </div>
