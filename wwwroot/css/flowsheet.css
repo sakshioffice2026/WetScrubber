@@ -1,0 +1,146 @@
+﻿/* Flowsheet views */
+.flowsheet-page {
+    display: grid;
+    gap: 16px;
+    max-width: 1400px;
+}
+
+    .flowsheet-page .breadcrumb,
+    .flowsheet-page .flash-toast,
+    .flowsheet-page .proj-table-card,
+    .flowsheet-page .chem-intro-card {
+        margin: 0;
+    }
+
+    .flowsheet-page .proj-table-card {
+        min-width: 0;
+    }
+
+    .flowsheet-page .flowsheet-create-form {
+        padding: 20px;
+    }
+
+    .flowsheet-page .flowsheet-inline-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        gap: 12px;
+        padding: 16px 20px 20px;
+        margin-top: 0 !important;
+        border-top: 1px solid #f0f0f0;
+    }
+
+    .flowsheet-page .predict-field {
+        display: flex;
+        flex: 1 1 190px;
+        min-width: 0;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+        .flowsheet-page .predict-field label {
+            color: #555;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+    .flowsheet-page .form-control {
+        width: 100%;
+        min-height: 40px;
+        padding: 0 13px;
+        color: #0b1120;
+        font: inherit;
+        font-size: 13px;
+        background: #f8f9fb;
+        border: 1px solid #e4e6ea;
+        border-radius: 8px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+
+    .flowsheet-page textarea.form-control {
+        min-height: 88px;
+        padding: 10px 13px;
+        line-height: 1.5;
+        resize: vertical;
+    }
+
+    .flowsheet-page .form-control:focus {
+        background: #fff;
+        border-color: #00d28c;
+        box-shadow: 0 0 0 3px rgba(0, 210, 140, 0.1);
+    }
+
+    .flowsheet-page .btn-predict {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 0 24px;
+        color: #0b1120;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        background: #00d28c;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+        .flowsheet-page .btn-predict:hover {
+            background: #00b87a;
+        }
+
+    .flowsheet-page .chem-intro-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 20px 22px;
+        background: #fff;
+        border: 1px solid #e8e8e8;
+        border-radius: 10px;
+    }
+
+    .flowsheet-page .chem-intro-title {
+        margin-bottom: 6px;
+        color: #0b1120;
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .flowsheet-page .chem-intro-desc {
+        color: #666;
+        font-size: 13px;
+        line-height: 1.6;
+    }
+
+    .flowsheet-page code {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
+
+@media (max-width: 700px) {
+    .flowsheet-page .proj-table-header {
+        align-items: flex-start;
+        gap: 12px;
+        flex-direction: column;
+    }
+
+    .flowsheet-page .flowsheet-inline-form,
+    .flowsheet-page .flowsheet-create-form {
+        padding: 16px;
+    }
+
+    .flowsheet-page .predict-field {
+        flex-basis: 100%;
+    }
+
+    .flowsheet-page .btn-save,
+    .flowsheet-page .btn-predict,
+    .flowsheet-page .btn-cancel {
+        justify-content: center;
+        width: 100%;
+    }
+}

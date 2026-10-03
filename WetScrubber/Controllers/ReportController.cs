@@ -104,6 +104,28 @@ namespace WetScrubber.Controllers
             return RedirectToAction(nameof(Review), new { designId });
         }
 
+        // GET /Report/Export/5   (5 = designId)
+        // Downloads the report narrative as a plain text file.
+        // Uses ApprovedNarrative if approved, else falls back to the
+        // template narrative. No new dependencies required.
+        [HttpGet]
+        public async Task<IActionResult> Export(int designId)
+        {
+            var userId = GetUserId();
+            if (userId == null) return RedirectToAction("Login", "Account");
+
+            var report = await _reportRepository.GetByDesignIdAsync(designId);
+            if (report == null) return RedirectToAction(nameof(Generate), new { designId });
+
+            var text = !string.IsNullOrWhiteSpace(report.ApprovedNarrative)
+                ? report.ApprovedNarrative
+                : report.TemplateNarrative;
+
+            var fileName = $"{(report.Design?.DesignName ?? "Report").Replace(' ', '_')}_Report.txt";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+            return File(bytes, "text/plain", fileName);
+        }
+
         // GET /Report/Review/5   (5 = designId)
         [HttpGet]
         public async Task<IActionResult> Review(int designId)

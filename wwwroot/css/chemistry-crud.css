@@ -1,0 +1,59 @@
+/* chemistry-crud.css — additions for the Chemistry master (CRUD) page.
+   Link AFTER chemistry.css. Nothing here overrides existing rules. */
+
+/* Push the "Add Reaction" button to the right of the intro card */
+.chem-intro-card { align-items: center; }
+
+/* Per-reaction action buttons inside the card header */
+.rxn-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;          /* sit to the right, before the chevron */
+}
+.rxn-actions form { line-height: 0; }
+.rxn-actions .action-btn {
+    width: 28px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid #eee; border-radius: 6px; background: #fff;
+    cursor: pointer; padding: 0;
+}
+.rxn-actions .action-btn svg { width: 13px; height: 13px; fill: #888; }
+.rxn-actions .action-btn:hover { border-color: #ddd; }
+.rxn-actions .action-btn.danger:hover { border-color: #f0b3b3; }
+.rxn-actions .action-btn.danger:hover svg { fill: #dc2626; }
+
+/* "Primary" pill on a reaction card */
+.primary-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #0F6E56;
+    background: #e1f5ee;
+    border-radius: 20px;
+    margin-left: 8px;
+}
+
+/* Design-notes line inside the expanded card body */
+.rxn-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #666;
+    background: #fafafa;
+    border-left: 3px solid #e0e0e0;
+    border-radius: 0 6px 6px 0;
+    padding: 8px 12px;
+    line-height: 1.5;
+}
+
+/* Checkbox rows on the form */
+.form-group.check { justify-content: center; }
+.form-group.check label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.form-group.check input[type="checkbox"] { width: 16px; height: 16px; }

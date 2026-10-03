@@ -19,6 +19,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\EngineeringAI.Core\EngineeringAI.Core.csproj" />
 		<ProjectReference Include="..\WetScrubber.Database\WetScrubber.Database.csproj" />
 		<ProjectReference Include="..\WetScrubber.Models\WetScrubber.Models.csproj" />
 		<ProjectReference Include="..\WetScrubber.Repositories\WetScrubber.Repositories.csproj" />

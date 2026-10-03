@@ -1,0 +1,698 @@
+/* ============================================================
+   chemistry.css  —  Chemical Reactions page
+   WetScrubber Pro | ASP.NET Core MVC
+   ============================================================ */
+
+/* ── Page intro card ─────────────────────────────────────────── */
+.chem-intro-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 20px;
+}
+
+.chem-intro-icon {
+    width: 44px;
+    height: 44px;
+    background: rgba(0, 210, 140, 0.10);
+    border-radius: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+    .chem-intro-icon svg {
+        width: 22px;
+        height: 22px;
+        flex-shrink: 0;
+    }
+
+.chem-intro-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0b1120;
+    margin-bottom: 6px;
+}
+
+.chem-intro-desc {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.65;
+}
+
+/* ── Pollutant tabs ──────────────────────────────────────────── */
+.pollutant-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 7px 16px;
+    border-radius: 20px;
+    border: 1.5px solid #e0e0e0;
+    background: #ffffff;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #666;
+    font-family: inherit;
+}
+
+    .tab-btn:hover {
+        border-color: #00d28c;
+        color: #00d28c;
+    }
+
+    .tab-btn.active {
+        background: #00d28c;
+        border-color: #00d28c;
+        color: #0b1120;
+    }
+
+/* ── Reaction panels ─────────────────────────────────────────── */
+.reaction-panel {
+    display: none;
+}
+
+    .reaction-panel.show {
+        display: block;
+    }
+
+/* ── Pollutant header ────────────────────────────────────────── */
+.pollutant-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    border: 0.5px solid;
+}
+
+    .pollutant-header.danger {
+        background: #fff5f5;
+        border-color: #fca5a5;
+    }
+
+    .pollutant-header.orange {
+        background: #fff7ed;
+        border-color: #fed7aa;
+    }
+
+    .pollutant-header.yellow {
+        background: #fefce8;
+        border-color: #fde68a;
+    }
+
+    .pollutant-header.purple {
+        background: #fdf4ff;
+        border-color: #e9d5ff;
+    }
+
+    .pollutant-header.teal {
+        background: #f0fdfa;
+        border-color: #99f6e4;
+    }
+
+    .pollutant-header.blue {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+    }
+
+.ph-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.7);
+    flex-shrink: 0;
+}
+
+    .ph-icon svg {
+        width: 20px;
+        height: 20px;
+    }
+
+.ph-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #0b1120;
+    margin-bottom: 3px;
+}
+
+.ph-desc {
+    font-size: 12px;
+    color: #666;
+}
+
+.hazard-tag {
+    margin-left: auto;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+    .hazard-tag.danger {
+        background: #fff0f0;
+        color: #dc2626;
+    }
+
+    .hazard-tag.orange {
+        background: #fff7ed;
+        color: #ea580c;
+    }
+
+    .hazard-tag.yellow {
+        background: #fefce8;
+        color: #ca8a04;
+    }
+
+    .hazard-tag.purple {
+        background: #fdf4ff;
+        color: #9333ea;
+    }
+
+    .hazard-tag.teal {
+        background: #f0fdfa;
+        color: #0f766e;
+    }
+
+    .hazard-tag.blue {
+        background: #eff6ff;
+        color: #1d4ed8;
+    }
+
+/* ── Process flow strip ──────────────────────────────────────── */
+.process-flow {
+    display: flex;
+    align-items: center;
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    padding: 4px 0;
+}
+
+.pf-step {
+    flex: 1;
+    padding: 14px 12px;
+    text-align: center;
+}
+
+.pf-arrow {
+    font-size: 18px;
+    color: #00d28c;
+    font-weight: 700;
+    flex-shrink: 0;
+    padding: 0 2px;
+}
+
+.pf-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 8px;
+}
+
+    .pf-icon svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .pf-icon.red {
+        background: #fff0f0;
+    }
+
+    .pf-icon.blue {
+        background: #eff6ff;
+    }
+
+    .pf-icon.green {
+        background: #f0fdf8;
+    }
+
+    .pf-icon.gray {
+        background: #f5f5f5;
+    }
+
+.pf-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+}
+
+.pf-val {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0b1120;
+}
+
+/* ── Section label ───────────────────────────────────────────── */
+.chem-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #aaa;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+    .chem-section-label::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: #f0f0f0;
+    }
+
+/* ── Reaction cards ──────────────────────────────────────────── */
+.rxn-card {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.rxn-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 16px;
+    background: #fafafa;
+    border-bottom: 0.5px solid #f0f0f0;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.12s;
+}
+
+    .rxn-header:hover {
+        background: #f5f5f5;
+    }
+
+.rxn-liquid-tag {
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+    .rxn-liquid-tag.blue {
+        background: #e0f2fe;
+        color: #075985;
+    }
+
+    .rxn-liquid-tag.green {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .rxn-liquid-tag.amber {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+.rxn-eq {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0b1120;
+    flex: 1;
+    letter-spacing: 0.3px;
+}
+
+.rxn-chevron {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+}
+
+    .rxn-chevron svg {
+        width: 10px;
+        height: 10px;
+    }
+
+    .rxn-chevron.open {
+        transform: rotate(180deg);
+    }
+
+.rxn-body {
+    padding: 16px;
+    display: none;
+}
+
+    .rxn-body.open {
+        display: block;
+    }
+
+/* ── Reaction detail grid ────────────────────────────────────── */
+.rxn-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.rxn-cell {
+    background: #f8f9fb;
+    border-radius: 7px;
+    padding: 10px 12px;
+}
+
+.rxn-cell-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    color: #aaa;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.rxn-cell-val {
+    font-size: 12.5px;
+    color: #0b1120;
+    line-height: 1.5;
+}
+
+/* ── Molecule row ────────────────────────────────────────────── */
+.molecule-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 14px;
+    background: #f0fdf8;
+    border: 0.5px solid #bbf7e0;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.mol {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+.mol-f {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #0b1120;
+}
+
+.mol-n {
+    font-size: 10px;
+    color: #6b7280;
+    text-align: center;
+}
+
+.mol-arr {
+    font-size: 18px;
+    color: #00d28c;
+    font-weight: 700;
+    padding: 0 4px;
+}
+
+.mol-plus {
+    font-size: 16px;
+    color: #aaa;
+    padding: 0 2px;
+    align-self: flex-start;
+    margin-top: 2px;
+}
+
+/* ── Compliance row ──────────────────────────────────────────── */
+.compliance-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.comp-lbl {
+    font-size: 11px;
+    color: #888;
+    margin-right: 2px;
+}
+
+.comp-badge {
+    padding: 3px 9px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+/* ── Hatta Number card ───────────────────────────────────────── */
+.hatta-card {
+    background: #ffffff;
+    border: 0.5px solid #e8e8e8;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 20px;
+    margin-bottom: 16px;
+}
+
+.hatta-header {
+    padding: 16px 20px;
+    background: #0b1120;
+    border-bottom: 1px solid #1e2d40;
+}
+
+.hatta-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 4px;
+}
+
+.hatta-sub {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.55);
+    line-height: 1.6;
+}
+
+.hatta-body {
+    padding: 20px;
+}
+
+.hatta-formula {
+    font-family: 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: #00d28c;
+    background: #f0fdf8;
+    border: 0.5px solid #bbf7e0;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+
+.hatta-sliders {
+    margin-bottom: 18px;
+}
+
+.hatta-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+    .hatta-row label {
+        font-size: 12px;
+        color: #555;
+        min-width: 200px;
+        font-weight: 500;
+    }
+
+    .hatta-row input[type=range] {
+        flex: 1;
+    }
+
+    .hatta-row span {
+        font-size: 13px;
+        font-weight: 700;
+        color: #0b1120;
+        min-width: 28px;
+        text-align: right;
+    }
+
+.hatta-unit {
+    font-size: 10px;
+    color: #aaa;
+    min-width: 100px;
+    font-weight: 400 !important;
+}
+
+.hatta-result {
+}
+
+.hatta-ha-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.hatta-ha-label {
+    font-size: 12px;
+    color: #666;
+}
+
+.hatta-ha-val {
+    font-size: 26px;
+    font-weight: 700;
+    color: #0b1120;
+    letter-spacing: -0.5px;
+    transition: color 0.3s;
+}
+
+.hatta-bar-bg {
+    height: 10px;
+    background: #f0f0f0;
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 6px;
+    position: relative;
+}
+
+.hatta-bar-fill {
+    height: 100%;
+    border-radius: 5px;
+    transition: width 0.3s, background 0.3s;
+    background: #00d28c;
+}
+
+.hatta-markers {
+    display: flex;
+    justify-content: space-between;
+    position: relative;
+    margin-top: 4px;
+    margin-bottom: 8px;
+}
+
+    .hatta-markers span {
+        font-size: 10px;
+        color: #bbb;
+        position: absolute;
+        transform: translateX(-50%);
+    }
+
+.regime-zones {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 14px;
+    margin-top: 16px;
+}
+
+.zone {
+    flex: 1;
+    text-align: center;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+    .zone.slow {
+        background: #fffbeb;
+        color: #d97706;
+    }
+
+    .zone.mid {
+        background: #eff6ff;
+        color: #2563eb;
+    }
+
+    .zone.fast {
+        background: #f0fdf8;
+        color: #059669;
+    }
+
+.hatta-regime-box {
+    background: #f8f9fb;
+    border-radius: 8px;
+    padding: 14px 16px;
+    border-left: 3px solid #00d28c;
+    border-radius: 0 8px 8px 0;
+    transition: border-color 0.3s;
+}
+
+.regime-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0b1120;
+    margin-bottom: 5px;
+}
+
+.regime-desc {
+    font-size: 12.5px;
+    color: #555;
+    line-height: 1.6;
+}
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .process-flow {
+        flex-wrap: wrap;
+    }
+
+    .rxn-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .molecule-row {
+        gap: 4px;
+    }
+
+    .hatta-row {
+        flex-wrap: wrap;
+    }
+
+        .hatta-row label {
+            min-width: 100%;
+        }
+
+    .pollutant-header {
+        flex-wrap: wrap;
+    }
+
+    .hazard-tag {
+        margin-left: 0;
+    }
+}

@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using EngineeringAI.Core;
+using EngineeringAI.Core.Agent;
+using EngineeringAI.Core.Llm;
 using WetScrubber.Business.AI;
 using WetScrubber.Business.Diagnostics;
 using WetScrubber.Business.Reports;
@@ -13,6 +16,8 @@ using WetScrubber.Repositories;
 using WetScrubber.Repositories.Contracts;
 using WetScrubber.Repositories.Interfaces;
 using WetScrubber.Repositories.Repositories;
+using WetScrubber.Plugins;
+using WetScrubber.Services;
 
 //// ── Serilog setup ────────────────────────────────────────────────────────────
 //Log.Logger = new LoggerConfiguration()
@@ -115,6 +120,33 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWorks>();
 builder.Services.AddScoped<WetScrubber.Services.ChemistryUIService>();
 
 #endregion
+
+// ── Engineering AI (local GGUF model via LLamaSharp + Semantic Kernel) ───────
+builder.Services.AddEngineeringAI(options =>
+    builder.Configuration.GetSection(LlamaOptions.SectionName).Bind(options));
+
+builder.Services.AddScoped<ScrubberDatabasePlugin>();
+builder.Services.AddScoped<ScrubberPhysicalChecker>();
+builder.Services.AddScoped<ScrubberDesignPlugin>();
+
+builder.Services.AddEngineeringDomain<WetScrubberDraftState>(sp =>
+{
+    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+
+    return new AgentDomainDefinition<WetScrubberDraftState>
+    {
+        DomainDescription = ScrubberDesignPlugin.DomainDescription,
+        FieldSchemaJson = ScrubberDesignPlugin.FieldSchemaJson,
+        ApplyExtracted = ScrubberDesignPlugin.ApplyExtracted,
+        ComputeAsync = async (state, ct) =>
+        {
+            using var scope = scopeFactory.CreateScope();
+            var plugin = scope.ServiceProvider.GetRequiredService<ScrubberDesignPlugin>();
+            return await plugin.ComputeAsync(state, ct);
+        }
+    };
+});
+
 var app = builder.Build();
 
 // ── Middleware pipeline ───────────────────────────────────────────────────────

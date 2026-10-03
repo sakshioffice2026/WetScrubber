@@ -1,0 +1,118 @@
+@{
+    ViewData["Title"] = "AI Design Assistant";
+    ViewData["ActivePage"] = "NewDesign";
+
+    var projectId = (int)ViewBag.ProjectId;
+    var projectNumber = (string)ViewBag.ProjectNumber;
+    var projectName = (string)ViewBag.ProjectName;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <link rel="stylesheet" href="~/css/agent-chat.css" />
+}
+
+@section TopbarActions {
+    <a asp-controller="Project" asp-action="Detail"
+       asp-route-id="@projectId"
+       class="btn-cancel"
+       style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">
+        ← Back to Project
+    </a>
+}
+
+<div class="breadcrumb">
+    <a asp-controller="Project" asp-action="Index">Projects</a>
+    <svg viewBox="0 0 16 16">
+        <path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" />
+    </svg>
+    <a asp-controller="Project" asp-action="Detail" asp-route-id="@projectId">@projectNumber</a>
+    <svg viewBox="0 0 16 16">
+        <path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" />
+    </svg>
+    <span>AI Design Assistant</span>
+</div>
+
+@Html.AntiForgeryToken()
+
+<div class="agent-root"
+     id="agentRoot"
+     data-project-id="@projectId"
+     data-chat-url="@Url.Action("Chat", "Agent")"
+     data-reset-url="@Url.Action("Reset", "Agent")"
+     data-save-url="@Url.Action("Save", "Agent")">
+
+    <!-- ── Chat column ───────────────────────────────────── -->
+    <section class="agent-chat">
+        <header class="agent-chat-head">
+            <div>
+                <div class="agent-title">AI Design Assistant</div>
+                <div class="agent-sub">@projectName</div>
+            </div>
+            <button type="button" class="agent-btn-ghost" id="btnReset">New design</button>
+        </header>
+
+        <div class="agent-log" id="chatLog" aria-live="polite">
+            <div class="msg msg-ai">
+                Describe your scrubber requirement, for example gas flow, inlet temperature, pollutant and its
+                concentration, packing material. I will ask for anything that is missing.
+            </div>
+        </div>
+
+        <div class="agent-input">
+            <textarea id="chatInput" rows="2" maxlength="2000"
+                      placeholder="e.g. 50,000 Nm³/hr gas with SO2 at 800 mg/Nm³, 150 °C, PP packing"></textarea>
+            <button type="button" class="agent-btn" id="btnSend">Send</button>
+        </div>
+    </section>
+
+    <!-- ── Preview column ────────────────────────────────── -->
+    <aside class="agent-preview">
+
+        <div class="pcard">
+            <div class="pcard-head">Design inputs</div>
+            <div class="pcard-body" id="draftCard">
+                <div class="pcard-empty">Nothing captured yet.</div>
+            </div>
+        </div>
+
+        <div class="pcard">
+            <div class="pcard-head">Calculated results</div>
+            <div class="pcard-body" id="resultCard">
+                <div class="pcard-empty">Results appear once all required inputs are provided.</div>
+            </div>
+        </div>
+
+        <div class="pcard">
+            <div class="pcard-head">Physical checks</div>
+            <div class="pcard-body" id="checksCard">
+                <div class="pcard-empty">No checks run yet.</div>
+            </div>
+        </div>
+
+        <button type="button" class="agent-btn agent-btn-save" id="btnConfirm" disabled>
+            Confirm &amp; Save
+        </button>
+    </aside>
+</div>
+
+<!-- ── Confirm & Save modal ──────────────────────────────── -->
+<div class="agent-modal" id="saveModal" hidden>
+    <div class="agent-modal-box" role="dialog" aria-modal="true" aria-labelledby="saveModalTitle">
+        <h3 id="saveModalTitle">Save this design?</h3>
+        <p id="saveModalNote">
+            The inputs will be saved to this project. You can then run the full calculation from the design page.
+        </p>
+        <label for="saveDesignName">Design name</label>
+        <input type="text" id="saveDesignName" maxlength="200" placeholder="Design name" />
+        <div class="agent-modal-error" id="saveModalError" hidden></div>
+        <div class="agent-modal-actions">
+            <button type="button" class="agent-btn-ghost" id="btnSaveCancel">Cancel</button>
+            <button type="button" class="agent-btn" id="btnSaveConfirm">Save design</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/agent-chat.js"></script>
+}
