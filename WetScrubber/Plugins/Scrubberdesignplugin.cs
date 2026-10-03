@@ -134,7 +134,9 @@ namespace WetScrubber.Plugins
             var actualToNormal = (tempC + 273.15) / 273.15 * (101325.0 / pressure);
 
             var normalFlow = draft.NormalFlowRate ?? draft.ActualFlowRate!.Value / actualToNormal;
-            var actualFlow = draft.ActualFlowRate ?? normalFlow * actualToNormal;
+            var actualFlow = draft.NormalFlowRate.HasValue
+                ? normalFlow * actualToNormal
+                : draft.ActualFlowRate!.Value;
 
             var inlet = draft.InletConcentration!.Value;
             var target = draft.TargetRemovalEfficiency;
@@ -175,6 +177,31 @@ namespace WetScrubber.Plugins
             try
             {
                 result = _engine.RunCalculation(vm);
+
+                if (!draft.LiquidToGasRatioUserSet && !IsHydraulicallyAcceptable(result, target))
+                {
+                    var original = vm.LiquidToGasRatio;
+                    var accepted = false;
+
+                    foreach (var candidate in AutoLiquidToGasRatios.Where(c => c < original))
+                    {
+                        vm.LiquidToGasRatio = candidate;
+                        var trial = _engine.RunCalculation(vm);
+
+                        if (IsHydraulicallyAcceptable(trial, target))
+                        {
+                            result = trial;
+                            accepted = true;
+                            notes.Add($"L/G was not specified; {candidate:0.##} L/m3 was selected to keep flooding and gas velocity within limits.");
+                            break;
+                        }
+                    }
+
+                    if (!accepted)
+                    {
+                        vm.LiquidToGasRatio = original;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -222,6 +249,33 @@ namespace WetScrubber.Plugins
                 JsonOptions);
 
             return new AgentComputation(calculationJson, checksJson);
+        }
+
+        private static readonly double[] AutoLiquidToGasRatios = { 2.5, 2.0, 1.5, 1.0, 0.75, 0.5 };
+
+        private static bool IsHydraulicallyAcceptable(CalculationResult r, double targetRemovalPct)
+        {
+            if (r.PercentFlood > 70 || r.ExceedsRecommendedFlood)
+            {
+                return false;
+            }
+
+            if (r.GasVelocity < 0.5 || r.GasVelocity > 3.5)
+            {
+                return false;
+            }
+
+            if (r.RemovalEfficiency + 0.5 < targetRemovalPct)
+            {
+                return false;
+            }
+
+            if (r.AbsorptionFactor < 1.25)
+            {
+                return false;
+            }
+
+            return r.MinLGRatio <= 0 || r.ActualLGRatio / r.MinLGRatio >= 1.2;
         }
 
         private static AgentComputation Failure(string message, string parameter)
@@ -295,6 +349,129 @@ namespace WetScrubber.Plugins
             return double.IsFinite(mgNm3);
         }
 
+        // ── Rule-based extraction (deterministic, runs before the LLM) ──────
+
+        private static readonly System.Text.RegularExpressions.RegexOptions Rx =
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant;
+
+        private const string Num = @"(-?\d[\d,]*(?:\.\d+)?)";
+
+        public static void ApplyRuleBased(WetScrubberDraftState state, string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            var found = new Dictionary<string, object>();
+
+            // Gas flow with explicit unit
+            var unitFlow = System.Text.RegularExpressions.Regex.Match(
+                message, Num + @"\s*(n)?\s*(?:m3|m³|m\^3)\s*/?\s*(?:h|hr|hour)\b", Rx);
+
+            if (unitFlow.Success && TryNumber(unitFlow.Groups[1].Value, out var flowWithUnit))
+            {
+                found[unitFlow.Groups[2].Success ? "normalFlowRate" : "actualFlowRate"] = flowWithUnit;
+            }
+            else
+            {
+                // "flow 800", "flowrate: 800", "flow rate of 800"
+                var plainFlow = System.Text.RegularExpressions.Regex.Match(
+                    message, @"flow\s*-?\s*(?:rate)?\s*(?:of|is|=|:)?\s*" + Num, Rx);
+
+                if (plainFlow.Success && TryNumber(plainFlow.Groups[1].Value, out var plain))
+                {
+                    found["normalFlowRate"] = plain;
+                }
+            }
+
+            // Temperature: "temperature 30", "tempreture: 30", "30 °C"
+            var temp = System.Text.RegularExpressions.Regex.Match(
+                message, @"temp\w*\s*(?:of|is|=|:)?\s*" + Num, Rx);
+
+            if (!temp.Success)
+            {
+                temp = System.Text.RegularExpressions.Regex.Match(message, Num + @"\s*(?:°|º|deg\w*)\s*c\b", Rx);
+            }
+
+            if (temp.Success && TryNumber(temp.Groups[1].Value, out var tempValue))
+            {
+                found["inletTemperature"] = tempValue;
+            }
+
+            // Pollutant
+            var pollutant = System.Text.RegularExpressions.Regex.Match(
+                message, @"\b(SO2|SO3|HCl|HF|NH3|H2S|Cl2|NO2|HBr|sulphur dioxide|sulfur dioxide|ammonia|hydrogen chloride|hydrogen sulfide|chlorine)\b", Rx);
+
+            if (pollutant.Success)
+            {
+                found["pollutantName"] = pollutant.Groups[1].Value;
+            }
+
+            // Concentration
+            var ppm = System.Text.RegularExpressions.Regex.Match(message, Num + @"\s*ppm", Rx);
+            var mg = System.Text.RegularExpressions.Regex.Match(message, Num + @"\s*mg\s*/\s*n?m3", Rx);
+
+            if (ppm.Success && TryNumber(ppm.Groups[1].Value, out var ppmValue))
+            {
+                found["inletConcentrationPpm"] = ppmValue;
+            }
+            else if (mg.Success && TryNumber(mg.Groups[1].Value, out var mgValue))
+            {
+                found["inletConcentration"] = mgValue;
+            }
+
+            // L/G ratio
+            var lg = System.Text.RegularExpressions.Regex.Match(
+                message, @"\bl\s*/\s*g(?:\s*ratio)?\s*(?:of|is|=|:)?\s*" + Num, Rx);
+
+            if (lg.Success && TryNumber(lg.Groups[1].Value, out var lgValue))
+            {
+                found["liquidToGasRatio"] = lgValue;
+            }
+
+            // Removal
+            var removal = System.Text.RegularExpressions.Regex.Match(
+                message, Num + @"\s*%\s*(?:removal|efficiency)", Rx);
+
+            if (!removal.Success)
+            {
+                removal = System.Text.RegularExpressions.Regex.Match(
+                    message, @"(?:removal|efficiency)\s*(?:of|is|=|:)?\s*" + Num, Rx);
+            }
+
+            if (removal.Success && TryNumber(removal.Groups[1].Value, out var removalValue))
+            {
+                found["targetRemovalEfficiency"] = removalValue;
+            }
+
+            // Packing material
+            var packing = System.Text.RegularExpressions.Regex.Match(
+                message, @"\b(PP|HDPE|PVC|FRP|SS316L?|polypropylene)\s+packing\b", Rx);
+
+            if (packing.Success)
+            {
+                found["packingMaterial"] = packing.Groups[1].Value;
+            }
+
+            if (found.Count == 0)
+            {
+                return;
+            }
+
+            if (found.ContainsKey("normalFlowRate")) state.ActualFlowRate = null;
+            if (found.ContainsKey("actualFlowRate")) state.NormalFlowRate = null;
+
+            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(found));
+            ApplyExtracted(state, doc.RootElement);
+        }
+
+        private static bool TryNumber(string raw, out double value)
+        {
+            return double.TryParse(raw.Replace(",", string.Empty), NumberStyles.Float,
+                CultureInfo.InvariantCulture, out value);
+        }
+
         // ── Draft update from extracted JSON ────────────────────────────────
 
         public static void ApplyExtracted(WetScrubberDraftState s, JsonElement root)
@@ -352,7 +529,11 @@ namespace WetScrubber.Plugins
                     case "lg":
                     case "l/g":
                     case "liquidgasratio":
-                        if (TryRange(v, 0.1, 50, out var lg)) s.LiquidToGasRatio = lg;
+                        if (TryRange(v, 0.1, 50, out var lg))
+                        {
+                            s.LiquidToGasRatio = lg;
+                            s.LiquidToGasRatioUserSet = true;
+                        }
                         break;
                     case "packingcode":
                         if (TryMaterial(v, out var packingMaterial))

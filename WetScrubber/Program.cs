@@ -128,6 +128,7 @@ builder.Services.AddEngineeringAI(options =>
 builder.Services.AddScoped<ScrubberDatabasePlugin>();
 builder.Services.AddScoped<ScrubberPhysicalChecker>();
 builder.Services.AddScoped<ScrubberDesignPlugin>();
+builder.Services.AddScoped<ScrubberOptimizerPlugin>();
 
 builder.Services.AddEngineeringDomain<WetScrubberDraftState>(sp =>
 {

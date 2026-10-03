@@ -27,7 +27,10 @@ public sealed class LlamaChatCompletionService : IChatCompletionService
         CancellationToken cancellationToken = default)
     {
         var prompt = BuildChatMlPrompt(chatHistory);
-        var text = await _provider.GenerateAsync(prompt, cancellationToken: cancellationToken)
+        var text = await _provider.GenerateAsync(
+                prompt,
+                stopWhenJsonComplete: true,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         return new List<ChatMessageContent>

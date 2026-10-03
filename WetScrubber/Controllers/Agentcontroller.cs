@@ -15,14 +15,30 @@ namespace WetScrubber.Controllers
         private readonly AgentOrchestrator<WetScrubberDraftState> _agent;
         private readonly DesignFlowStore<WetScrubberDraftState> _store;
         private readonly ScrubberDesignPlugin _design;
+        private readonly ScrubberOptimizerPlugin _optimizer;
         private readonly ScrubberDatabasePlugin _lookups;
         private readonly ApplicationDbContext _db;
         private readonly ILogger<AgentController> _logger;
+
+        private static readonly System.Text.RegularExpressions.Regex OptimizeIntent = new(
+            @"\boptimi[sz]e\b|\boptimi[sz]ation\b|\bbest design\b|\blowest power\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Text.RegularExpressions.Regex CompareIntent = new(
+            @"\bcompare\b|\bbefore\s*(?:&|and)\s*after\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, OptimizationSnapshot> LastOptimization = new();
+
+        private static readonly System.Text.RegularExpressions.Regex SavedDesignId = new(
+            @"\boptimi[sz]e\s+(?:the\s+|saved\s+)*(?:design\s*)?(?:id\s*)?#?\s*(\d+)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
 
         public AgentController(
             AgentOrchestrator<WetScrubberDraftState> agent,
             DesignFlowStore<WetScrubberDraftState> store,
             ScrubberDesignPlugin design,
+            ScrubberOptimizerPlugin optimizer,
             ScrubberDatabasePlugin lookups,
             ApplicationDbContext db,
             ILogger<AgentController> logger)
@@ -30,6 +46,7 @@ namespace WetScrubber.Controllers
             _agent = agent;
             _store = store;
             _design = design;
+            _optimizer = optimizer;
             _lookups = lookups;
             _db = db;
             _logger = logger;
@@ -88,6 +105,39 @@ namespace WetScrubber.Controllers
 
             var sessionKey = GetSessionKey(userId.Value);
 
+            if (CompareIntent.IsMatch(request.Message) && !OptimizeIntent.IsMatch(request.Message))
+            {
+                return CompareInternal(sessionKey);
+            }
+
+            if (OptimizeIntent.IsMatch(request.Message))
+            {
+                var idMatch = SavedDesignId.Match(request.Message);
+
+                if (idMatch.Success && int.TryParse(idMatch.Groups[1].Value, out var savedId))
+                {
+                    var loaded = await LoadSavedDesignIntoDraftAsync(userId.Value, savedId, sessionKey, HttpContext.RequestAborted);
+
+                    if (!loaded)
+                    {
+                        return Ok(new
+                        {
+                            message = $"Design {savedId} was not found in your projects.",
+                            designComplete = false,
+                            missingFields = Array.Empty<string>(),
+                            calculation = (JsonElement?)null,
+                            checks = (JsonElement?)null,
+                            draft = _store.GetOrCreate(sessionKey),
+                            optimization = (object?)null
+                        });
+                    }
+                }
+
+                return await OptimizeInternalAsync(sessionKey);
+            }
+
+            _store.Update(sessionKey, s => ScrubberDesignPlugin.ApplyRuleBased(s, request.Message));
+
             try
             {
                 var reply = await _agent.HandleAsync(sessionKey, request.Message, HttpContext.RequestAborted);
@@ -118,6 +168,274 @@ namespace WetScrubber.Controllers
                 _logger.LogError(ex, "Agent chat failed for session {SessionKey}", sessionKey);
                 return StatusCode(StatusCodes.Status500InternalServerError,
                     new { error = "The assistant could not process this request." });
+            }
+        }
+
+        // ── POST /Agent/Optimize ─────────────────────────────────
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Optimize()
+        {
+            var userId = GetUserId();
+            if (userId == null)
+            {
+                return Unauthorized();
+            }
+
+            return await OptimizeInternalAsync(GetSessionKey(userId.Value));
+        }
+
+        private IActionResult CompareInternal(string sessionKey)
+        {
+            if (!LastOptimization.TryGetValue(sessionKey, out var snap) || snap.Baseline is null)
+            {
+                return Ok(new
+                {
+                    message = "There is no optimization to compare yet. Run \"optimize design <id>\" or press Optimize first.",
+                    designComplete = false,
+                    missingFields = Array.Empty<string>(),
+                    calculation = (JsonElement?)null,
+                    checks = (JsonElement?)null,
+                    draft = _store.GetOrCreate(sessionKey),
+                    optimization = (object?)null
+                });
+            }
+
+            var b = snap.Baseline;
+            var a = snap.Best;
+
+            static string Row(string label, string before, string after) => $"{label}: {before}  →  {after}";
+
+            var lines = new List<string>
+            {
+                "Before vs after optimization:",
+                Row("Packing", b.PackingCode, a.PackingCode),
+                Row("L/G (L/m³)", b.LiquidToGasRatio.ToString("0.##"), a.LiquidToGasRatio.ToString("0.##")),
+                Row("Total power (kW)", b.TotalPowerKW.ToString("0.##"), a.TotalPowerKW.ToString("0.##")),
+                Row("Tower diameter (m)", b.TowerDiameterM.ToString("0.##"), a.TowerDiameterM.ToString("0.##")),
+                Row("Tower height (m)", b.TowerHeightM.ToString("0.##"), a.TowerHeightM.ToString("0.##")),
+                Row("Liquid loading (m³/m²·h)", b.LiquidLoadingM3M2Hr.ToString("0.#"), a.LiquidLoadingM3M2Hr.ToString("0.#")),
+                Row("Pressure drop (Pa)", b.PressureDropPa.ToString("0.##"), a.PressureDropPa.ToString("0.##")),
+                Row("Flooding (%)", b.PercentFlood.ToString("0.#"), a.PercentFlood.ToString("0.#")),
+                Row("Removal (%)", b.RemovalPct.ToString("0.##"), a.RemovalPct.ToString("0.##")),
+                Row("Failed / warning checks", $"{b.Fails} / {b.Warns}", $"{a.Fails} / {a.Warns}")
+            };
+
+            if (b.TotalPowerKW > 0)
+            {
+                var saving = (b.TotalPowerKW - a.TotalPowerKW) / b.TotalPowerKW * 100.0;
+                lines.Add($"Power change: {(saving >= 0 ? "-" : "+")}{Math.Abs(saving):0.#}%");
+            }
+
+            return Ok(new
+            {
+                message = string.Join("\n", lines),
+                designComplete = true,
+                missingFields = Array.Empty<string>(),
+                calculation = ParseJson(a.CalculationJson),
+                checks = ParseJson(a.ChecksJson),
+                draft = _store.GetOrCreate(sessionKey),
+                optimization = (object?)null
+            });
+        }
+
+        private async Task<bool> LoadSavedDesignIntoDraftAsync(
+            int userId,
+            int designId,
+            string sessionKey,
+            CancellationToken ct)
+        {
+            var design = await _db.ScrubberDesigns
+                .AsNoTracking()
+                .Include(d => d.Project)
+                .Include(d => d.GasStream!).ThenInclude(g => g.Pollutants)
+                .Include(d => d.LiquidSpec)
+                .FirstOrDefaultAsync(d => d.DesignId == designId && d.Project.CreatedByUserId == userId, ct);
+
+            if (design?.GasStream == null)
+            {
+                return false;
+            }
+
+            var gas = design.GasStream;
+            var pollutantRow = gas.Pollutants.FirstOrDefault();
+            var spec = design.LiquidSpec;
+
+            string? pollutantName = null;
+            if (pollutantRow != null)
+            {
+                pollutantName = await _db.Pollutants
+                    .AsNoTracking()
+                    .Where(p => p.Id == pollutantRow.PollutantType)
+                    .Select(p => p.Code)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            string? liquidName = null;
+            if (spec != null)
+            {
+                liquidName = await _db.ScrubbingLiquids
+                    .AsNoTracking()
+                    .Where(l => l.Id == spec.LiquidType)
+                    .Select(l => l.Code)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            _store.Remove(sessionKey);
+
+            _store.Update(sessionKey, s =>
+            {
+                s.NormalFlowRate = gas.NormalFlowRate > 0 ? gas.NormalFlowRate : null;
+                s.ActualFlowRate = gas.NormalFlowRate > 0 ? null : (gas.ActualFlowRate > 0 ? gas.ActualFlowRate : null);
+                s.InletTemperature = gas.InletTemperature;
+                s.InletPressure = gas.InletPressure;
+                s.MoistureContent = gas.MoistureContent;
+
+                if (pollutantRow != null)
+                {
+                    s.PollutantName = pollutantName;
+                    s.InletConcentration = pollutantRow.InletConcentration;
+                    s.TargetRemovalEfficiency = pollutantRow.TargetRemovalEfficiency;
+                }
+
+                if (spec != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(liquidName))
+                    {
+                        s.LiquidName = liquidName;
+                    }
+
+                    s.LiquidConcentration = spec.Concentration;
+                    s.LiquidPH = spec.pH;
+                    s.LiquidTemperature = spec.Temperature;
+                    s.LiquidToGasRatio = spec.LiquidToGasRatio;
+                    s.LiquidToGasRatioUserSet = true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(design.PackingCode))
+                {
+                    s.PackingCode = design.PackingCode!;
+                }
+
+                s.ShellMaterial = design.ShellMaterial;
+                s.InternalMaterial = design.InternalMaterial;
+            });
+
+            return true;
+        }
+
+        private async Task<IActionResult> OptimizeInternalAsync(string sessionKey)
+        {
+            try
+            {
+                var draft = _store.GetOrCreate(sessionKey);
+                var missing = draft.GetMissingMandatoryFields();
+
+                if (missing.Count > 0)
+                {
+                    return Ok(new
+                    {
+                        message = $"Optimization needs a complete design first. Please provide: {string.Join(", ", missing)}.",
+                        designComplete = false,
+                        missingFields = missing,
+                        calculation = (JsonElement?)null,
+                        checks = (JsonElement?)null,
+                        draft,
+                        optimization = (object?)null
+                    });
+                }
+
+                var outcome = await _optimizer.OptimizeAsync(draft, HttpContext.RequestAborted);
+
+                if (outcome.Best is null)
+                {
+                    return Ok(new
+                    {
+                        message = "The optimizer could not find a valid design for these inputs.",
+                        designComplete = false,
+                        missingFields = Array.Empty<string>(),
+                        calculation = (JsonElement?)null,
+                        checks = (JsonElement?)null,
+                        draft,
+                        optimization = (object?)null
+                    });
+                }
+
+                var best = outcome.Best;
+                var baseline = outcome.Baseline;
+
+                LastOptimization[sessionKey] = new OptimizationSnapshot(baseline, best, outcome.Evaluated);
+
+                _store.Update(sessionKey, s =>
+                {
+                    s.PackingCode = best.PackingCode;
+                    s.LiquidToGasRatio = best.LiquidToGasRatio;
+                    s.LiquidToGasRatioUserSet = true;
+                });
+
+                string message;
+                if (outcome.BaselineIsBest)
+                {
+                    message = $"The current design is already the best of {outcome.Evaluated} combinations checked " +
+                              $"(packing {best.PackingCode}, L/G {best.LiquidToGasRatio:0.##} L/m³, total power {best.TotalPowerKW:0.##} kW).";
+                }
+                else
+                {
+                    message = $"Optimized design applied from {outcome.Evaluated} combinations: packing {best.PackingCode}, " +
+                              $"L/G {best.LiquidToGasRatio:0.##} L/m³. Total power {best.TotalPowerKW:0.##} kW" +
+                              (baseline is not null ? $" (was {baseline.TotalPowerKW:0.##} kW)" : string.Empty) +
+                              $", tower {best.TowerDiameterM:0.##} m dia x {best.TowerHeightM:0.##} m high, " +
+                              $"flooding {best.PercentFlood:0.#}%, removal {best.RemovalPct:0.##}%.";
+                }
+
+                if (!outcome.BestPassesAllChecks)
+                {
+                    message += $" No combination passed every check; the best has {best.Fails} failed and {best.Warns} warning check(s).";
+                }
+
+                return Ok(new
+                {
+                    message,
+                    designComplete = true,
+                    missingFields = Array.Empty<string>(),
+                    calculation = ParseJson(best.CalculationJson),
+                    checks = ParseJson(best.ChecksJson),
+                    draft = _store.GetOrCreate(sessionKey),
+                    optimization = new
+                    {
+                        evaluated = outcome.Evaluated,
+                        passesAllChecks = outcome.BestPassesAllChecks,
+                        alreadyOptimal = outcome.BaselineIsBest,
+                        before = baseline is null ? null : new
+                        {
+                            packing = baseline.PackingCode,
+                            liquidToGasRatio = baseline.LiquidToGasRatio,
+                            totalPowerKW = baseline.TotalPowerKW,
+                            towerDiameterM = baseline.TowerDiameterM,
+                            fails = baseline.Fails,
+                            warns = baseline.Warns
+                        },
+                        after = new
+                        {
+                            packing = best.PackingCode,
+                            liquidToGasRatio = best.LiquidToGasRatio,
+                            totalPowerKW = best.TotalPowerKW,
+                            towerDiameterM = best.TowerDiameterM,
+                            fails = best.Fails,
+                            warns = best.Warns
+                        }
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(StatusCodes.Status499ClientClosedRequest);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Optimization failed for session {SessionKey}", sessionKey);
+                return StatusCode(StatusCodes.Status500InternalServerError,
+                    new { error = "The optimization could not be completed." });
             }
         }
 
@@ -286,6 +604,11 @@ namespace WetScrubber.Controllers
             return doc.RootElement.Clone();
         }
     }
+
+    public sealed record OptimizationSnapshot(
+        OptimizationCandidate? Baseline,
+        OptimizationCandidate Best,
+        int Evaluated);
 
     public class AgentChatRequest
     {

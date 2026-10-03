@@ -38,6 +38,29 @@ namespace WetScrubber.Business.MassTransfer
         private const double GravityAccel = 9.81; // m/s2
         private const double RecommendedFloodCeilingPercent = 70.0;
 
+        // Sherwood-Shipley-Holloway intercept (ring packings).
+        private const double SshIntercept = 0.022;
+
+        /// <summary>Superficial flooding gas velocity (m/s). flowRatio = L/G mass ratio; muL in Pa*s.</summary>
+        public static double FloodingVelocity(
+            double packingSpecificAreaM2M3,
+            double voidageFraction,
+            double flowRatio,
+            double gasDensityKgM3,
+            double liquidDensityKgM3,
+            double liquidViscosityPas)
+        {
+            double rhoG = Math.Max(gasDensityKgM3, 1e-6);
+            double rhoL = Math.Max(liquidDensityKgM3, 1e-6);
+            double muLcP = Math.Max(liquidViscosityPas, 1e-6) * 1000.0;
+
+            double rhs = SshIntercept - 1.75 * Math.Pow(Math.Max(flowRatio, 1e-9), 0.25) * Math.Pow(rhoG / rhoL, 0.125);
+            double lhsConst = packingSpecificAreaM2M3 * rhoG
+                / (GravityAccel * Math.Pow(voidageFraction, 3) * rhoL) * Math.Pow(muLcP, 0.2);
+
+            return Math.Sqrt(Math.Max(Math.Pow(10, rhs) / lhsConst, 1e-12));
+        }
+
         public static PressureDropResult Calculate(
             double packingSpecificAreaM2M3,   // aT
             double voidageFraction,            // epsilon (bed porosity)
@@ -80,13 +103,7 @@ namespace WetScrubber.Business.MassTransfer
             // ── Flooding velocity, Sherwood-Shipley-Holloway (1938) ─
             //   log10[ uGf^2 * aT * rhoG / (g*eps^3*rhoL) * muL[cP]^0.2 ]
             //       = -1.75 - 1.75*(L/G)^0.25*(rhoG/rhoL)^0.125
-            double flowRatio = L / G;
-            double rhs = -1.75 - 1.75 * Math.Pow(flowRatio, 0.25) * Math.Pow(rhoG / rhoL, 0.125);
-            double muLcP = muL * 1000.0; // Pa*s -> cP (correlation's original units)
-            double lhsConst = aT * rhoG / (GravityAccel * Math.Pow(eps, 3) * rhoL) * Math.Pow(muLcP, 0.2);
-
-            double uGf2 = Math.Pow(10, rhs) / lhsConst;
-            double uGf = Math.Sqrt(Math.Max(uGf2, 1e-12));
+            double uGf = FloodingVelocity(aT, eps, L / G, rhoG, rhoL, muL);
 
             double percentFlood = uG / uGf * 100.0;
 

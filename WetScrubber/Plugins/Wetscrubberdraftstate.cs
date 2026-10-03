@@ -30,6 +30,7 @@ namespace WetScrubber.Plugins
         public double LiquidPH { get; set; } = 12;
         public double LiquidTemperature { get; set; } = 25;       // °C
         public double LiquidToGasRatio { get; set; } = 3.0;       // L/m³ gas
+        public bool LiquidToGasRatioUserSet { get; set; }         // true only when the user stated L/G
 
         // ── Packing and materials ────────────────────────────────
         public string PackingCode { get; set; } = "PallRing50";

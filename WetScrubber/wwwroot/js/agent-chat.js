@@ -10,7 +10,8 @@
         projectId: parseInt(root.dataset.projectId, 10),
         chatUrl: root.dataset.chatUrl,
         resetUrl: root.dataset.resetUrl,
-        saveUrl: root.dataset.saveUrl
+        saveUrl: root.dataset.saveUrl,
+        optimizeUrl: root.dataset.optimizeUrl
     };
 
     var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
@@ -20,6 +21,7 @@
         log: document.getElementById('chatLog'),
         input: document.getElementById('chatInput'),
         send: document.getElementById('btnSend'),
+        optimize: document.getElementById('btnOptimize'),
         reset: document.getElementById('btnReset'),
         draft: document.getElementById('draftCard'),
         results: document.getElementById('resultCard'),
@@ -97,6 +99,9 @@
         busy = state;
         el.send.disabled = state;
         el.input.disabled = state;
+        if (el.optimize) {
+            el.optimize.disabled = state;
+        }
     }
 
     function postJson(url, body) {
@@ -293,6 +298,38 @@
             });
     }
 
+    function optimizeDesign() {
+        if (busy) {
+            return;
+        }
+
+        addMessage('Optimize this design', 'msg-user');
+        setBusy(true);
+
+        var pending = addMessage('Optimizing…', 'msg-ai msg-pending');
+
+        postJson(cfg.optimizeUrl, {})
+            .then(function (data) {
+                pending.classList.remove('msg-pending');
+                pending.textContent = data.message || '';
+                renderDraft(data.draft);
+                renderResults(data.calculation);
+                renderChecks(data.checks);
+                updateConfirm(data);
+            })
+            .catch(function (err) {
+                pending.classList.remove('msg-pending');
+                pending.classList.add('msg-error');
+                pending.textContent = err.status === 401
+                    ? 'Your session has expired. Please log in again.'
+                    : err.message;
+            })
+            .then(function () {
+                setBusy(false);
+                el.log.scrollTop = el.log.scrollHeight;
+            });
+    }
+
     function resetDesign() {
         if (busy) {
             return;
@@ -359,6 +396,10 @@
             sendMessage();
         }
     });
+
+    if (el.optimize) {
+        el.optimize.addEventListener('click', optimizeDesign);
+    }
 
     el.reset.addEventListener('click', resetDesign);
     el.confirm.addEventListener('click', openModal);

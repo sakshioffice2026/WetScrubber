@@ -138,7 +138,9 @@ namespace WetScrubber.Services
                 // to the original ideal-gas number otherwise — see
                 // GetActualGasDensity.
                 pollutantTypeId: pollutant.PollutantType,
-                inletConcentrationPpm: pollutant.InletConcentration
+                inletConcentrationPpm: pollutant.InletConcentration,
+                packingSpecificAreaM2M3: _packingLookup?.GetByCode(vm.PackingCode)?.SpecificAreaM2M3 ?? DefaultSurfaceArea,
+                voidageFraction: DefaultVoidFraction
             );
 
             // 3. NTU / HTU → packing height
@@ -392,9 +394,11 @@ namespace WetScrubber.Services
             double liquidDensityKgM3,
             double packingFactor,
             double liquidViscosityMPas,
-            double floodingFactor = 0.75,
+            double floodingFactor = 0.65,
             int? pollutantTypeId = null,
-            double inletConcentrationPpm = 0)
+            double inletConcentrationPpm = 0,
+            double packingSpecificAreaM2M3 = 0,
+            double voidageFraction = 0)
         {
             double tempK = gasTemperatureC + 273.15;
             double gasDensityAct = GetActualGasDensity(
@@ -403,15 +407,16 @@ namespace WetScrubber.Services
 
             double gasFlowKgS = gasFlowM3S * gasDensityAct;
             double liquidFlowKgS = (liquidFlowRateM3Hr / 3600.0) * liquidDensityKgM3;
-            double Flv = (liquidFlowKgS / gasFlowKgS) * Math.Sqrt(gasDensityAct / liquidDensityKgM3);
+            double aT = packingSpecificAreaM2M3 > 0 ? packingSpecificAreaM2M3 : DefaultSurfaceArea;
+            double eps = voidageFraction > 0 && voidageFraction < 1 ? voidageFraction : DefaultVoidFraction;
 
-            double logFlv = Math.Log10(Math.Max(Flv, 0.001));
-            double logCsf = -1.668 - 1.085 * logFlv - 0.297 * logFlv * logFlv;
-            double Csf = Math.Pow(10, logCsf);
-
-            double viscCorr = Math.Pow(Math.Max(liquidViscosityMPas, 0.1) / 1.0, 0.05);
-            double Cs = Csf / Math.Sqrt(packingFactor) * viscCorr;
-            double uFlood = Cs * Math.Sqrt((liquidDensityKgM3 - gasDensityAct) / gasDensityAct);
+            double uFlood = WetScrubber.Business.MassTransfer.PressureDropFloodingCorrelation.FloodingVelocity(
+                packingSpecificAreaM2M3: aT,
+                voidageFraction: eps,
+                flowRatio: liquidFlowKgS / Math.Max(gasFlowKgS, 1e-9),
+                gasDensityKgM3: gasDensityAct,
+                liquidDensityKgM3: liquidDensityKgM3,
+                liquidViscosityPas: liquidViscosityMPas / 1000.0);
             double uOp = uFlood * floodingFactor;
 
             double area = gasFlowM3S / Math.Max(uOp, 0.01);

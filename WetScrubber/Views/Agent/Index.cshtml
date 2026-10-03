@@ -40,6 +40,7 @@
      data-project-id="@projectId"
      data-chat-url="@Url.Action("Chat", "Agent")"
      data-reset-url="@Url.Action("Reset", "Agent")"
+     data-optimize-url="@Url.Action("Optimize", "Agent")"
      data-save-url="@Url.Action("Save", "Agent")">
 
     <!-- ── Chat column ───────────────────────────────────── -->
@@ -62,6 +63,7 @@
         <div class="agent-input">
             <textarea id="chatInput" rows="2" maxlength="2000"
                       placeholder="e.g. 50,000 Nm³/hr gas with SO2 at 800 mg/Nm³, 150 °C, PP packing"></textarea>
+            <button type="button" class="agent-btn-ghost" id="btnOptimize" title="Find the lowest-power design that passes all checks">Optimize</button>
             <button type="button" class="agent-btn" id="btnSend">Send</button>
         </div>
     </section>

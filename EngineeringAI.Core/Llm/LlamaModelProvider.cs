@@ -25,18 +25,62 @@ public sealed class LlamaModelProvider : IDisposable
         _logger = logger;
     }
 
+    public LlamaOptions Options => _options;
+
+    public void Preload()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        EnsureLoaded();
+    }
+
     public async Task<string> GenerateAsync(
         string prompt,
         int? maxTokens = null,
         float? temperature = null,
+        bool stopWhenJsonComplete = false,
         CancellationToken cancellationToken = default)
     {
         var sb = new StringBuilder();
+        var depth = 0;
+        var started = false;
+        var inString = false;
+        var escaped = false;
 
         await foreach (var token in StreamAsync(prompt, maxTokens, temperature, cancellationToken)
                            .ConfigureAwait(false))
         {
             sb.Append(token);
+
+            if (!stopWhenJsonComplete)
+            {
+                continue;
+            }
+
+            var done = false;
+
+            foreach (var ch in token)
+            {
+                if (inString)
+                {
+                    if (escaped) { escaped = false; }
+                    else if (ch == '\\') { escaped = true; }
+                    else if (ch == '"') { inString = false; }
+                    continue;
+                }
+
+                if (ch == '"' && started) { inString = true; }
+                else if (ch == '{') { started = true; depth++; }
+                else if (ch == '}' && started)
+                {
+                    depth--;
+                    if (depth <= 0) { done = true; break; }
+                }
+            }
+
+            if (done)
+            {
+                break;
+            }
         }
 
         return sb.ToString().Trim();
@@ -104,7 +148,10 @@ public sealed class LlamaModelProvider : IDisposable
             _modelParams = new ModelParams(_options.ModelPath)
             {
                 ContextSize = _options.ContextSize,
-                GpuLayerCount = _options.GpuLayerCount
+                GpuLayerCount = _options.GpuLayerCount,
+                BatchSize = _options.BatchSize,
+                Threads = Math.Max(1, _options.Threads),
+                BatchThreads = Math.Max(1, _options.Threads)
             };
 
             _weights = LLamaWeights.LoadFromFile(_modelParams);

@@ -18,6 +18,7 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<LlamaModelProvider>();
         services.TryAddSingleton<IChatCompletionService, LlamaChatCompletionService>();
+        services.AddHostedService<LlamaWarmupService>();
 
         return services;
     }
