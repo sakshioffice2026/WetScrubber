@@ -1,4 +1,4 @@
-﻿@{
+@{
     var userName = Context.Session.GetString("UserName") ?? "User";
     var userRole = Context.Session.GetString("UserRole") ?? "Engineer";
     var initials = string.Concat(userName.Split(' ').Take(2)
@@ -203,6 +203,12 @@
         </div>
 
     </div>
+
+    @* Floating AI design assistant (signed-in users only) *@
+    @if (Context.Session.GetInt32("UserId") != null)
+    {
+        <partial name="_ChatWidget" />
+    }
 
     <!-- jQuery + shared JS -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

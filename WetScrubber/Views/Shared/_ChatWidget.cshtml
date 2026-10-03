@@ -1,0 +1,1181 @@
+@* Persistent AI design assistant widget (AxialFan style).
+   Include once in _Layout.cshtml for signed-in users:  <partial name="_ChatWidget" />
+   UI only: talks to the existing /Agent/Chat, /Agent/Reset and /Agent/Save endpoints. *@
+@{
+    var rv = ViewContext.RouteData.Values;
+    var query = Context.Request.Query;
+
+    int? ToInt(object? v) =>
+        int.TryParse(Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture), out var n) ? n : (int?)null;
+
+    var pageController = rv["controller"]?.ToString();
+    var pageAction = rv["action"]?.ToString();
+    var pageId = ToInt(rv["id"]);
+
+    var pageProjectId = ToInt(rv["projectId"])
+                        ?? ToInt(query["projectId"].ToString())
+                        ?? (string.Equals(pageController, "Project", StringComparison.OrdinalIgnoreCase) ? pageId : (int?)null);
+}
+
+<div id="agentWidget">
+    @Html.AntiForgeryToken()
+
+    <div id="agentToggle" class="chat-widget-toggle" title="Ask the AI Design Assistant" role="button" tabindex="0" aria-label="Open AI Design Assistant">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+            <path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm4 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" />
+        </svg>
+    </div>
+
+    <div id="agentPanel" class="chat-widget-panel agent-panel d-none-ws">
+        <div id="agentHeader" class="chat-widget-header" title="Drag to move (double-click to maximize)">
+            <span class="chat-widget-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                    <path d="M12 2a1 1 0 0 1 1 1v1.07A7 7 0 0 1 19 11v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v1a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3v-1H4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1a7 7 0 0 1 6-6.93V3a1 1 0 0 1 1-1zm-3 9a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm6 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z" />
+                </svg>
+                <span>WetScrubber AI</span>
+            </span>
+            <span class="chat-widget-actions">
+                <button type="button" id="agentMinimize" class="agent-icon-btn" title="Minimize"></button>
+                <button type="button" id="agentMaximize" class="agent-icon-btn" title="Maximize"></button>
+                <button type="button" id="agentClear" class="agent-icon-btn" title="Clear conversation">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                        <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L6 9z" />
+                    </svg>
+                </button>
+                <button type="button" id="agentClose" class="agent-icon-btn" title="Close">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                        <path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z" />
+                    </svg>
+                </button>
+            </span>
+        </div>
+
+        <div id="agentMessages" class="chat-widget-messages"></div>
+
+        <div class="chat-widget-input">
+            <input type="text" id="agentInput" class="chat-widget-field"
+                   maxlength="2000" placeholder="Describe your scrubber requirement..." autocomplete="off" />
+            <button type="button" id="agentSend" class="chat-widget-send" title="Send">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                    <path d="M2 21 23 12 2 3v7l15 2-15 2z" />
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+    #agentWidget {
+        --wsai-primary: #0f766e;
+        --wsai-primary-dark: #0b5f58;
+        font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    #agentWidget .d-none-ws {
+        display: none !important;
+    }
+
+    .chat-widget-toggle {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--wsai-primary);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        z-index: 1050;
+        transition: background 0.15s ease, transform 0.15s ease;
+    }
+
+        .chat-widget-toggle:hover {
+            background: var(--wsai-primary-dark);
+            transform: scale(1.05);
+        }
+
+    .chat-widget-panel {
+        position: fixed;
+        bottom: 92px;
+        right: 24px;
+        width: 400px;
+        max-width: calc(100vw - 32px);
+        height: 560px;
+        max-height: calc(100vh - 120px);
+        background: #fff;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        z-index: 1050;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    }
+
+    .chat-widget-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--wsai-primary);
+        color: #fff;
+        padding: 10px 14px;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .chat-widget-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .chat-widget-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .agent-icon-btn {
+        background: transparent;
+        border: 0;
+        color: #fff;
+        opacity: 0.85;
+        padding: 0;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+    }
+
+        .agent-icon-btn:hover {
+            opacity: 1;
+        }
+
+    .chat-widget-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        background: #f8f9fa;
+    }
+
+    .chat-msg {
+        padding: 8px 12px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        max-width: 88%;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .chat-msg-user {
+        background: var(--wsai-primary);
+        color: #fff;
+        margin-left: auto;
+    }
+
+    .chat-msg-assistant {
+        background: #e9ecef;
+        color: #212529;
+    }
+
+    .chat-msg-error {
+        background: #f8d7da;
+        color: #842029;
+    }
+
+    .chat-msg a {
+        display: inline-block;
+        margin-top: 6px;
+        font-weight: 600;
+        color: var(--wsai-primary);
+    }
+
+    .chat-typing {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        padding: 4px 0;
+    }
+
+        .chat-typing span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #6c757d;
+            animation: wsai-bounce 1.2s infinite ease-in-out;
+        }
+
+            .chat-typing span:nth-child(2) {
+                animation-delay: 0.15s;
+            }
+
+            .chat-typing span:nth-child(3) {
+                animation-delay: 0.3s;
+            }
+
+    @@keyframes wsai-bounce {
+        0%, 80%, 100% {
+            transform: scale(0.6);
+            opacity: 0.5;
+        }
+
+        40% {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+
+    .chat-widget-input {
+        display: flex;
+        gap: 8px;
+        padding: 10px;
+        border-top: 1px solid #dee2e6;
+        background: #fff;
+    }
+
+    .chat-widget-field {
+        flex: 1;
+        min-width: 0;
+        height: 34px;
+        padding: 0 10px;
+        font-size: 0.85rem;
+        border: 1px solid #ced4da;
+        border-radius: 6px;
+        outline: none;
+    }
+
+        .chat-widget-field:focus {
+            border-color: var(--wsai-primary);
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+        }
+
+    .chat-widget-send {
+        width: 38px;
+        height: 34px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--wsai-primary);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+        .chat-widget-send:hover {
+            background: var(--wsai-primary-dark);
+        }
+
+        .chat-widget-send:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+    .wsai-btn {
+        border: 1px solid transparent;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 5px 12px;
+        cursor: pointer;
+    }
+
+    .wsai-btn-success {
+        background: #198754;
+        color: #fff;
+    }
+
+    .wsai-btn-outline {
+        background: #fff;
+        color: #495057;
+        border-color: #ced4da;
+    }
+
+    .wsai-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .agent-action-card {
+        border: 1px solid #ffc107;
+        background: #fff8e1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        font-size: 0.82rem;
+    }
+
+    .agent-action-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .agent-action-name {
+        width: 100%;
+        box-sizing: border-box;
+        height: 30px;
+        margin-top: 8px;
+        padding: 0 8px;
+        font-size: 0.82rem;
+        border: 1px solid #ced4da;
+        border-radius: 6px;
+    }
+
+    .agent-action-error {
+        margin-top: 6px;
+        color: #842029;
+        font-size: 0.78rem;
+    }
+
+    .agent-action-buttons {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .wsai-card {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 8px;
+        font-size: 0.8rem;
+        color: #212529;
+    }
+
+    .wsai-card-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .wsai-card-title {
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    .wsai-badge {
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    .wsai-badge-ok {
+        background: #d1e7dd;
+        color: #0f5132;
+    }
+
+    .wsai-badge-warn {
+        background: #fff3cd;
+        color: #664d03;
+    }
+
+    .wsai-badge-bad {
+        background: #f8d7da;
+        color: #842029;
+    }
+
+    .wsai-tiles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-bottom: 8px;
+    }
+
+    .wsai-tile {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-left: 3px solid var(--wsai-primary);
+        border-radius: 6px;
+        padding: 6px 8px;
+    }
+
+    .wsai-tile-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #6c757d;
+    }
+
+    .wsai-tile-value {
+        font-size: 0.95rem;
+        font-weight: 700;
+    }
+
+    .wsai-callout {
+        border-left: 3px solid #adb5bd;
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 6px 8px;
+        margin-bottom: 8px;
+    }
+
+    .wsai-callout-bad {
+        border-left-color: #dc3545;
+        background: #fdf0f1;
+    }
+
+    .wsai-section-title {
+        margin: 8px 0 4px;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #6c757d;
+    }
+
+    .wsai-check {
+        display: flex;
+        gap: 8px;
+        padding: 4px 0;
+        border-bottom: 1px solid #f1f3f5;
+    }
+
+    .wsai-check-badge {
+        flex: 0 0 auto;
+        align-self: flex-start;
+        font-size: 0.64rem;
+        font-weight: 700;
+        padding: 1px 6px;
+        border-radius: 4px;
+    }
+
+    .wsai-check-pass {
+        background: #d1e7dd;
+        color: #0f5132;
+    }
+
+    .wsai-check-warn {
+        background: #fff3cd;
+        color: #664d03;
+    }
+
+    .wsai-check-fail {
+        background: #f8d7da;
+        color: #842029;
+    }
+
+    .wsai-check-name {
+        font-weight: 600;
+    }
+
+    .wsai-check-detail {
+        color: #6c757d;
+    }
+
+    .wsai-check-param {
+        color: #664d03;
+        font-size: 0.74rem;
+    }
+
+    .wsai-rows {
+        border-top: 1px solid #e9ecef;
+    }
+
+    .wsai-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 4px 0;
+        border-bottom: 1px solid #f1f3f5;
+    }
+
+    .wsai-row-label {
+        color: #6c757d;
+        flex: 0 0 auto;
+    }
+
+    .wsai-row-value {
+        text-align: right;
+        word-break: break-word;
+    }
+
+    .wsai-details summary {
+        cursor: pointer;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #6c757d;
+        margin: 8px 0 4px;
+    }
+
+    #agentHeader {
+        cursor: move;
+        user-select: none;
+        touch-action: none;
+    }
+
+        #agentHeader button {
+            cursor: pointer;
+        }
+
+    .agent-panel.agent-dragging {
+        transition: none;
+        opacity: 0.95;
+    }
+
+    .agent-panel.agent-maximized {
+        top: 16px !important;
+        left: 16px !important;
+        right: 16px !important;
+        bottom: 16px !important;
+        width: auto !important;
+        height: auto !important;
+        max-width: none;
+        max-height: none;
+    }
+
+        .agent-panel.agent-maximized #agentHeader {
+            cursor: default;
+        }
+
+    .agent-panel.agent-minimized {
+        height: auto !important;
+        max-height: none;
+    }
+
+        .agent-panel.agent-minimized #agentMessages,
+        .agent-panel.agent-minimized .chat-widget-input {
+            display: none !important;
+        }
+</style>
+
+<script>
+    (function () {
+        const ctx = @Json.Serialize(new
+        {
+            controller = pageController,
+            action = pageAction,
+            id = pageId,
+            projectId = pageProjectId,
+            chatUrl = Url.Action("Chat", "Agent"),
+            resetUrl = Url.Action("Reset", "Agent"),
+            saveUrl = Url.Action("Save", "Agent")
+        });
+
+        const HISTORY_KEY = 'wsai.history.v1';
+        const OPEN_KEY = 'wsai.open.v1';
+        const COMPLETE_KEY = 'wsai.complete.v1';
+        const PROJECT_KEY = 'wsai.project.v1';
+        const LAYOUT_KEY = 'wsai.widget.layout';
+        const MAX_HISTORY = 40;
+        const REQUEST_TIMEOUT_MS = 180000;
+
+        const GREETING =
+            "Hi! I'm your WetScrubber design assistant. Describe your requirement, for example gas flow, " +
+            "inlet temperature, pollutant and concentration, and packing material. I will ask for anything " +
+            "that is missing, and you confirm before anything is saved.";
+
+        const DRAFT_LABELS = {
+            normalFlowRate: ['Gas flow (Nm\u00B3/hr)', ''],
+            actualFlowRate: ['Gas flow (m\u00B3/hr)', ''],
+            inletTemperature: ['Inlet temperature', '\u00B0C'],
+            inletPressure: ['Inlet pressure', 'Pa'],
+            moistureContent: ['Moisture', '% vol'],
+            pollutantName: ['Pollutant', ''],
+            inletConcentration: ['Inlet concentration', 'mg/Nm\u00B3'],
+            targetRemovalEfficiency: ['Target removal', '%'],
+            liquidName: ['Scrubbing liquid', ''],
+            liquidConcentration: ['Liquid concentration', '% wt'],
+            liquidPH: ['Liquid pH', ''],
+            liquidTemperature: ['Liquid temperature', '\u00B0C'],
+            liquidToGasRatio: ['L/G ratio', 'L/m\u00B3'],
+            packingCode: ['Packing', ''],
+            shellMaterial: ['Shell material', ''],
+            internalMaterial: ['Packing / internals material', '']
+        };
+
+        const RESULT_LABELS = {
+            towerDiameterM: ['Tower diameter', 'm'],
+            towerHeightM: ['Tower height', 'm'],
+            packingHeightM: ['Packing height', 'm'],
+            gasVelocityMs: ['Gas velocity', 'm/s'],
+            pressureDropPa: ['Pressure drop', 'Pa'],
+            percentFlood: ['Flooding', '%'],
+            removalEfficiencyPct: ['Predicted removal', '%'],
+            absorptionFactor: ['Absorption factor', ''],
+            minLGRatio: ['Minimum L/G', ''],
+            actualLGRatio: ['Actual L/G', ''],
+            liquidFlowRateM3Hr: ['Liquid flow', 'm\u00B3/hr'],
+            totalPowerKW: ['Total power', 'kW']
+        };
+
+        const MATERIAL_NAMES = { 1: 'FRP', 2: 'PP', 3: 'HDPE', 4: 'PVC', 5: 'SS316', 6: 'HastelloyC', 7: 'CarbonSteel' };
+
+        const ICON_MINIMIZE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M5 11h14v2H5z"/></svg>';
+        const ICON_EXPAND = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M7.4 15.4 12 10.8l4.6 4.6L18 14l-6-6-6 6z"/></svg>';
+        const ICON_MAXIMIZE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M4 4h7v2H6v5H4V4zm9 0h7v7h-2V6h-5V4zM4 13h2v5h5v2H4v-7zm14 0h2v7h-7v-2h5v-5z"/></svg>';
+        const ICON_RESTORE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 3h2v5H3V6h5V3zm6 0h2v3h5v2h-7V3zM3 16h7v5H8v-3H3v-2zm11 0h7v2h-5v3h-2v-5z"/></svg>';
+
+        const root = document.getElementById('agentWidget');
+        const toggle = document.getElementById('agentToggle');
+        const panel = document.getElementById('agentPanel');
+        const closeBtn = document.getElementById('agentClose');
+        const clearBtn = document.getElementById('agentClear');
+        const messages = document.getElementById('agentMessages');
+        const input = document.getElementById('agentInput');
+        const sendBtn = document.getElementById('agentSend');
+
+        let history = loadHistory();
+        let busy = false;
+        let projectId = ctx.projectId || null;
+
+        function storageGet(key) {
+            try { return window.sessionStorage.getItem(key); } catch (e) { return null; }
+        }
+
+        function storageSet(key, value) {
+            try { window.sessionStorage.setItem(key, value); } catch (e) { }
+        }
+
+        function storageRemove(key) {
+            try { window.sessionStorage.removeItem(key); } catch (e) { }
+        }
+
+        if (projectId) {
+            storageSet(PROJECT_KEY, String(projectId));
+        } else {
+            const savedProject = parseInt(storageGet(PROJECT_KEY) || '', 10);
+            projectId = isFinite(savedProject) && savedProject > 0 ? savedProject : null;
+        }
+
+        function loadHistory() {
+            try {
+                const parsed = JSON.parse(storageGet(HISTORY_KEY) || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveHistory() {
+            if (history.length > MAX_HISTORY) history = history.slice(history.length - MAX_HISTORY);
+            storageSet(HISTORY_KEY, JSON.stringify(history));
+        }
+
+        function token() {
+            const el = root.querySelector('input[name="__RequestVerificationToken"]');
+            return el ? el.value : '';
+        }
+
+        function scrollToBottom() {
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function el(tag, cls, text) {
+            const node = document.createElement(tag);
+            if (cls) node.className = cls;
+            if (text !== undefined && text !== null) node.textContent = text;
+            return node;
+        }
+
+        function fmt(value) {
+            if (typeof value === 'number' && isFinite(value)) {
+                return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+            }
+            return String(value);
+        }
+
+        function isOpen() {
+            return !panel.classList.contains('d-none-ws');
+        }
+
+        function setOpen(open) {
+            panel.classList.toggle('d-none-ws', !open);
+            storageSet(OPEN_KEY, open ? '1' : '0');
+            if (open) {
+                scrollToBottom();
+                input.focus();
+            }
+        }
+
+        async function postJson(url, body) {
+            const controller = new AbortController();
+            const timer = setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS);
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'RequestVerificationToken': token()
+                    },
+                    body: JSON.stringify(body || {}),
+                    signal: controller.signal,
+                    credentials: 'same-origin'
+                });
+
+                let data = null;
+                try { data = await response.json(); } catch (e) { }
+
+                return { ok: response.ok, status: response.status, data: data };
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        // ---- messages ------------------------------------------------------
+
+        function cleanText(text) {
+            return String(text || '')
+                .replace(/<\|[^|<>]*\|>/g, '')
+                .trim();
+        }
+
+        function addMessage(text, sender, persist, card) {
+            text = cleanText(text);
+            const div = el('div', 'chat-msg chat-msg-' + sender, text);
+            messages.appendChild(div);
+
+            if (card) {
+                messages.querySelectorAll('.wsai-card').forEach(function (node) { node.remove(); });
+                const built = buildCard(card);
+                if (built) messages.appendChild(built);
+            }
+
+            scrollToBottom();
+
+            if (persist && (sender === 'user' || sender === 'assistant')) {
+                const item = { role: sender, text: text };
+                if (card) {
+                    history.forEach(function (h) { delete h.card; });
+                    item.card = card;
+                }
+                history.push(item);
+                saveHistory();
+            }
+
+            return div;
+        }
+
+        function addTyping() {
+            const div = el('div', 'chat-msg chat-msg-assistant');
+            const dots = el('span', 'chat-typing');
+            dots.appendChild(el('span'));
+            dots.appendChild(el('span'));
+            dots.appendChild(el('span'));
+            div.appendChild(dots);
+            messages.appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        // ---- design preview card ------------------------------------------
+
+        function draftRows(draft) {
+            const rows = [];
+            if (!draft) return rows;
+
+            Object.keys(DRAFT_LABELS).forEach(function (key) {
+                let value = draft[key];
+                if (value === null || value === undefined || value === '') return;
+                if ((key === 'shellMaterial' || key === 'internalMaterial') && typeof value === 'number') {
+                    value = MATERIAL_NAMES[value] || value;
+                }
+                rows.push({ label: DRAFT_LABELS[key][0], value: fmt(value) + (DRAFT_LABELS[key][1] ? ' ' + DRAFT_LABELS[key][1] : '') });
+            });
+
+            return rows;
+        }
+
+        function buildCard(card) {
+            const calc = card.calculation || null;
+            const checks = card.checks || [];
+            const dRows = draftRows(card.draft);
+            const hasCalc = calc && !calc.error;
+
+            if (!calc && !checks.length && !dRows.length) return null;
+
+            const wrap = el('div', 'wsai-card');
+
+            const head = el('div', 'wsai-card-head');
+            head.appendChild(el('span', 'wsai-card-title', 'Design preview'));
+
+            if (checks.length) {
+                const statuses = checks.map(function (c) { return String(c.status || '').toUpperCase(); });
+                const level = statuses.indexOf('FAIL') >= 0 ? 'bad' : (statuses.some(function (s) { return s !== 'PASS'; }) ? 'warn' : 'ok');
+                const label = level === 'ok' ? 'Checks passed' : (level === 'bad' ? 'Checks failed' : 'Review warnings');
+                head.appendChild(el('span', 'wsai-badge wsai-badge-' + level, label));
+            }
+            wrap.appendChild(head);
+
+            if (calc && calc.error) {
+                wrap.appendChild(el('div', 'wsai-callout wsai-callout-bad', calc.error));
+            }
+
+            if (hasCalc) {
+                const tiles = el('div', 'wsai-tiles');
+                Object.keys(RESULT_LABELS).forEach(function (key) {
+                    if (calc[key] === null || calc[key] === undefined) return;
+                    const tile = el('div', 'wsai-tile');
+                    tile.appendChild(el('div', 'wsai-tile-label', RESULT_LABELS[key][0]));
+                    tile.appendChild(el('div', 'wsai-tile-value', fmt(calc[key]) + (RESULT_LABELS[key][1] ? ' ' + RESULT_LABELS[key][1] : '')));
+                    tiles.appendChild(tile);
+                });
+                if (tiles.childNodes.length) wrap.appendChild(tiles);
+
+                (calc.notes || []).forEach(function (n) {
+                    wrap.appendChild(el('div', 'wsai-callout', n));
+                });
+            }
+
+            if (checks.length) {
+                wrap.appendChild(el('div', 'wsai-section-title', 'Physical checks'));
+                checks.forEach(function (c) {
+                    const status = String(c.status || '').toUpperCase();
+                    const row = el('div', 'wsai-check');
+                    row.appendChild(el('span', 'wsai-check-badge wsai-check-' + status.toLowerCase(), status));
+
+                    const body = el('div');
+                    body.appendChild(el('div', 'wsai-check-name', c.name));
+                    body.appendChild(el('div', 'wsai-check-detail', c.detail));
+                    if (status !== 'PASS' && c.parameter) {
+                        body.appendChild(el('div', 'wsai-check-param', 'Adjust: ' + c.parameter));
+                    }
+                    row.appendChild(body);
+                    wrap.appendChild(row);
+                });
+            }
+
+            if (dRows.length) {
+                const details = el('details', 'wsai-details');
+                details.appendChild(el('summary', null, 'Design inputs'));
+                const rows = el('div', 'wsai-rows');
+                dRows.forEach(function (r) {
+                    const row = el('div', 'wsai-row');
+                    row.appendChild(el('span', 'wsai-row-label', r.label));
+                    row.appendChild(el('span', 'wsai-row-value', r.value));
+                    rows.appendChild(row);
+                });
+                details.appendChild(rows);
+                wrap.appendChild(details);
+            }
+
+            return wrap;
+        }
+
+        // ---- confirm & save card ------------------------------------------
+
+        function removeConfirm() {
+            messages.querySelectorAll('.agent-action-card').forEach(function (node) { node.remove(); });
+        }
+
+        function renderConfirm() {
+            removeConfirm();
+
+            const card = el('div', 'agent-action-card');
+            card.appendChild(el('div', 'agent-action-title', 'Confirmation required'));
+            card.appendChild(el('div', null, 'Save this design to the project? Nothing is stored until you confirm.'));
+
+            const nameInput = el('input', 'agent-action-name');
+            nameInput.type = 'text';
+            nameInput.maxLength = 200;
+            nameInput.placeholder = 'Design name (optional)';
+            card.appendChild(nameInput);
+
+            const errorBox = el('div', 'agent-action-error');
+            errorBox.hidden = true;
+            card.appendChild(errorBox);
+
+            const buttons = el('div', 'agent-action-buttons');
+            const confirmBtn = el('button', 'wsai-btn wsai-btn-success', 'Confirm & Save');
+            confirmBtn.type = 'button';
+            const cancelBtn = el('button', 'wsai-btn wsai-btn-outline', 'Cancel');
+            cancelBtn.type = 'button';
+            buttons.appendChild(confirmBtn);
+            buttons.appendChild(cancelBtn);
+            card.appendChild(buttons);
+
+            messages.appendChild(card);
+            scrollToBottom();
+
+            confirmBtn.addEventListener('click', async function () {
+                errorBox.hidden = true;
+
+                if (!projectId) {
+                    errorBox.textContent = 'Open a project first, then confirm to save.';
+                    errorBox.hidden = false;
+                    return;
+                }
+
+                confirmBtn.disabled = true;
+                cancelBtn.disabled = true;
+                confirmBtn.textContent = 'Saving...';
+
+                try {
+                    const result = await postJson(ctx.saveUrl, {
+                        projectId: projectId,
+                        designName: nameInput.value.trim()
+                    });
+                    const data = result.data || {};
+
+                    if (result.ok) {
+                        card.remove();
+                        storageRemove(COMPLETE_KEY);
+
+                        const msg = addMessage('Design saved to the project.', 'assistant', true);
+                        if (data.redirectUrl && data.redirectUrl.charAt(0) === '/') {
+                            const link = document.createElement('a');
+                            link.href = data.redirectUrl;
+                            link.textContent = 'Open design';
+                            msg.appendChild(document.createElement('br'));
+                            msg.appendChild(link);
+                        }
+                    } else {
+                        errorBox.textContent = result.status === 401
+                            ? 'Your session has expired. Please log in again.'
+                            : ((data && data.error) || 'The design could not be saved.');
+                        errorBox.hidden = false;
+                        confirmBtn.disabled = false;
+                        cancelBtn.disabled = false;
+                        confirmBtn.textContent = 'Confirm & Save';
+                    }
+                } catch (e) {
+                    errorBox.textContent = 'The design could not be saved. Please try again.';
+                    errorBox.hidden = false;
+                    confirmBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                    confirmBtn.textContent = 'Confirm & Save';
+                }
+            });
+
+            cancelBtn.addEventListener('click', function () {
+                card.remove();
+                addMessage('Save cancelled. Your draft is kept; keep chatting to change it.', 'assistant', true);
+            });
+        }
+
+        // ---- sending -------------------------------------------------------
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text || busy) return;
+
+            busy = true;
+            sendBtn.disabled = true;
+            input.value = '';
+            removeConfirm();
+            addMessage(text, 'user', true);
+
+            const typing = addTyping();
+
+            try {
+                const result = await postJson(ctx.chatUrl, { message: text });
+                typing.remove();
+
+                if (!result.ok) {
+                    const err = result.status === 401
+                        ? 'Your session has expired. Please log in again.'
+                        : ((result.data && result.data.error) || 'Something went wrong. Please try again.');
+                    addMessage(err, 'error', false);
+                } else {
+                    const data = result.data || {};
+                    const card = { draft: data.draft || null, calculation: data.calculation || null, checks: data.checks || [] };
+
+                    addMessage(data.message || 'No response.', 'assistant', true, card);
+
+                    const hasError = data.calculation && data.calculation.error;
+                    if (data.designComplete && !hasError) {
+                        storageSet(COMPLETE_KEY, '1');
+                        renderConfirm();
+                    } else {
+                        storageRemove(COMPLETE_KEY);
+                    }
+                }
+            } catch (e) {
+                typing.remove();
+                addMessage(
+                    e && e.name === 'AbortError'
+                        ? 'The assistant took too long to respond. Please try again.'
+                        : 'Could not reach the assistant. Please try again.',
+                    'error',
+                    false);
+            } finally {
+                busy = false;
+                sendBtn.disabled = false;
+                input.focus();
+            }
+        }
+
+        function renderHistory() {
+            messages.innerHTML = '';
+
+            if (history.length === 0) {
+                addMessage(GREETING, 'assistant', false);
+            } else {
+                history.forEach(function (m) { addMessage(m.text, m.role, false, m.card); });
+            }
+
+            if (storageGet(COMPLETE_KEY) === '1') renderConfirm();
+        }
+
+        toggle.addEventListener('click', function () { setOpen(!isOpen()); });
+        toggle.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setOpen(!isOpen());
+            }
+        });
+
+        closeBtn.addEventListener('click', function () { setOpen(false); });
+
+        clearBtn.addEventListener('click', async function () {
+            history = [];
+            storageRemove(HISTORY_KEY);
+            storageRemove(COMPLETE_KEY);
+
+            try {
+                await postJson(ctx.resetUrl, {});
+            } catch (e) { }
+
+            renderHistory();
+        });
+
+        sendBtn.addEventListener('click', function () { sendMessage(); });
+
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // ---- maximize / minimize / drag -----------------------------------
+        (function () {
+            const header = document.getElementById('agentHeader');
+            const maxBtn = document.getElementById('agentMaximize');
+            const minBtn = document.getElementById('agentMinimize');
+            const MARGIN = 8;
+
+            let layout = { maximized: false, minimized: false, left: null, top: null };
+
+            try {
+                const saved = storageGet(LAYOUT_KEY);
+                if (saved) layout = Object.assign(layout, JSON.parse(saved));
+            } catch (e) { }
+
+            function saveLayout() {
+                storageSet(LAYOUT_KEY, JSON.stringify(layout));
+            }
+
+            function clamp(left, top) {
+                const w = panel.offsetWidth;
+                const h = panel.offsetHeight;
+                return {
+                    left: Math.min(Math.max(MARGIN, left), Math.max(MARGIN, window.innerWidth - w - MARGIN)),
+                    top: Math.min(Math.max(MARGIN, top), Math.max(MARGIN, window.innerHeight - h - MARGIN))
+                };
+            }
+
+            function applyPosition() {
+                if (layout.maximized || layout.left === null || layout.top === null) {
+                    panel.style.left = '';
+                    panel.style.top = '';
+                    panel.style.right = '';
+                    panel.style.bottom = '';
+                    return;
+                }
+
+                const p = clamp(layout.left, layout.top);
+                panel.style.left = p.left + 'px';
+                panel.style.top = p.top + 'px';
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+            }
+
+            function applyLayout() {
+                panel.classList.toggle('agent-maximized', layout.maximized);
+                panel.classList.toggle('agent-minimized', layout.minimized && !layout.maximized);
+
+                maxBtn.title = layout.maximized ? 'Restore' : 'Maximize';
+                maxBtn.innerHTML = layout.maximized ? ICON_RESTORE : ICON_MAXIMIZE;
+
+                minBtn.title = layout.minimized ? 'Expand' : 'Minimize';
+                minBtn.innerHTML = layout.minimized ? ICON_EXPAND : ICON_MINIMIZE;
+
+                applyPosition();
+                if (!layout.minimized) scrollToBottom();
+            }
+
+            function toggleMaximize() {
+                layout.maximized = !layout.maximized;
+                if (layout.maximized) layout.minimized = false;
+                saveLayout();
+                applyLayout();
+            }
+
+            function toggleMinimize() {
+                layout.minimized = !layout.minimized;
+                if (layout.minimized) layout.maximized = false;
+                saveLayout();
+                applyLayout();
+            }
+
+            maxBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleMaximize(); });
+            minBtn.addEventListener('click', function (e) { e.stopPropagation(); toggleMinimize(); });
+            header.addEventListener('dblclick', function (e) {
+                if (e.target.closest('button')) return;
+                toggleMaximize();
+            });
+
+            let dragging = false;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            header.addEventListener('pointerdown', function (e) {
+                if (e.target.closest('button') || layout.maximized || e.button > 0) return;
+
+                const rect = panel.getBoundingClientRect();
+                dragging = true;
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+                panel.classList.add('agent-dragging');
+                header.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+
+            header.addEventListener('pointermove', function (e) {
+                if (!dragging) return;
+
+                const p = clamp(e.clientX - offsetX, e.clientY - offsetY);
+                layout.left = p.left;
+                layout.top = p.top;
+                panel.style.left = p.left + 'px';
+                panel.style.top = p.top + 'px';
+                panel.style.right = 'auto';
+                panel.style.bottom = 'auto';
+            });
+
+            function endDrag(e) {
+                if (!dragging) return;
+                dragging = false;
+                panel.classList.remove('agent-dragging');
+                try { header.releasePointerCapture(e.pointerId); } catch (err) { }
+                saveLayout();
+            }
+
+            header.addEventListener('pointerup', endDrag);
+            header.addEventListener('pointercancel', endDrag);
+
+            window.addEventListener('resize', applyPosition);
+
+            new MutationObserver(function () {
+                if (isOpen()) applyLayout();
+            }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+
+            applyLayout();
+        })();
+
+        renderHistory();
+
+        if (storageGet(OPEN_KEY) === '1') setOpen(true);
+    })();
+</script>

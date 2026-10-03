@@ -78,12 +78,11 @@ public sealed class AgentOrchestrator<TState> where TState : class, IDraftState,
 
         if (missing.Count > 0)
         {
-            var ask = await AskForMissingAsync(missing, cancellationToken).ConfigureAwait(false);
-            return new AgentReply(ask, false, missing, null, null);
+            return new AgentReply(BuildMissingMessage(missing), false, missing, null, null);
         }
 
         var computation = await _domain.ComputeAsync(state, cancellationToken).ConfigureAwait(false);
-        var review = await ReviewAsync(state, computation, cancellationToken).ConfigureAwait(false);
+        var review = BuildReview(computation);
 
         return new AgentReply(
             review,
@@ -128,36 +127,86 @@ public sealed class AgentOrchestrator<TState> where TState : class, IDraftState,
         }
     }
 
-    private async Task<string> AskForMissingAsync(
-        IReadOnlyList<string> missing,
-        CancellationToken cancellationToken)
+    private static string BuildMissingMessage(IReadOnlyList<string> missing)
     {
-        var history = new ChatHistory(EngineeringPrompts.MissingFieldsPrompt(missing));
-        history.AddUserMessage("Ask me for the missing inputs.");
-
-        var response = await _chat.GetChatMessageContentAsync(history, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        return string.IsNullOrWhiteSpace(response.Content)
-            ? $"Please provide: {string.Join(", ", missing)}."
-            : response.Content.Trim();
+        return $"Please provide: {string.Join(", ", missing)}.";
     }
 
-    private async Task<string> ReviewAsync(
-        TState state,
-        AgentComputation computation,
-        CancellationToken cancellationToken)
+    private static string BuildReview(AgentComputation computation)
     {
-        var draftJson = JsonSerializer.Serialize(state, JsonOptions);
+        try
+        {
+            using var calc = JsonDocument.Parse(computation.CalculationJson);
+            if (calc.RootElement.ValueKind == JsonValueKind.Object &&
+                calc.RootElement.TryGetProperty("error", out var error))
+            {
+                return $"The calculation could not be completed: {error.GetString()}";
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to the checks summary.
+        }
 
-        var history = new ChatHistory(EngineeringPrompts.ReviewSystemPrompt(_domain.DomainDescription));
-        history.AddUserMessage(
-            EngineeringPrompts.ReviewUserPrompt(draftJson, computation.CalculationJson, computation.ChecksJson));
+        var issues = new List<string>();
+        var passed = 0;
+        var hasFail = false;
+        var hasWarn = false;
 
-        var response = await _chat.GetChatMessageContentAsync(history, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            using var checks = JsonDocument.Parse(computation.ChecksJson);
+            if (checks.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var check in checks.RootElement.EnumerateArray())
+                {
+                    var status = check.TryGetProperty("status", out var st) ? st.GetString() ?? string.Empty : string.Empty;
+                    var name = check.TryGetProperty("name", out var nm) ? nm.GetString() ?? string.Empty : string.Empty;
+                    var detail = check.TryGetProperty("detail", out var dt) ? dt.GetString() ?? string.Empty : string.Empty;
+                    var parameter = check.TryGetProperty("parameter", out var pr) ? pr.GetString() ?? string.Empty : string.Empty;
 
-        return response.Content?.Trim() ?? string.Empty;
+                    if (string.Equals(status, "PASS", StringComparison.OrdinalIgnoreCase))
+                    {
+                        passed++;
+                        continue;
+                    }
+
+                    if (string.Equals(status, "FAIL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasFail = true;
+                    }
+                    else
+                    {
+                        hasWarn = true;
+                    }
+
+                    var line = string.IsNullOrWhiteSpace(parameter)
+                        ? $"- {name}: {detail}"
+                        : $"- {name} ({parameter}): {detail}";
+                    issues.Add(line);
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Ignore malformed checks; the verdict below stays conservative.
+            hasWarn = true;
+        }
+
+        var verdict = hasFail ? "NOT ACCEPTABLE"
+            : hasWarn ? "ACCEPTABLE WITH CAUTION"
+            : "ACCEPTABLE";
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("Design calculated. ").Append(passed).Append(" check(s) passed.");
+
+        if (issues.Count > 0)
+        {
+            sb.Append("\nIssues:\n").Append(string.Join("\n", issues));
+        }
+
+        sb.Append("\nVerdict: ").Append(verdict);
+        return sb.ToString();
     }
 
     private static string? ExtractJsonObject(string? text)

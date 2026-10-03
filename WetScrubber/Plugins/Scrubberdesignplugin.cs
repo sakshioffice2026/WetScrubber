@@ -26,13 +26,14 @@ namespace WetScrubber.Plugins
               "inletPressure": "number, inlet gas pressure in Pa",
               "moistureContent": "number, gas moisture in % vol",
               "pollutantName": "string, pollutant name or formula, for example SO2",
-              "inletConcentration": "number, inlet pollutant concentration in mg/Nm3",
+              "inletConcentration": "number, inlet pollutant concentration in mg/Nm3 (only when the user states mg/Nm3)",
+              "inletConcentrationPpm": "number, inlet pollutant concentration in ppm (only when the user states ppm)",
               "targetRemovalEfficiency": "number, required removal in %",
               "liquidName": "string, scrubbing liquid, for example Caustic Soda",
               "liquidConcentration": "number, liquid concentration in % wt",
               "liquidPH": "number, liquid pH",
               "liquidTemperature": "number, liquid temperature in degrees Celsius",
-              "liquidToGasRatio": "number, L/G ratio in L per m3 of gas",
+              "liquidToGasRatio": "number, L/G ratio in L per m3 of gas; the user may write it as L/G, LG ratio or liquid to gas ratio, for example L/G 1.5 means 1.5",
               "packingCode": "string, packing code, for example PallRing50",
               "shellMaterial": "string, one of FRP, PP, HDPE, PVC, SS316, HastelloyC, CarbonSteel",
               "internalMaterial": "string, material of packing and internals, one of FRP, PP, HDPE, PVC, SS316, HastelloyC, CarbonSteel"
@@ -235,10 +236,71 @@ namespace WetScrubber.Plugins
             return new AgentComputation(calculationJson, checksJson);
         }
 
+        // ── ppm to mg/Nm3 conversion ────────────────────────────────────────
+
+        private const double NormalMolarVolume = 22.414; // Nm3/kmol at 0 C, 1 atm
+
+        private static readonly Dictionary<string, double> MolecularWeights =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["SO2"] = 64.066,
+                ["SO3"] = 80.063,
+                ["HCl"] = 36.461,
+                ["HF"] = 20.006,
+                ["NH3"] = 17.031,
+                ["H2S"] = 34.081,
+                ["Cl2"] = 70.906,
+                ["NO2"] = 46.006,
+                ["NO"] = 30.006,
+                ["CO2"] = 44.009,
+                ["HBr"] = 80.912
+            };
+
+        private static string NormalizePollutantKey(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return string.Empty;
+            }
+
+            var key = name.Replace(" ", string.Empty).Replace("-", string.Empty).ToLowerInvariant();
+
+            return key switch
+            {
+                "sulfurdioxide" or "sulphurdioxide" => "SO2",
+                "sulfurtrioxide" or "sulphurtrioxide" => "SO3",
+                "hydrogenchloride" or "hydrochloricacid" => "HCl",
+                "hydrogenfluoride" or "hydrofluoricacid" => "HF",
+                "ammonia" => "NH3",
+                "hydrogensulfide" or "hydrogensulphide" => "H2S",
+                "chlorine" => "Cl2",
+                "nitrogendioxide" => "NO2",
+                "nitricoxide" => "NO",
+                "carbondioxide" => "CO2",
+                "hydrogenbromide" => "HBr",
+                _ => name.Trim()
+            };
+        }
+
+        private static bool TryPpmToMgNm3(string? pollutant, double ppm, out double mgNm3)
+        {
+            mgNm3 = 0;
+
+            if (!MolecularWeights.TryGetValue(NormalizePollutantKey(pollutant), out var mw))
+            {
+                return false;
+            }
+
+            mgNm3 = ppm * mw / NormalMolarVolume;
+            return double.IsFinite(mgNm3);
+        }
+
         // ── Draft update from extracted JSON ────────────────────────────────
 
         public static void ApplyExtracted(WetScrubberDraftState s, JsonElement root)
         {
+            double? ppmValue = null;
+
             foreach (var prop in root.EnumerateObject())
             {
                 var v = prop.Value;
@@ -266,11 +328,15 @@ namespace WetScrubber.Plugins
                     case "inletconcentration":
                         if (TryRange(v, 0.1, 1_000_000, out var ic)) s.InletConcentration = ic;
                         break;
+                    case "inletconcentrationppm":
+                        if (TryRange(v, 0.01, 1_000_000, out var ppm)) ppmValue = ppm;
+                        break;
                     case "targetremovalefficiency":
                         if (TryRange(v, 1, 99.99, out var te)) s.TargetRemovalEfficiency = te;
                         break;
                     case "liquidname":
-                        if (TryText(v, out var ln)) s.LiquidName = ln;
+                        // A construction material (e.g. "PP") is never a scrubbing liquid.
+                        if (TryText(v, out var ln) && !TryMaterial(v, out _)) s.LiquidName = ln;
                         break;
                     case "liquidconcentration":
                         if (TryRange(v, 0, 50, out var lc)) s.LiquidConcentration = lc;
@@ -282,10 +348,22 @@ namespace WetScrubber.Plugins
                         if (TryRange(v, 0, 100, out var lt)) s.LiquidTemperature = lt;
                         break;
                     case "liquidtogasratio":
+                    case "lgratio":
+                    case "lg":
+                    case "l/g":
+                    case "liquidgasratio":
                         if (TryRange(v, 0.1, 50, out var lg)) s.LiquidToGasRatio = lg;
                         break;
                     case "packingcode":
-                        if (TryText(v, out var pc)) s.PackingCode = pc;
+                        if (TryMaterial(v, out var packingMaterial))
+                        {
+                            // "PP packing" names the packing material, not a packing code.
+                            s.InternalMaterial = packingMaterial;
+                        }
+                        else if (TryText(v, out var pc))
+                        {
+                            s.PackingCode = pc;
+                        }
                         break;
                     case "shellmaterial":
                         if (TryMaterial(v, out var sm)) s.ShellMaterial = sm;
@@ -294,6 +372,15 @@ namespace WetScrubber.Plugins
                     case "packingmaterial":
                         if (TryMaterial(v, out var im)) s.InternalMaterial = im;
                         break;
+                }
+            }
+
+            // ppm wins over a mg/Nm3 value the model may have copied from the same number.
+            if (ppmValue.HasValue && TryPpmToMgNm3(s.PollutantName, ppmValue.Value, out var converted))
+            {
+                if (converted >= 0.1 && converted <= 1_000_000)
+                {
+                    s.InletConcentration = Math.Round(converted, 2);
                 }
             }
         }
@@ -312,7 +399,9 @@ namespace WetScrubber.Plugins
             else if (v.ValueKind == JsonValueKind.String)
             {
                 var raw = (v.GetString() ?? string.Empty).Replace(",", string.Empty).Trim();
-                if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                var match = System.Text.RegularExpressions.Regex.Match(raw, @"-?\d+(\.\d+)?([eE][+-]?\d+)?");
+                if (!match.Success ||
+                    !double.TryParse(match.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
                 {
                     return false;
                 }
