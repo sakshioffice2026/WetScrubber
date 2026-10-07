@@ -539,7 +539,7 @@ namespace WetScrubber.Services
             // ─────────────────────────────────────────────
             // 2. Absorption factor
             // ─────────────────────────────────────────────
-            double A = liquidToGasRatioMolar / Math.Max(henrysLawConstant, 0.001);
+            double A = liquidToGasRatioMolar / Math.Max(henrysLawConstant, HenrysConstantUnits.MinimumH);
 
             // ─────────────────────────────────────────────
             // 3. NTU calculation
@@ -677,6 +677,21 @@ namespace WetScrubber.Services
                 fallbackTempCoeffK: 0.0);
         }
 
+        // Reagent class and equivalents/L inferred from liquid pH and wt%.
+        // pH >= 8 -> NaOH (40.00 g/mol, 1 eq/mol); pH <= 6 -> H2SO4 (98.08 g/mol, 2 eq/mol).
+        private static (ReagentKind Kind, double EqPerL) GetReagentSpec(CreateDesignViewModel vm)
+        {
+            double massFraction = Math.Max(vm.LiquidConcentration, 0.0) / 100.0;
+            double gramsPerL = massFraction * vm.LiquidDensity;
+
+            if (vm.LiquidPH >= 8.0)
+                return (ReagentKind.Caustic, gramsPerL / 40.00);
+            if (vm.LiquidPH <= 6.0)
+                return (ReagentKind.Acid, 2.0 * gramsPerL / 98.08);
+
+            return (ReagentKind.None, 0.0);
+        }
+
         private RateBasedFilmResult? TryComputeOndaFilmCoefficients(
             PollutantInputViewModel pollutant,
             CreateDesignViewModel vm,
@@ -739,6 +754,22 @@ namespace WetScrubber.Services
                 // convention (see GetEffectiveHenrysLawConstant).
                 double kGaY = onda.GasFilmCoeffKmolM2SPa * vm.InletPressure * onda.WettedAreaM2M3;
                 double kLaX = onda.LiquidFilmCoeffMS * WaterMolarDensityKmolM3 * onda.WettedAreaM2M3;
+
+                double pressureKPa = vm.InletPressure / 1000.0;
+                double hCgCl = henrysLawConstant * (pressureKPa / (8.314 * gasTempK)) / WaterMolarDensityKmolM3;
+                var (reagentKind, reagentEqPerL) = GetReagentSpec(vm);
+                var enhancement = ReactiveEnhancementService.Compute(new ReactiveEnhancementInput
+                {
+                    PollutantCode = pollutantCode,
+                    Reagent = reagentKind,
+                    ReagentConcentrationEqPerL = reagentEqPerL,
+                    LiquidFilmCoeffMS = onda.LiquidFilmCoeffMS,
+                    PollutantLiquidDiffusivityM2S = dL,
+                    HenrysDimensionless = hCgCl,
+                    GasPartialPressureKPa = pollutant.InletConcentration / 1_000_000.0 * pressureKPa,
+                    TemperatureK = gasTempK
+                });
+                kLaX *= enhancement.Factor;
 
                 double overallKGa = 1.0 / (
                     1.0 / Math.Max(kGaY, 1e-9) + henrysLawConstant / Math.Max(kLaX, 1e-9));
@@ -873,6 +904,10 @@ namespace WetScrubber.Services
                     LiquidViscosityPas = vm.LiquidViscosity / 1000.0,
                     GasViscosityPas = vm.GasViscosity
                 };
+
+                var (iterReagent, iterReagentEq) = GetReagentSpec(vm);
+                solverInput.Reagent = iterReagent;
+                solverInput.ReagentEqPerL = iterReagentEq;
 
                 return MultiPollutantIterativeSolver.SolveIterative(solverInput, numSegments: 5);
             }
@@ -1082,7 +1117,12 @@ namespace WetScrubber.Services
             // H alone would predict; gamma = 1 (today's default, since
             // NrtlBinaryParameters ships empty) reproduces the exact
             // pre-Phase-1 number.
-            return H_T * gamma;
+            //
+            // Stored/seeded H is dimensionless Cg/Cl (see HenrysLawData.UnitCode).
+            // The solvers use y* = H·x, so convert at the engine boundary:
+            // H_yx = H_cc · C_L · R·T / P.
+            return HenrysConstantUnits.CgOverClToMoleFractionRatio(
+                H_T * gamma, gasTemperatureC + 273.15, 101.325);
         }
 
         private double GetVanTHoffTempCoeff(string? pollutantCode, double defaultTempCoeff)

@@ -106,15 +106,15 @@ namespace WetScrubber.Business.Thermodynamics
             correctedH *= saltingOutFactor;
 
             // Sanity checks
-            if (correctedH < 0.001)
+            if (correctedH < HenrysConstantUnits.MinimumH)
             {
                 result.WasClamped = true;
-                correctedH = 0.001;
+                correctedH = HenrysConstantUnits.MinimumH;
             }
-            if (correctedH > 1e10)
+            if (correctedH > HenrysConstantUnits.MaximumH)
             {
                 result.WasClamped = true;
-                correctedH = 1e10;
+                correctedH = HenrysConstantUnits.MaximumH;
             }
 
             result.Value = correctedH;

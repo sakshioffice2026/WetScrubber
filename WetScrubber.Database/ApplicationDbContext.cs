@@ -103,7 +103,7 @@ namespace WetScrubber.Database
                 new ReferenceSource
                 {
                     Id = 3,
-                    Citation = "Rumble, J.R. (ed.), NIST-JANAF-class critical review: \"Thermodynamics of Solution of SO2(g) in Water and of Aqueous Sulfur Dioxide Solutions\", hosted by NIST (PMC6658418 / NIST J. Res. 90(5), 1985). Selected value for SO2(g) = SO2(aq): deltaH ~= -26.97 +/- 0.30 kJ/mol at 298.15 K. Independently retrievable at https://pmc.ncbi.nlm.nih.gov/articles/PMC6658418/ — cross-check against a second primary source (e.g. DIPPR) before flipping ValidatedFlag.",
+                    Citation = "Goldberg, R.N. and Parker, V.B., \"Thermodynamics of Solution of SO2(g) in Water and of Aqueous Sulfur Dioxide Solutions\", J. Res. Natl. Bur. Stand. 90(5), 341-358, 1985 (PMC6658418). Selected value for SO2(g) = SO2(aq): deltaH ~= -26.97 +/- 0.30 kJ/mol at 298.15 K. Independently retrievable at https://pmc.ncbi.nlm.nih.gov/articles/PMC6658418/ — cross-check against a second primary source (e.g. DIPPR) before flipping ValidatedFlag.",
                     SourceType = "NIST"
                 }
             );
@@ -119,7 +119,7 @@ namespace WetScrubber.Database
                 new ComponentProperty { Id = 1, Code = "SO2", DisplayName = "Sulfur Dioxide", MolecularWeight = 64.07, CriticalTemperatureK = 430.8, CriticalPressureKPa = 7884, AcentricFactor = 0.256, NormalBoilingPointK = 263.1, IsGasPhaseSpecies = true, ReferenceSourceId = 1, ValidatedFlag = false },
                 new ComponentProperty { Id = 2, Code = "HCl", DisplayName = "Hydrogen Chloride", MolecularWeight = 36.46, CriticalTemperatureK = 324.7, CriticalPressureKPa = 8310, AcentricFactor = 0.13, NormalBoilingPointK = 188.1, IsGasPhaseSpecies = true, ReferenceSourceId = 1, ValidatedFlag = false },
                 new ComponentProperty { Id = 3, Code = "NH3", DisplayName = "Ammonia", MolecularWeight = 17.03, CriticalTemperatureK = 405.5, CriticalPressureKPa = 11350, AcentricFactor = 0.253, NormalBoilingPointK = 239.7, IsGasPhaseSpecies = true, ReferenceSourceId = 1, ValidatedFlag = false },
-                new ComponentProperty { Id = 4, Code = "H2S", DisplayName = "Hydrogen Sulfide", MolecularWeight = 34.08, CriticalTemperatureK = 373.2, CriticalPressureKPa = 8940, AcentricFactor = 0.10, NormalBoilingPointK = 213.5, IsGasPhaseSpecies = true, ReferenceSourceId = 1, ValidatedFlag = false },
+                new ComponentProperty { Id = 4, Code = "H2S", DisplayName = "Hydrogen Sulfide", MolecularWeight = 34.08, CriticalTemperatureK = 373.2, CriticalPressureKPa = 8940, AcentricFactor = 0.10, NormalBoilingPointK = 212.8, IsGasPhaseSpecies = true, ReferenceSourceId = 1, ValidatedFlag = false },
                 new ComponentProperty { Id = 5, Code = "Cl2", DisplayName = "Chlorine", MolecularWeight = 70.90, CriticalTemperatureK = 417.2, CriticalPressureKPa = 7700, AcentricFactor = 0.07, NormalBoilingPointK = 239.1, IsGasPhaseSpecies = true, ReferenceSourceId = 1, ValidatedFlag = false },
                 new ComponentProperty { Id = 6, Code = "H2O", DisplayName = "Water", MolecularWeight = 18.02, CriticalTemperatureK = 647.1, CriticalPressureKPa = 22064, AcentricFactor = 0.344, NormalBoilingPointK = 373.15, LiquidDensityKgM3 = 997, LiquidViscosityMPas = 0.89, SpecificHeatKJKgK = 4.18, IsGasPhaseSpecies = false, ReferenceSourceId = 1, ValidatedFlag = false },
                 new ComponentProperty { Id = 7, Code = "NaOH", DisplayName = "Caustic Soda (solute)", MolecularWeight = 40.00, LiquidDensityKgM3 = 2130, IsGasPhaseSpecies = false, ReferenceSourceId = 1, ValidatedFlag = false },
@@ -147,13 +147,8 @@ namespace WetScrubber.Database
             // with HeatOfSolutionKJmol == null (see
             // ScrubberCalculationEngine.GetVanTHoffTempCoeff), so leaving
             // these null is safe, just less accurate than a sourced value.
-            modelBuilder.Entity<HenrysLawData>().HasData(
-                new HenrysLawData { Id = 1, PollutantCode = "SO2", H_ReferenceAt25C = 0.0083, HeatOfSolutionKJmol = -26.97, ReferenceSourceId = 3, ValidatedFlag = false },
-                new HenrysLawData { Id = 2, PollutantCode = "HCl", H_ReferenceAt25C = 0.00002, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },
-                new HenrysLawData { Id = 3, PollutantCode = "NH3", H_ReferenceAt25C = 0.00061, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },
-                new HenrysLawData { Id = 4, PollutantCode = "H2S", H_ReferenceAt25C = 0.0102, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false },
-                new HenrysLawData { Id = 5, PollutantCode = "Cl2", H_ReferenceAt25C = 0.0074, HeatOfSolutionKJmol = null, ReferenceSourceId = 2, ValidatedFlag = false }
-            );
+            modelBuilder.Entity<ReferenceSource>().HasData(HenrysLawSeedData.SanderSource);
+            modelBuilder.Entity<HenrysLawData>().HasData(HenrysLawSeedData.Rows);
 
             // NrtlBinaryParameter: deliberately NOT seeded. See
             // NrtlBinaryParameter.cs — fabricating tau/alpha values here

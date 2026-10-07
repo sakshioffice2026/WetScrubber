@@ -67,19 +67,19 @@ design_model = DesignOutcomeModel()
 # there isn't enough curated data for the learned model yet. ──────────
 KNOWN_REACTIONS = [
     {"pollutant": "SO2", "liquid": "Caustic Soda", "molecular_weight": 64.07,
-     "henrys_constant": 0.0083, "max_efficiency": 99.0, "stoich_ratio": 2.0,
+     "henrys_constant": 0.034, "max_efficiency": 99.0, "stoich_ratio": 2.0,
      "min_ph": 6.5, "max_ph": 9.0},
     {"pollutant": "HCl", "liquid": "Caustic Soda", "molecular_weight": 36.46,
      "henrys_constant": 0.00002, "max_efficiency": 99.5, "stoich_ratio": 1.0,
      "min_ph": 5.0, "max_ph": 9.0},
     {"pollutant": "NH3", "liquid": "Sulfuric Acid", "molecular_weight": 17.03,
-     "henrys_constant": 0.00061, "max_efficiency": 98.0, "stoich_ratio": 1.0,
+     "henrys_constant": 0.00069, "max_efficiency": 98.0, "stoich_ratio": 1.0,
      "min_ph": 2.0, "max_ph": 5.0},
     {"pollutant": "H2S", "liquid": "Sodium Hypochlorite", "molecular_weight": 34.08,
-     "henrys_constant": 0.0102, "max_efficiency": 97.0, "stoich_ratio": 4.0,
+     "henrys_constant": 0.40, "max_efficiency": 97.0, "stoich_ratio": 4.0,
      "min_ph": 8.0, "max_ph": 11.0},
     {"pollutant": "Cl2", "liquid": "Caustic Soda", "molecular_weight": 70.90,
-     "henrys_constant": 0.0074, "max_efficiency": 99.0, "stoich_ratio": 2.0,
+     "henrys_constant": 0.66, "max_efficiency": 99.0, "stoich_ratio": 2.0,
      "min_ph": 9.0, "max_ph": 12.0},
 ]
 

@@ -73,6 +73,11 @@ namespace WetScrubber.Business.Services
             public bool ConsiderSaltingOut { get; set; } = true;
             public bool IncludeTemperatureFeedback { get; set; } = true;
             public bool UseTwoFilmModel { get; set; } = true;
+
+            // ── Packing / reagent (Onda coefficients, reactive enhancement) ──
+            public PackingMassTransferInput Packing { get; set; }
+            public ReagentKind Reagent { get; set; } = ReagentKind.None;
+            public double ReagentEquivalentsPerL { get; set; }
         }
 
         /// <summary>
@@ -100,6 +105,12 @@ namespace WetScrubber.Business.Services
 
             /// <summary>Reactive absorption analysis (if applicable)</summary>
             public EnhancementFactor.Result ReactionEnhancement { get; set; }
+
+            /// <summary>Reactive enhancement analysis (Hatta / instantaneous cap)</summary>
+            public ReactiveEnhancementResult Enhancement { get; set; }
+
+            /// <summary>Onda-based film coefficients used in the tower solve</summary>
+            public MassTransferCoefficients MassTransfer { get; set; }
 
             /// <summary>All warnings and errors combined</summary>
             public IReadOnlyList<string> AllFindings { get; set; }
@@ -165,11 +176,64 @@ namespace WetScrubber.Business.Services
                 input.ConsiderSaltingOut ? input.IonicStrengthMolPerL : null,
                 input.PollutantCode);
 
+            // ════════════════════════════════════════════════════════════════
+            // STEP 2b: Onda film coefficients + reactive enhancement
+            // ════════════════════════════════════════════════════════════════
+            if (input.Packing == null || !input.Packing.IsComplete)
+            {
+                result.IsValid = false;
+                findings.Add("MASS TRANSFER: packing and tower data (area, size, critical surface tension, tower area, mass flows) are required for Onda KGa/kL.");
+                result.AllFindings = findings;
+                return result;
+            }
+
+            double tempK = input.TemperatureC + 273.15;
+            double hYX = input.HenryConvention == HenrysLawConvention.GasReferenced
+                ? 1.0 / henryResult.Value
+                : henryResult.Value;
+            double hCgCl = HenrysConstantUnits.MoleFractionRatioToCgOverCl(hYX, tempK, input.PressureKPa);
+
+            var fluid = new MassTransferFluidInput
+            {
+                GasDensityKgM3 = input.InletGasDensityKgM3,
+                GasViscosityPas = input.InletGasViscosityPas,
+                GasDiffusivityM2S = input.InletGasDiffusivityM2S,
+                LiquidDensityKgM3 = input.InletLiquidDensityKgM3,
+                LiquidViscosityPas = input.InletLiquidViscosityPas,
+                LiquidDiffusivityM2S = input.InletLiquidDiffusivityM2S,
+                PressureKPa = input.PressureKPa,
+                HenrysDimensionless = hCgCl
+            };
+
+            var physicalCoeffs = MassTransferCoefficientProvider.Compute(input.Packing, fluid, tempK, 1.0);
+
+            double enhancementFactor = 1.0;
+            if (input.IncludeReactiveAbsorption)
+            {
+                result.Enhancement = ReactiveEnhancementService.Compute(new ReactiveEnhancementInput
+                {
+                    PollutantCode = input.PollutantCode,
+                    Reagent = input.Reagent,
+                    ReagentConcentrationEqPerL = input.ReagentEquivalentsPerL,
+                    LiquidFilmCoeffMS = physicalCoeffs.LiquidFilmCoeffMS,
+                    PollutantLiquidDiffusivityM2S = input.InletLiquidDiffusivityM2S,
+                    HenrysDimensionless = hCgCl,
+                    GasPartialPressureKPa = input.InletGasMoleFractionPollutant * input.PressureKPa,
+                    TemperatureK = tempK
+                });
+                enhancementFactor = result.Enhancement.Factor;
+
+                if (!result.Enhancement.ModelAvailable)
+                    findings.Add($"REACTION: {result.Enhancement.Note}");
+            }
+
+            result.MassTransfer = MassTransferCoefficientProvider.Compute(input.Packing, fluid, tempK, enhancementFactor);
+
             result.EquilibriumValidation = ChemistryValidityChecker.ValidateEquilibriumAndMassTransfer(
                 henryResult.Value,
                 (double)input.HenryConvention,
                 1.0,  // activity coeff (assume ideal for now)
-                0.01, // placeholder KGa
+                result.MassTransfer.GasSideKgaKmolM3HrKPa,
                 input.InletGasMoleFractionPollutant - henryResult.Value * input.InletLiquidMoleFraction);
 
             if (!result.EquilibriumValidation.IsValid)
@@ -211,7 +275,7 @@ namespace WetScrubber.Business.Services
                 input.TemperatureC + 273.15,
                 input.HeatOfSolutionKJmol,
                 input.PressureKPa,
-                t => 0.01,  // placeholder kGa function
+                t => MassTransferCoefficientProvider.Compute(input.Packing, fluid, t, enhancementFactor).OverallKGaKmolM3HrKPa,
                 (t, x) => henryResult.Value); // local Henry's constant
 
             // ════════════════════════════════════════════════════════════════
@@ -257,14 +321,19 @@ namespace WetScrubber.Business.Services
             // ════════════════════════════════════════════════════════════════
             // STEP 6: Reactive Absorption (Section 7)
             // ════════════════════════════════════════════════════════════════
-            if (input.IncludeReactiveAbsorption && input.ReactionRateConstantS_Inv.HasValue)
+            if (input.IncludeReactiveAbsorption && result.Enhancement != null && result.Enhancement.ModelAvailable)
             {
-                result.ReactionEnhancement = EnhancementFactor.CalculateEnhancementFactor(
-                    input.ReactionRateConstantS_Inv.Value,
-                    input.BulkReagentConcentrationMolL ?? 0.1,
-                    input.InletLiquidDiffusivityM2S,
-                    0.0001,  // placeholder kL
-                    input.ReactionOrder);
+                result.ReactionEnhancement = new EnhancementFactor.Result
+                {
+                    HattaNumber = result.Enhancement.HattaNumber,
+                    Factor = result.Enhancement.Factor,
+                    IsReactionLimited = result.Enhancement.InstantaneousLimitApplied,
+                    Regime = result.Enhancement.Regime == EnhancementRegime.Physical
+                        ? ReactionRegime.PhysicalAbsorption
+                        : result.Enhancement.Regime == EnhancementRegime.Instantaneous
+                            ? ReactionRegime.VeryFastReactionInterface
+                            : ReactionRegime.FastReactionNearInterface
+                };
             }
             else
             {
@@ -324,15 +393,17 @@ namespace WetScrubber.Business.Services
 
                 MassTransfer = new EnhancedChemistryReport.MassTransferBreakdown
                 {
-                    GasFilmCoefficientKgMS = 0.001,  // placeholder
-                    GasSideKgaKmolM3HrKPa = 0.01,
-                    LiquidFilmCoefficientKlMS = 1e-4,
-                    LiquidSideKlaKmolM3HrMolL = 0.001,
-                    OverallKGaKmolM3HrKPa = 0.01,
-                    GasSideResistanceFraction = result.TowerSolverResult.GasSideResistanceFraction,
-                    LiquidSideResistanceFraction = result.TowerSolverResult.LiquidSideResistanceFraction,
-                    ControllingResistance = result.TowerSolverResult.ControllingResistance,
-                    EnhancementFactorFromReaction = result.ReactionEnhancement?.Factor ?? 1.0
+                    GasFilmCoefficientKgMS = result.MassTransfer.GasFilmCoeffKmolM2SPa,
+                    GasSideKgaKmolM3HrKPa = result.MassTransfer.GasSideKgaKmolM3HrKPa,
+                    LiquidFilmCoefficientKlMS = result.MassTransfer.LiquidFilmCoeffMS,
+                    LiquidSideKlaKmolM3HrMolL = result.MassTransfer.LiquidSideKlaKmolM3HrMolL,
+                    OverallKGaKmolM3HrKPa = result.MassTransfer.OverallKGaKmolM3HrKPa,
+                    GasSideResistanceFraction = result.MassTransfer.GasSideResistanceFraction,
+                    LiquidSideResistanceFraction = result.MassTransfer.LiquidSideResistanceFraction,
+                    ControllingResistance = result.MassTransfer.GasSideResistanceFraction >= 0.5
+                        ? "Gas-side"
+                        : "Liquid-side",
+                    EnhancementFactorFromReaction = result.Enhancement?.Factor ?? 1.0
                 },
 
                 Reagent = new EnhancedChemistryReport.ReagentConsumption

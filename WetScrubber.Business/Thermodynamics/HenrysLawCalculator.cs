@@ -27,7 +27,7 @@ namespace WetScrubber.Business.Thermodynamics
             double temperatureK = temperatureC + 273.15;
             double correctedH = h25 * Math.Exp(tempCoeff * (1.0 / temperatureK - 1.0 / ReferenceTempK));
 
-            return Math.Max(correctedH, 0.001);
+            return HenrysConstantUnits.Clamp(correctedH);
         }
     }
 }

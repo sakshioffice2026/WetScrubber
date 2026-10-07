@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using WetScrubber.Business.Thermodynamics;
 
 namespace WetScrubber.Business.MassTransfer
 {
@@ -83,6 +84,12 @@ namespace WetScrubber.Business.MassTransfer
             public double LiquidSolventMolecularWeightGMol { get; set; } = 18.02;
             public double LiquidSolventAssociationFactor { get; set; } = 2.6;
             public double PressureKPa { get; set; } = 101.3;
+
+            /// <summary>Reagent class in the scrubbing liquid; None = physical absorption (E = 1).</summary>
+            public ReagentKind Reagent { get; set; } = ReagentKind.None;
+
+            /// <summary>Reagent concentration, equivalents/L (OH- or H+).</summary>
+            public double ReagentEqPerL { get; set; }
         }
 
         public sealed class SolverOutput
@@ -267,6 +274,21 @@ namespace WetScrubber.Business.MassTransfer
                 // molar density. Combine as 1/KGa = 1/kGa_y + H/kLa_x.
                 double kGaY = onda.GasFilmCoeffKmolM2SPa * (input.PressureKPa * 1000.0) * onda.WettedAreaM2M3;
                 double kLaX = onda.LiquidFilmCoeffMS * WaterMolarDensityKmolM3 * onda.WettedAreaM2M3;
+
+                double hCgCl = hLocal * (input.PressureKPa / (8.314 * tempK)) / WaterMolarDensityKmolM3;
+                var enhancement = ReactiveEnhancementService.Compute(new ReactiveEnhancementInput
+                {
+                    PollutantCode = poll.Code,
+                    Reagent = input.Reagent,
+                    ReagentConcentrationEqPerL = input.ReagentEqPerL,
+                    LiquidFilmCoeffMS = onda.LiquidFilmCoeffMS,
+                    PollutantLiquidDiffusivityM2S = dL,
+                    HenrysDimensionless = hCgCl,
+                    GasPartialPressureKPa = poll.InletPpm / 1e6 * input.PressureKPa,
+                    TemperatureK = tempK
+                });
+                kLaX *= enhancement.Factor;
+
                 double overallKGa = 1.0 / (1.0 / Math.Max(kGaY, 1e-9) + hLocal / Math.Max(kLaX, 1e-9));
 
                 double gasMolarVelocityKmolM2S = gasMassVelocity / 28.97;
