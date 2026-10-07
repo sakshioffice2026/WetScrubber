@@ -219,7 +219,9 @@ namespace WetScrubber.Business.Services
                     PollutantLiquidDiffusivityM2S = input.InletLiquidDiffusivityM2S,
                     HenrysDimensionless = hCgCl,
                     GasPartialPressureKPa = input.InletGasMoleFractionPollutant * input.PressureKPa,
-                    TemperatureK = tempK
+                    TemperatureK = tempK,
+                    ReactionRateConstantS_Inv = input.ReactionRateConstantS_Inv,
+                    ReactionOrder = input.ReactionOrder
                 });
                 enhancementFactor = result.Enhancement.Factor;
 

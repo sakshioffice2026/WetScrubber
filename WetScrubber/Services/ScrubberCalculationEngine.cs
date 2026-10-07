@@ -155,8 +155,16 @@ namespace WetScrubber.Services
             double crossSection = Math.PI * Math.Pow(result.TowerDiameter, 2) / 4.0;
 
             // Gas / liquid mass velocities (kg/m²·s)
-            double gasMassVelocity = (gasFlowM3S * vm.GasDensity) / crossSection;
+            double actualGasDensity = GetActualGasDensity(
+                vm.GasDensity,
+                vm.InletTemperature + 273.15,
+                vm.InletPressure,
+                pollutant.PollutantType,
+                pollutant.InletConcentration);
+            double gasMassVelocity = (gasFlowM3S * actualGasDensity) / crossSection;
             double liquidMassVelocity = (liquidFlowM3Hr / 3600.0 * vm.LiquidDensity) / crossSection;
+            double molarLG = CalculateMolarLiquidToGasRatio(
+                vm.LiquidToGasRatio, vm.LiquidDensity, vm.InletTemperature, vm.InletPressure);
 
             // Phase 2: Wilke-Chang + Fuller diffusivities feeding the
             // Onda correlation for physically-derived kG/kL/aW, in
@@ -173,18 +181,18 @@ namespace WetScrubber.Services
                     inletConcentrationPpm: pollutant.InletConcentration,
                     outletConcentrationPpm: pollutant.TargetOutletConcentration,
                     henrysLawConstant: henrysTemp,
-                    liquidToGasRatioMolar: vm.LiquidToGasRatio,
+                    liquidToGasRatioMolar: molarLG,
                     gasMolarVelocityKmolM2S: rateBased.GasMolarVelocityKmolM2S,
                     overallKGaKmolM3S: rateBased.OverallKGaKmolM3S)
                 : CalculateNtuHtu(
                     inletConcentrationPpm: pollutant.InletConcentration,
                     outletConcentrationPpm: pollutant.TargetOutletConcentration,
                     henrysLawConstant: henrysTemp,
-                    liquidToGasRatioMolar: vm.LiquidToGasRatio,
+                    liquidToGasRatioMolar: molarLG,
                     gasFilmCoeff: DefaultGasFilmCoeff,
                     liquidFilmCoeff: DefaultLiquidFilmCoeff,
                     gasMassVelocity: gasMassVelocity,
-                    gasDensityKgM3: vm.GasDensity
+                    gasDensityKgM3: actualGasDensity
                 );
 
             double designPackingHeight = vm.PackingHeightOverride > 0
@@ -221,7 +229,7 @@ namespace WetScrubber.Services
                 CalculatePressureDrop(
                     gasVelocityMs: result.GasVelocity,
                     liquidLoadingM3M2Hr: liquidFlowM3Hr / crossSection,
-                    gasDensityKgM3: vm.GasDensity,
+                    gasDensityKgM3: actualGasDensity,
                     liquidDensityKgM3: vm.LiquidDensity,
                     packingSurfaceAreaM2M3: pdSurfaceArea,
                     voidFraction: pdVoidFraction,
@@ -239,7 +247,7 @@ namespace WetScrubber.Services
                 nominalPackingSizeM: pdNominalSizeM,
                 gasMassVelocityKgM2S: gasMassVelocity,
                 liquidMassVelocityKgM2S: liquidMassVelocity,
-                gasDensityKgM3: vm.GasDensity,
+                gasDensityKgM3: actualGasDensity,
                 liquidDensityKgM3: vm.LiquidDensity,
                 gasViscosityPas: vm.GasViscosity,
                 liquidViscosityPas: vm.LiquidViscosity / 1000.0);
@@ -253,11 +261,13 @@ namespace WetScrubber.Services
             result.PumpPowerKW = Math.Round(CalculatePumpPower(liquidFlowM3Hr, result.TowerHeight + 5, vm.LiquidDensity), 2);
 
             // 8. L/G min ratio check
+            double minMolarLG = CalculateMinimumLiquidGasRatio(
+                pollutant.InletConcentration,
+                pollutant.TargetOutletConcentration,
+                henrysTemp);
             result.MinLGRatio = Math.Round(
-                CalculateMinimumLiquidGasRatio(
-                    pollutant.InletConcentration,
-                    pollutant.TargetOutletConcentration,
-                    henrysTemp), 3);
+                MolarToVolumetricLiquidToGasRatio(
+                    minMolarLG, vm.LiquidDensity, vm.InletTemperature, vm.InletPressure), 3);
 
             result.ActualLGRatio = vm.LiquidToGasRatio;
             result.LiquidFlowRateM3Hr = Math.Round(liquidFlowM3Hr, 2);
@@ -266,9 +276,13 @@ namespace WetScrubber.Services
             // 9. Sensitivity analysis for chart
             result.SensitivityPoints = RunLGRatioSensitivity(
                 pollutant.InletConcentration,
-                pollutant.HenrysLawConstant,
+                henrysTemp,
                 ntuResult.NTU,
-                ntuResult.HTU);
+                ntuResult.HTU,
+                pollutant.TargetOutletConcentration,
+                vm.LiquidDensity,
+                vm.InletTemperature,
+                vm.InletPressure);
 
             // ── Phase 4a: Multi-pollutant iterative solver ─────────────
             // When multiple pollutants present, solve them simultaneously
@@ -1005,8 +1019,32 @@ namespace WetScrubber.Services
             double y2 = outletPpm / 1e6;
             double x2 = inletLiquidPpm / 1e6;
             double x1star = y1 / Math.Max(henrysLawConstant, 0.001);
-            double lgMin = (y1 - y2) / Math.Max(x1star - x2, 0.0001);
-            return Math.Max(lgMin, 0.1);
+            double lgMin = (y1 - y2) / Math.Max(x1star - x2, 1e-9);
+            return Math.Max(lgMin, 1e-6);
+        }
+
+        // Volumetric L/G (L liquid per m3 actual gas) -> molar L/G (mol liquid / mol gas)
+        public double CalculateMolarLiquidToGasRatio(
+            double litersPerM3Gas, double liquidDensityKgM3, double gasTemperatureC, double gasPressurePa)
+        {
+            const double MwWater = 18.015;      // kg/kmol
+            const double RGas = 8314.462;       // J/(kmol*K)
+            double tempK = gasTemperatureC + 273.15;
+            double liquidKmolPerM3Gas = (litersPerM3Gas / 1000.0) * liquidDensityKgM3 / MwWater;
+            double gasKmolPerM3 = gasPressurePa / (RGas * tempK);
+            return liquidKmolPerM3Gas / Math.Max(gasKmolPerM3, 1e-12);
+        }
+
+        // Molar L/G (mol/mol) -> volumetric L/G (L per m3 actual gas)
+        public double MolarToVolumetricLiquidToGasRatio(
+            double molarLG, double liquidDensityKgM3, double gasTemperatureC, double gasPressurePa)
+        {
+            const double MwWater = 18.015;
+            const double RGas = 8314.462;
+            double tempK = gasTemperatureC + 273.15;
+            double gasKmolPerM3 = gasPressurePa / (RGas * tempK);
+            double liquidM3PerM3Gas = molarLG * gasKmolPerM3 * MwWater / Math.Max(liquidDensityKgM3, 1.0);
+            return liquidM3PerM3Gas * 1000.0;
         }
 
         // ════════════════════════════════════════════════════════════
@@ -1196,25 +1234,44 @@ namespace WetScrubber.Services
         //  7. SENSITIVITY ANALYSIS  (for charts on Results page)
         // ════════════════════════════════════════════════════════════
         public List<SensitivityPoint> RunLGRatioSensitivity(
-            double baseInletPpm, double henrysConstant, double baseNTU, double htu)
+            double baseInletPpm, double henrysConstant, double baseNTU, double htu,
+            double targetOutletPpm = 0, double liquidDensityKgM3 = 1000,
+            double gasTemperatureC = 25, double gasPressurePa = 101325)
         {
             var results = new List<SensitivityPoint>();
-            double lgMin = CalculateMinimumLiquidGasRatio(baseInletPpm, baseInletPpm * 0.05, henrysConstant);
+            double h = Math.Max(henrysConstant, 0.001);
+            double y1 = Math.Max(baseInletPpm, 0.001);
+            double y2 = targetOutletPpm > 0 ? targetOutletPpm : y1 * 0.05;
+            double ratio = Math.Max(y1 / y2, 1.0001);
 
-            for (double m = 1.2; m <= 3.0; m += 0.2)
+            double lgMinMolar = CalculateMinimumLiquidGasRatio(y1, y2, h);
+
+            for (double m = 1.2; m <= 3.0001; m += 0.2)
             {
-                double lg = lgMin * m;
-                double A = lg / Math.Max(henrysConstant, 0.001);
-                double ntu = A < 1.01 ? baseNTU
-                           : (A / (A - 1)) * Math.Log(Math.Max(A / (A - 1) * 20, 0.001));
-                double eff = Math.Min(100 * (1 - Math.Exp(-ntu / Math.Max(A, 0.001))), 99.9);
+                double lgMolar = lgMinMolar * m;
+                double A = lgMolar / h;
+                double ntu = baseNTU;
+                if (Math.Abs(A - 1.0) >= 0.01)
+                {
+                    double term = ratio * (1.0 - 1.0 / A) + 1.0 / A;
+                    ntu = (A / (A - 1.0)) * Math.Log(Math.Max(term, 0.0001));
+                    ntu = Math.Max(ntu, 0.5);
+                }
+                else
+                {
+                    ntu = Math.Max((ratio - 1.0), 0.5);
+                }
+
+                double eff = PackedTowerEfficiencyCalculator.AtHeight(ntu * htu, htu, A);
+                double lgVol = MolarToVolumetricLiquidToGasRatio(
+                    lgMolar, liquidDensityKgM3, gasTemperatureC, gasPressurePa);
 
                 results.Add(new SensitivityPoint
                 {
-                    ParameterValue = Math.Round(lg, 2),
+                    ParameterValue = Math.Round(lgVol, 2),
                     RemovalEfficiency = Math.Round(eff, 1),
                     PackingHeight = Math.Round(ntu * htu, 2),
-                    Label = $"L/G = {lg:F2}"
+                    Label = $"L/G = {lgVol:F2}"
                 });
             }
             return results;
