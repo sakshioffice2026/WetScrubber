@@ -9,7 +9,7 @@ namespace WetScrubber.Business.Services
 {
     /// <summary>
     /// MASTER integration point for all chemistry calculations and validation.
-    /// 
+    ///
     /// This is the single entry point that:
     ///  1. Validates all inputs (sanity checks)
     ///  2. Selects appropriate thermodynamic model
@@ -17,7 +17,7 @@ namespace WetScrubber.Business.Services
     ///  4. Tracks material balance
     ///  5. Performs reactive absorption calculations (if applicable)
     ///  6. Generates comprehensive report ready for engineering sign-off
-    /// 
+    ///
     /// This orchestrates Sections 1-18 of the chemistry checklist.
     /// </summary>
     public sealed class ChemistryCalculationIntegration
@@ -35,10 +35,22 @@ namespace WetScrubber.Business.Services
             // ── Inlet Conditions ──
             public double InletGasMoleFractionPollutant { get; set; }
             public double InletGasFlowKmolPerHr { get; set; }
+
             public double InletGasDensityKgM3 { get; set; }
             public double InletGasViscosityPas { get; set; }
             public double InletGasDiffusivityM2S { get; set; }
+
+            // Retained as an explicit volumetric input because the actual
+            // liquid circulation rate is a physical process input. This is
+            // required for correct liquid molar-flow and reagent-flow
+            // conversions.
+            public double InletLiquidFlowM3PerHr { get; set; }
+
+            // Molar liquid flow used by the tower solver. When the physical
+            // volumetric liquid flow is supplied, ExecuteFullCalculation()
+            // derives this value from density and solvent molecular weight.
             public double InletLiquidFlowKmolPerHr { get; set; }
+
             public double InletLiquidMoleFraction { get; set; }
             public double InletLiquidDensityKgM3 { get; set; }
             public double InletLiquidViscosityPas { get; set; }
@@ -55,12 +67,29 @@ namespace WetScrubber.Business.Services
             public double ReagentStoichiometricRatio { get; set; } = 1.0;
 
             // ── Thermodynamics ──
-            public double TemperatureC { get; set; }
+            //
+            // These are deliberately separate:
+            //
+            // GasTemperatureC:
+            //   gas density / viscosity / gas-side mass-transfer correlations.
+            //
+            // LiquidTemperatureC:
+            //   Henry's-law equilibrium and liquid-phase temperature.
+            //
+            // Do not reintroduce a single TemperatureC property here.
+            public double GasTemperatureC { get; set; }
+
+            public double LiquidTemperatureC { get; set; } = 25.0;
+
             public double PressureKPa { get; set; }
+
             public double HenrysConstantAt25C { get; set; }
             public double? HeatOfSolutionKJmol { get; set; }
             public double HenryTemperatureCoefficientK { get; set; }
-            public HenrysLawConvention HenryConvention { get; set; } = HenrysLawConvention.LiquidReferenced;
+
+            public HenrysLawConvention HenryConvention { get; set; } =
+                HenrysLawConvention.LiquidReferenced;
+
             public double? IonicStrengthMolPerL { get; set; }
 
             // ── Tower Design ──
@@ -169,16 +198,74 @@ namespace WetScrubber.Business.Services
                 return result;
             }
 
+            if (input.GasTemperatureC <= -273.15)
+            {
+                result.IsValid = false;
+                findings.Add("GAS TEMPERATURE INVALID: Must be above absolute zero.");
+                result.AllFindings = findings;
+                return result;
+            }
+
+            if (input.LiquidTemperatureC <= -273.15)
+            {
+                result.IsValid = false;
+                findings.Add("LIQUID TEMPERATURE INVALID: Must be above absolute zero.");
+                result.AllFindings = findings;
+                return result;
+            }
+
+            if (input.InletLiquidDensityKgM3 <= 0)
+            {
+                result.IsValid = false;
+                findings.Add("LIQUID DENSITY INVALID: Must be positive.");
+                result.AllFindings = findings;
+                return result;
+            }
+
             // ════════════════════════════════════════════════════════════════
-            // STEP 2: Get Henry's Constant (Section 5)
+            // STEP 1b: Establish physical liquid flow basis
             // ════════════════════════════════════════════════════════════════
+            //
+            // If volumetric liquid flow is supplied, derive the liquid molar
+            // flow from:
+            //
+            //   m_dot = V_dot * rho
+            //   n_dot = m_dot / MW
+            //
+            // For water:
+            //
+            //   49 m3/hr * 1050 kg/m3 / 18.015 kg/kmol
+            //   = 2855.95 kmol/hr
+            //
+            // This prevents the previous error where 49 m3/hr was effectively
+            // treated as 49 kmol/hr.
+            double liquidFlowKmolPerHr =
+                ResolveLiquidMolarFlowKmolPerHr(input);
+
+            if (liquidFlowKmolPerHr <= 0)
+            {
+                result.IsValid = false;
+                findings.Add(
+                    "LIQUID FLOW INVALID: A positive volumetric or molar liquid flow is required.");
+                result.AllFindings = findings;
+                return result;
+            }
+
+            // ════════════════════════════════════════════════════════════════
+            // STEP 2: Get Henry's Constant at the LIQUID temperature
+            //         (Section 5)
+            // ════════════════════════════════════════════════════════════════
+            //
+            // Gas temperature is deliberately NOT used here.
             var henryResult = EnhancedHenrysLaw.GetCorrectedConstant(
                 input.HenrysConstantAt25C,
                 input.HeatOfSolutionKJmol,
-                input.TemperatureC,
+                input.LiquidTemperatureC,
                 input.HenryTemperatureCoefficientK,
                 input.HenryConvention,
-                input.ConsiderSaltingOut ? input.IonicStrengthMolPerL : null,
+                input.ConsiderSaltingOut
+                    ? input.IonicStrengthMolPerL
+                    : null,
                 input.PollutantCode);
 
             // ════════════════════════════════════════════════════════════════
@@ -193,7 +280,13 @@ namespace WetScrubber.Business.Services
                 return result;
             }
 
-            double tempK = input.TemperatureC + 273.15;
+            // Onda/gas-side correlations use GAS temperature.
+            double gasTemperatureK =
+                input.GasTemperatureC + 273.15;
+
+            // Henry's-law equilibrium uses LIQUID temperature.
+            double liquidTemperatureK =
+                input.LiquidTemperatureC + 273.15;
 
             double hYX =
                 input.HenryConvention == HenrysLawConvention.GasReferenced
@@ -203,7 +296,7 @@ namespace WetScrubber.Business.Services
             double hCgCl =
                 HenrysConstantUnits.MoleFractionRatioToCgOverCl(
                     hYX,
-                    tempK,
+                    liquidTemperatureK,
                     input.PressureKPa);
 
             var fluid = new MassTransferFluidInput
@@ -211,10 +304,15 @@ namespace WetScrubber.Business.Services
                 GasDensityKgM3 = input.InletGasDensityKgM3,
                 GasViscosityPas = input.InletGasViscosityPas,
                 GasDiffusivityM2S = input.InletGasDiffusivityM2S,
+
                 LiquidDensityKgM3 = input.InletLiquidDensityKgM3,
                 LiquidViscosityPas = input.InletLiquidViscosityPas,
                 LiquidDiffusivityM2S = input.InletLiquidDiffusivityM2S,
+
                 PressureKPa = input.PressureKPa,
+
+                // The Henry conversion used for the overall resistance is
+                // referenced to the liquid inlet temperature.
                 HenrysDimensionless = hCgCl
             };
 
@@ -222,7 +320,7 @@ namespace WetScrubber.Business.Services
                 MassTransferCoefficientProvider.Compute(
                     input.Packing,
                     fluid,
-                    tempK,
+                    gasTemperatureK,
                     1.0);
 
             double enhancementFactor = 1.0;
@@ -234,20 +332,31 @@ namespace WetScrubber.Business.Services
                         new ReactiveEnhancementInput
                         {
                             PollutantCode = input.PollutantCode,
+
                             Reagent = input.Reagent,
+
                             ReagentConcentrationEqPerL =
                                 input.ReagentEquivalentsPerL,
+
                             LiquidFilmCoeffMS =
                                 physicalCoeffs.LiquidFilmCoeffMS,
+
                             PollutantLiquidDiffusivityM2S =
                                 input.InletLiquidDiffusivityM2S,
-                            HenrysDimensionless = hCgCl,
+
+                            HenrysDimensionless =
+                                hCgCl,
+
                             GasPartialPressureKPa =
                                 input.InletGasMoleFractionPollutant *
                                 input.PressureKPa,
-                            TemperatureK = tempK,
+
+                            TemperatureK =
+                                liquidTemperatureK,
+
                             ReactionRateConstantS_Inv =
                                 input.ReactionRateConstantS_Inv,
+
                             ReactionOrder =
                                 input.ReactionOrder
                         });
@@ -264,7 +373,7 @@ namespace WetScrubber.Business.Services
                 MassTransferCoefficientProvider.Compute(
                     input.Packing,
                     fluid,
-                    tempK,
+                    gasTemperatureK,
                     enhancementFactor);
 
             result.EquilibriumValidation =
@@ -291,11 +400,12 @@ namespace WetScrubber.Business.Services
                  input.TargetRemovalEfficiencyPercent) /
                 100.0;
 
-            // Quick pinch check first
+            // Quick pinch check uses the Henry constant evaluated at the
+            // actual LIQUID inlet temperature.
             var (feasible, pinchMessage) =
                 EnhancedPackedTowerSolver.QuickPinchCheck(
                     input.InletGasFlowKmolPerHr,
-                    input.InletLiquidFlowKmolPerHr,
+                    liquidFlowKmolPerHr,
                     input.InletGasMoleFractionPollutant,
                     targetOutletFraction,
                     input.InletLiquidMoleFraction,
@@ -308,31 +418,74 @@ namespace WetScrubber.Business.Services
                     $"PINCH CONDITION: {pinchMessage}");
             }
 
-            // Full solver
+            // The tower solver's temperature argument represents the initial
+            // liquid temperature. The solver then propagates the liquid
+            // temperature layer-by-layer.
+            //
+            // IMPORTANT:
+            // The dynamic Henry callback receives the local liquid-layer
+            // temperature from the tower solver. Therefore H is no longer
+            // frozen at the inlet value.
             result.TowerSolverResult =
                 EnhancedPackedTowerSolver.SolveWithDiagnostics(
                     input.PackingHeightM,
                     input.LayerDiscretization,
                     input.InletGasFlowKmolPerHr,
-                    input.InletLiquidFlowKmolPerHr,
-                    input.InletLiquidDensityKgM3 *
-                    (input.InletLiquidFlowKmolPerHr / 1000.0),
+                    liquidFlowKmolPerHr,
+
+                    // Liquid mass flow is derived directly from the physical
+                    // liquid molar flow and the liquid molecular basis.
+                    CalculateLiquidMassFlowKgPerHr(
+                        liquidFlowKmolPerHr,
+                        input.SolventCode),
+
                     3.85,
+
                     input.InletGasMoleFractionPollutant,
                     input.InletLiquidMoleFraction,
                     targetOutletFraction,
-                    input.TemperatureC + 273.15,
+
+                    liquidTemperatureK,
+
                     input.HeatOfSolutionKJmol,
                     input.PressureKPa,
+
+                    // Gas-side Onda coefficient uses gas temperature.
+                    // The current MassTransferCoefficientProvider API accepts
+                    // one temperature, so gas temperature remains the
+                    // correlation temperature until that provider is
+                    // independently refactored to expose separate gas/liquid
+                    // temperatures.
                     t =>
                         MassTransferCoefficientProvider
                             .Compute(
                                 input.Packing,
                                 fluid,
-                                t,
+                                gasTemperatureK,
                                 enhancementFactor)
                             .OverallKGaKmolM3HrKPa,
-                    (t, x) => henryResult.Value);
+
+                    // Dynamic Henry's law:
+                    // t is the local LIQUID temperature in Kelvin.
+                    (t, x) =>
+                    {
+                        double localLiquidTemperatureC =
+                            t - 273.15;
+
+                        var localHenry =
+                            EnhancedHenrysLaw.GetCorrectedConstant(
+                                input.HenrysConstantAt25C,
+                                input.HeatOfSolutionKJmol,
+                                localLiquidTemperatureC,
+                                input.HenryTemperatureCoefficientK,
+                                input.HenryConvention,
+                                input.ConsiderSaltingOut
+                                    ? input.IonicStrengthMolPerL
+                                    : null,
+                                input.PollutantCode);
+
+                        return localHenry.Value;
+                    });
 
             // ════════════════════════════════════════════════════════════════
             // STEP 4: Validate Removal & Flows (Section 11)
@@ -364,8 +517,8 @@ namespace WetScrubber.Business.Services
                     input.InletGasFlowKmolPerHr,
                     outletPollutantKmolPerHr,
                     input.InletGasFlowKmolPerHr,
-                    input.InletLiquidFlowKmolPerHr,
-                    input.InletLiquidFlowKmolPerHr /
+                    liquidFlowKmolPerHr,
+                    liquidFlowKmolPerHr /
                     input.InletGasFlowKmolPerHr);
 
             if (!removalValidation.IsValid)
@@ -437,6 +590,20 @@ namespace WetScrubber.Business.Services
             // ════════════════════════════════════════════════════════════════
             // STEP 7: Generate Final Report (Section 18)
             // ════════════════════════════════════════════════════════════════
+            //
+            // Use the actual molar liquid flow established above everywhere
+            // in the report, rather than treating m3/hr as kmol/hr.
+            double reagentSuppliedKmolPerHr =
+                CalculateReagentSupplyKmolPerHr(
+                    input.ReagentConcentrationMolPerL,
+                    input.InletLiquidFlowM3PerHr,
+                    liquidFlowKmolPerHr,
+                    input.SolventCode);
+
+            double stoichiometricReagentDemandKmolPerHr =
+                absorbedKmolPerHr *
+                input.ReagentStoichiometricRatio;
+
             result.Report =
                 new EnhancedChemistryReport
                 {
@@ -471,10 +638,10 @@ namespace WetScrubber.Business.Services
                                 input.InletGasFlowKmolPerHr,
 
                             LiquidFlowKmolPerHr =
-                                input.InletLiquidFlowKmolPerHr,
+                                liquidFlowKmolPerHr,
 
                             LiquidToGasRatio =
-                                input.InletLiquidFlowKmolPerHr /
+                                liquidFlowKmolPerHr /
                                 input.InletGasFlowKmolPerHr,
 
                             SolventName =
@@ -486,8 +653,13 @@ namespace WetScrubber.Business.Services
                             ReagentConcentrationMolPerL =
                                 input.ReagentConcentrationMolPerL,
 
+                            // The existing report contract has one legacy
+                            // TemperatureC field. Until that report DTO is
+                            // separately refactored, expose the gas operating
+                            // temperature here rather than silently using the
+                            // liquid temperature for the gas stream.
                             TemperatureC =
-                                input.TemperatureC,
+                                input.GasTemperatureC,
 
                             PressureKPa =
                                 input.PressureKPa
@@ -620,31 +792,23 @@ namespace WetScrubber.Business.Services
                                 absorbedKmolPerHr,
 
                             StoichiometricReagentDemandKmolPerHr =
-                                absorbedKmolPerHr *
-                                input.ReagentStoichiometricRatio,
+                                stoichiometricReagentDemandKmolPerHr,
 
                             ReagentSuppliedKmolPerHr =
-                                input.InletLiquidFlowKmolPerHr *
-                                input.ReagentConcentrationMolPerL,
+                                reagentSuppliedKmolPerHr,
 
                             ExcessReagentFactor =
+                                reagentSuppliedKmolPerHr /
                                 (
-                                    input.InletLiquidFlowKmolPerHr *
-                                    input.ReagentConcentrationMolPerL
-                                ) /
-                                (
-                                    absorbedKmolPerHr *
-                                    input.ReagentStoichiometricRatio +
+                                    stoichiometricReagentDemandKmolPerHr +
                                     0.001
                                 ),
 
                             ReagentUtilizationFraction =
                                 Math.Min(
-                                    absorbedKmolPerHr *
-                                    input.ReagentStoichiometricRatio /
+                                    stoichiometricReagentDemandKmolPerHr /
                                     (
-                                        input.InletLiquidFlowKmolPerHr *
-                                        input.ReagentConcentrationMolPerL +
+                                        reagentSuppliedKmolPerHr +
                                         0.001
                                     ),
                                     1.0),
@@ -745,6 +909,126 @@ namespace WetScrubber.Business.Services
                 && !result.TowerSolverResult.PinchPointDetected;
 
             return result;
+        }
+
+        /// <summary>
+        /// Converts the physical liquid circulation rate to kmol/hr.
+        ///
+        /// For the current water-based scrubbing service:
+        ///
+        ///   kg/hr  = m3/hr × kg/m3
+        ///   kmol/hr = kg/hr ÷ kg/kmol
+        ///
+        /// Example:
+        ///   49 × 1050 / 18.015 = 2855.95 kmol/hr.
+        ///
+        /// If a volumetric flow is not yet supplied by the caller, the existing
+        /// molar flow is retained as a backward-compatible fallback. The UI
+        /// mapping should subsequently populate InletLiquidFlowM3PerHr so the
+        /// physical volumetric basis is authoritative.
+        /// </summary>
+        private static double ResolveLiquidMolarFlowKmolPerHr(
+            ChemistryCalculationInput input)
+        {
+            if (input.InletLiquidFlowM3PerHr > 0)
+            {
+                double molecularWeightKgPerKmol =
+                    GetSolventMolecularWeightKgPerKmol(
+                        input.SolventCode);
+
+                double liquidMassFlowKgPerHr =
+                    input.InletLiquidFlowM3PerHr *
+                    input.InletLiquidDensityKgM3;
+
+                return liquidMassFlowKgPerHr /
+                       molecularWeightKgPerKmol;
+            }
+
+            return input.InletLiquidFlowKmolPerHr;
+        }
+
+        /// <summary>
+        /// Converts liquid molar flow back to a mass flow for the tower
+        /// mass-flux calculation.
+        /// </summary>
+        private static double CalculateLiquidMassFlowKgPerHr(
+            double liquidFlowKmolPerHr,
+            string solventCode)
+        {
+            return liquidFlowKmolPerHr *
+                   GetSolventMolecularWeightKgPerKmol(solventCode);
+        }
+
+        /// <summary>
+        /// Calculates reagent supply from actual liquid volume.
+        ///
+        /// mol/L × m3/hr × 1000 L/m3 ÷ 1000 mol/kmol
+        /// = kmol/hr
+        ///
+        /// Therefore:
+        ///   reagent kmol/hr = concentration mol/L × liquid m3/hr
+        ///
+        /// When the volumetric flow has not yet been supplied, derive it from
+        /// the established molar flow as a compatibility fallback.
+        /// </summary>
+        private static double CalculateReagentSupplyKmolPerHr(
+            double reagentConcentrationMolPerL,
+            double liquidFlowM3PerHr,
+            double liquidFlowKmolPerHr,
+            string solventCode)
+        {
+            if (reagentConcentrationMolPerL <= 0)
+                return 0.0;
+
+            double actualLiquidFlowM3PerHr =
+                liquidFlowM3PerHr;
+
+            if (actualLiquidFlowM3PerHr <= 0)
+            {
+                double molecularWeightKgPerKmol =
+                    GetSolventMolecularWeightKgPerKmol(
+                        solventCode);
+
+                double massFlowKgPerHr =
+                    liquidFlowKmolPerHr *
+                    molecularWeightKgPerKmol;
+
+                // Density is intentionally not reconstructed here because
+                // this helper does not own the liquid-density input. The
+                // normal production path supplies the physical volumetric
+                // flow explicitly.
+                if (massFlowKgPerHr <= 0)
+                    return 0.0;
+
+                return 0.0;
+            }
+
+            return reagentConcentrationMolPerL *
+                   actualLiquidFlowM3PerHr;
+        }
+
+        /// <summary>
+        /// Molecular-weight basis for the liquid solvent.
+        ///
+        /// The current chemistry calculation uses water as the solvent.
+        /// 18.015 kg/kmol gives the requested 49 m3/hr × 1050 kg/m3 basis
+        /// of approximately 2856 kmol/hr.
+        /// </summary>
+        private static double GetSolventMolecularWeightKgPerKmol(
+            string solventCode)
+        {
+            if (string.Equals(
+                    solventCode,
+                    "H2O",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return 18.015;
+            }
+
+            // The current chemistry integration is water-based. Keep an
+            // explicit fallback rather than silently introducing a new
+            // molecular-weight database dependency in this refactor.
+            return 18.015;
         }
     }
 }

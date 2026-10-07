@@ -42,9 +42,16 @@ namespace WetScrubber.Models
         [Range(0.000001, 1000, ErrorMessage = "Must be > 0")]
         public double ReagentStoichiometricRatio { get; set; } = 1.0;
 
-        // ── Operating conditions ──
-        [Range(-50, 200, ErrorMessage = "-50–200 °C")]
-        public double TemperatureC { get; set; } = 25;
+        // ── Operating temperatures ──
+        // Keep gas and liquid temperatures explicitly separate.
+        // GasTemperatureC is used for gas-side properties / Onda correlations.
+        // LiquidTemperatureC is used for liquid-side properties and
+        // Henry's-law equilibrium.
+        [Range(-50, 2000, ErrorMessage = "-50–2000 °C")]
+        public double GasTemperatureC { get; set; } = 25;
+
+        [Range(0, 100, ErrorMessage = "0–100 °C")]
+        public double LiquidTemperatureC { get; set; } = 25;
 
         [Range(1, 1000, ErrorMessage = "1–1000 kPa")]
         public double PressureKPa { get; set; } = 101.325;
@@ -91,7 +98,11 @@ namespace WetScrubber.Models
         public double LiquidFlowKmolPerHr { get; set; }
         public double LiquidToGasRatio { get; set; }
         public double ReagentConcentrationMolPerL { get; set; }
-        public double TemperatureC { get; set; }
+
+        // Keep both temperatures explicit in the report model as well.
+        public double GasTemperatureC { get; set; }
+        public double LiquidTemperatureC { get; set; }
+
         public double PressureKPa { get; set; }
 
         // ── Models ──

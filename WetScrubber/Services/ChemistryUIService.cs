@@ -10,17 +10,27 @@ namespace WetScrubber.Services
 {
     // UI orchestration layer for the Chemistry Calculation page.
     // Never touches ApplicationDbContext directly (matches ChemistryController's
-    // pattern) — reads master data through IUnitOfWork, hands the numbers to
+    // pattern) — reads master data through IUnitOfWork and the authoritative
+    // Henry's-law lookup, hands the numbers to
     // ChemistryCalculationIntegration, and flattens the result into the
     // view-friendly ChemistryReportViewModel. No engineering number is
     // computed here; this class only wires inputs/outputs together.
     public class ChemistryUIService
     {
         private readonly UnitOfWorks _uow;
+        private readonly IHenrysLawLookup _henrysLawLookup;
 
-        public ChemistryUIService(IUnitOfWork uow)
+        public ChemistryUIService(
+            IUnitOfWork uow,
+            IHenrysLawLookup henrysLawLookup)
         {
-            _uow = uow as UnitOfWorks;
+            _uow = uow as UnitOfWorks
+                ?? throw new ArgumentException(
+                    "The supplied IUnitOfWork must be a UnitOfWorks instance.",
+                    nameof(uow));
+
+            _henrysLawLookup = henrysLawLookup
+                ?? throw new ArgumentNullException(nameof(henrysLawLookup));
         }
 
         // ── GET Calculation: build the empty form with dropdowns ───────
@@ -51,15 +61,25 @@ namespace WetScrubber.Services
                 throw new InvalidOperationException(
                     "Pollutant or scrubbing liquid not found.");
 
-            // The engine hard-rejects a non-positive Henry's constant. Catch it
-            // here with a clear message instead of letting ArgumentException
-            // bubble up as an unhandled 500 — this happens when the pollutant's
-            // master row was never given a DefaultHenrysLawConstant.
-            if (pollutant.DefaultHenrysLawConstant <= 0)
+            // The authoritative Henry's-law record is keyed by pollutant
+            // code and stores H_ReferenceAt25C as dimensionless Cg/Cl
+            // volatility-form data. Do not use Pollutant.DefaultHenrysLawConstant
+            // here because that value does not guarantee the same convention.
+            var henryData =
+                _henrysLawLookup.GetByPollutantCode(pollutant.Code);
+
+            if (henryData == null)
             {
                 throw new InvalidOperationException(
-                    $"'{pollutant.DisplayName}' has no Henry's Law constant set (currently 0). " +
-                    "Edit this pollutant on the Pollutants page and set a positive value before running a calculation.");
+                    $"No active authoritative Henry's Law record exists for pollutant '{pollutant.Code}'. " +
+                    "Add the pollutant to HenrysLawData before running a chemistry calculation.");
+            }
+
+            if (henryData.H_ReferenceAt25C <= 0)
+            {
+                throw new InvalidOperationException(
+                    $"The authoritative Henry's Law constant for pollutant '{pollutant.Code}' " +
+                    $"must be positive; received {henryData.H_ReferenceAt25C}.");
             }
 
             // Primary reaction for the pollutant/liquid pair supplies the
@@ -132,8 +152,15 @@ namespace WetScrubber.Services
                     PressureKPa =
                         form.PressureKPa,
 
+                    // IMPORTANT:
+                    // This is now the authoritative Henry's-law database
+                    // value in volatility form (Cg/Cl), not the legacy
+                    // Pollutant.DefaultHenrysLawConstant.
                     HenrysConstantAt25C =
-                        pollutant.DefaultHenrysLawConstant,
+                        henryData.H_ReferenceAt25C,
+
+                    HeatOfSolutionKJmol =
+                        henryData.HeatOfSolutionKJmol,
 
                     HenryConvention =
                         HenrysLawConvention.LiquidReferenced,
