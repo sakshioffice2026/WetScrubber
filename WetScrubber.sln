@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36429.23 d17.14
+VisualStudioVersion = 17.14.36429.23
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WetScrubber", "WetScrubber\WetScrubber.csproj", "{24C3D33B-E817-4522-8625-935817172070}"
 EndProject
@@ -18,6 +18,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WetScrubber.Repositories", "WetScrubber.Repositories\WetScrubber.Repositories.csproj", "{1F9C7055-FB08-43F9-9E99-539D2E406BE0}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WetScrubber.Business", "WetScrubber.Business\WetScrubber.Business.csproj", "{1DB95ADD-4348-498F-B4BC-A3CE32A155B6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "AI", "AI", "{33C83F79-C835-4E37-9BF0-D78A6A97B262}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EngineeringAI.Core", "EngineeringAI.Core\EngineeringAI.Core.csproj", "{4E9108D6-4E33-4F0B-B0D5-C1DC614F6FAD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,6 +49,10 @@ Global
 		{1DB95ADD-4348-498F-B4BC-A3CE32A155B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1DB95ADD-4348-498F-B4BC-A3CE32A155B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1DB95ADD-4348-498F-B4BC-A3CE32A155B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E9108D6-4E33-4F0B-B0D5-C1DC614F6FAD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E9108D6-4E33-4F0B-B0D5-C1DC614F6FAD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E9108D6-4E33-4F0B-B0D5-C1DC614F6FAD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E9108D6-4E33-4F0B-B0D5-C1DC614F6FAD}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -55,6 +63,7 @@ Global
 		{374CBD0A-2CC9-4224-B25A-696D930D5097} = {7C90A720-F23A-40EB-8C57-301A6D92EDFD}
 		{1F9C7055-FB08-43F9-9E99-539D2E406BE0} = {7C90A720-F23A-40EB-8C57-301A6D92EDFD}
 		{1DB95ADD-4348-498F-B4BC-A3CE32A155B6} = {7C90A720-F23A-40EB-8C57-301A6D92EDFD}
+		{4E9108D6-4E33-4F0B-B0D5-C1DC614F6FAD} = {33C83F79-C835-4E37-9BF0-D78A6A97B262}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0C546B2B-34CC-46D2-982D-73F4EC6C9F45}
