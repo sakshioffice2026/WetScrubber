@@ -4,7 +4,6 @@ namespace WetScrubber.Business.Thermodynamics
 {
     /// <summary>
     /// Reaction regime classification for reactive gas absorption.
-    /// Distinguishes physical from chemical, fast from slow.
     /// </summary>
     public enum ReactionRegime
     {
@@ -20,7 +19,6 @@ namespace WetScrubber.Business.Thermodynamics
     /// </summary>
     public sealed class AcidBasePair
     {
-        /// <summary>e.g., "SO2", "H2SO3"</summary>
         public string SpeciesCode { get; set; }
 
         /// <summary>First dissociation constant (Ka1 or Kb1)</summary>
@@ -29,206 +27,101 @@ namespace WetScrubber.Business.Thermodynamics
         /// <summary>Second dissociation constant (Ka2), if applicable</summary>
         public double? SecondDissociationConstant { get; set; }
 
-        /// <summary>pKa1 at 25°C (log10(Ka1))</summary>
+        /// <summary>pKa1 at 25 C, pKa1 = -log10(Ka1)</summary>
         public double Pka1_At25C { get; set; }
 
-        /// <summary>pKa2 at 25°C, if polyprotic</summary>
+        /// <summary>pKa2 at 25 C, if polyprotic</summary>
         public double? Pka2_At25C { get; set; }
 
         /// <summary>Temperature coefficient for pKa (dpKa/dT, per Kelvin)</summary>
-        public double TemperatureCoefficient { get; set; } = -0.002; // typical ~-0.002/K
+        public double TemperatureCoefficient { get; set; } = -0.002;
     }
 
     /// <summary>
-    /// pH calculation and acid-base equilibrium solver.
-    /// Handles single and polyprotic acids/bases.
+    /// pH calculation and acid-base equilibrium solver (monoprotic, with water autoionization).
     /// </summary>
     public sealed class PhChemistry
     {
-        public const double WaterKwAt25C = 1e-14; // Kw at 298.15 K
+        public const double WaterKwAt25C = 1e-14;
 
         public sealed class PhResult
         {
             public double pH { get; set; }
             public double pOH { get; set; }
-            public double HydroniumConcentrationMolL { get; set; }  // [H+]
-            public double HydroxideConcentrationMolL { get; set; }  // [OH-]
+            public double HydroniumConcentrationMolL { get; set; }
+            public double HydroxideConcentrationMolL { get; set; }
             public bool Converged { get; set; }
-            public string EquilibriumModel { get; set; } // "weak_acid", "strong_base", "buffer", etc.
-            public double ChargeBalance { get; set; }  // Should be ~0; deviation flags error
+            public string EquilibriumModel { get; set; }
+            /// <summary>Relative charge-balance residual; should be ~0.</summary>
+            public double ChargeBalance { get; set; }
         }
 
         /// <summary>
-        /// Calculate pH from acid concentration and Ka (weak acid case).
+        /// Weak acid HA : charge balance [H+] = [A-] + Kw/[H+],  [A-] = Ka*C/(Ka+[H+]).
         /// </summary>
-        public static PhResult WeakAcidPH(
-            double acidConcentrationMolL,
-            double Ka,
-            double temperatureC = 25.0)
+        public static PhResult WeakAcidPH(double acidConcentrationMolL, double Ka, double temperatureC = 25.0)
         {
-            if (Ka <= 0)
-                throw new ArgumentException("Ka must be positive");
+            if (Ka <= 0) throw new ArgumentException("Ka must be positive");
+            if (acidConcentrationMolL < 0) throw new ArgumentException("Concentration must be non-negative");
 
-            // HA ⇌ H+ + A−
-            // [H+] ≈ √(Ka * C) for weak acid with C >> Ka
-            double tempK = temperatureC + 273.15;
-            double Kw = GetWaterIonProduct(tempK);
-
-            double hConc;
-            if (acidConcentrationMolL < Ka * 0.01)
-            {
-                // Very weak or very dilute: use full quadratic
-                double discriminant = Ka * Ka + 4 * Ka * acidConcentrationMolL;
-                hConc = (-Ka + Math.Sqrt(discriminant)) / 2.0;
-            }
-            else
-            {
-                // Standard: [H+] ≈ √(Ka * C)
-                hConc = Math.Sqrt(Ka * acidConcentrationMolL);
-            }
-
-            hConc = Math.Max(hConc, 1e-14); // floor at water autoionization
-
-            double pH = -Math.Log10(hConc);
-            double pOH = Math.Log10(Kw) + Math.Log10(hConc);
-            double ohConc = Kw / hConc;
-
-            return new PhResult
-            {
-                pH = pH,
-                pOH = pOH,
-                HydroniumConcentrationMolL = hConc,
-                HydroxideConcentrationMolL = ohConc,
-                Converged = true,
-                EquilibriumModel = "weak_acid",
-                ChargeBalance = Math.Abs(hConc - ohConc) / Math.Max(hConc, 1e-12)
-            };
+            double kw = GetWaterIonProduct(temperatureC + 273.15);
+            double h = SolveMonoprotic(acidConcentrationMolL, Ka, kw, out bool converged);
+            return BuildResult(h, kw / h, kw, converged, "weak_acid", acidConcentrationMolL, Ka);
         }
 
         /// <summary>
-        /// Calculate pH from base concentration and Kb (weak base case).
+        /// Weak base B : charge balance [OH-] = [BH+] + Kw/[OH-],  [BH+] = Kb*C/(Kb+[OH-]).
         /// </summary>
-        public static PhResult WeakBasePH(
-            double baseConcentrationMolL,
-            double Kb,
-            double temperatureC = 25.0)
+        public static PhResult WeakBasePH(double baseConcentrationMolL, double Kb, double temperatureC = 25.0)
         {
-            if (Kb <= 0)
-                throw new ArgumentException("Kb must be positive");
+            if (Kb <= 0) throw new ArgumentException("Kb must be positive");
+            if (baseConcentrationMolL < 0) throw new ArgumentException("Concentration must be non-negative");
 
-            double tempK = temperatureC + 273.15;
-            double Kw = GetWaterIonProduct(tempK);
-
-            // B + H2O ⇌ BH+ + OH−
-            // [OH−] ≈ √(Kb * C)
-            double ohConc;
-            if (baseConcentrationMolL < Kb * 0.01)
-            {
-                double discriminant = Kb * Kb + 4 * Kb * baseConcentrationMolL;
-                ohConc = (-Kb + Math.Sqrt(discriminant)) / 2.0;
-            }
-            else
-            {
-                ohConc = Math.Sqrt(Kb * baseConcentrationMolL);
-            }
-
-            ohConc = Math.Max(ohConc, 1e-14);
-            double hConc = Kw / ohConc;
-            double pH = -Math.Log10(hConc);
-            double pOH = -Math.Log10(ohConc);
-
-            return new PhResult
-            {
-                pH = pH,
-                pOH = pOH,
-                HydroniumConcentrationMolL = hConc,
-                HydroxideConcentrationMolL = ohConc,
-                Converged = true,
-                EquilibriumModel = "weak_base",
-                ChargeBalance = Math.Abs(hConc - ohConc) / Math.Max(hConc, 1e-12)
-            };
+            double kw = GetWaterIonProduct(temperatureC + 273.15);
+            double oh = SolveMonoprotic(baseConcentrationMolL, Kb, kw, out bool converged);
+            return BuildResult(kw / oh, oh, kw, converged, "weak_base", baseConcentrationMolL, Kb);
         }
 
         /// <summary>
-        /// Calculate pH from strong acid concentration (complete dissociation).
+        /// Strong acid, complete dissociation: [H+] = (C + sqrt(C^2 + 4Kw)) / 2.
         /// </summary>
-        public static PhResult StrongAcidPH(
-            double acidConcentrationMolL,
-            double temperatureC = 25.0)
+        public static PhResult StrongAcidPH(double acidConcentrationMolL, double temperatureC = 25.0)
         {
-            if (acidConcentrationMolL < 0)
-                throw new ArgumentException("Concentration must be non-negative");
+            if (acidConcentrationMolL < 0) throw new ArgumentException("Concentration must be non-negative");
 
-            double tempK = temperatureC + 273.15;
-            double Kw = GetWaterIonProduct(tempK);
-
-            // Fully dissociates: [H+] = C_acid
-            double hConc = Math.Max(acidConcentrationMolL, 1e-14);
-            double ohConc = Kw / hConc;
-            double pH = -Math.Log10(hConc);
-            double pOH = Math.Log10(Kw) + Math.Log10(hConc);
-
-            return new PhResult
-            {
-                pH = pH,
-                pOH = pOH,
-                HydroniumConcentrationMolL = hConc,
-                HydroxideConcentrationMolL = ohConc,
-                Converged = true,
-                EquilibriumModel = "strong_acid",
-                ChargeBalance = 0
-            };
+            double kw = GetWaterIonProduct(temperatureC + 273.15);
+            double h = 0.5 * (acidConcentrationMolL + Math.Sqrt(acidConcentrationMolL * acidConcentrationMolL + 4.0 * kw));
+            return BuildResult(h, kw / h, kw, true, "strong_acid", 0.0, 0.0);
         }
 
         /// <summary>
-        /// Calculate pH from strong base concentration (complete dissociation).
+        /// Strong base, complete dissociation: [OH-] = (C + sqrt(C^2 + 4Kw)) / 2.
         /// </summary>
-        public static PhResult StrongBasePH(
-            double baseConcentrationMolL,
-            double temperatureC = 25.0)
+        public static PhResult StrongBasePH(double baseConcentrationMolL, double temperatureC = 25.0)
         {
-            if (baseConcentrationMolL < 0)
-                throw new ArgumentException("Concentration must be non-negative");
+            if (baseConcentrationMolL < 0) throw new ArgumentException("Concentration must be non-negative");
 
-            double tempK = temperatureC + 273.15;
-            double Kw = GetWaterIonProduct(tempK);
-
-            // Fully dissociates: [OH−] = C_base
-            double ohConc = Math.Max(baseConcentrationMolL, 1e-14);
-            double hConc = Kw / ohConc;
-            double pH = -Math.Log10(hConc);
-            double pOH = -Math.Log10(ohConc);
-
-            return new PhResult
-            {
-                pH = pH,
-                pOH = pOH,
-                HydroniumConcentrationMolL = hConc,
-                HydroxideConcentrationMolL = ohConc,
-                Converged = true,
-                EquilibriumModel = "strong_base",
-                ChargeBalance = 0
-            };
+            double kw = GetWaterIonProduct(temperatureC + 273.15);
+            double oh = 0.5 * (baseConcentrationMolL + Math.Sqrt(baseConcentrationMolL * baseConcentrationMolL + 4.0 * kw));
+            return BuildResult(kw / oh, oh, kw, true, "strong_base", 0.0, 0.0);
         }
 
         /// <summary>
-        /// Get water ion product Kw at arbitrary temperature (used by pH solver).
-        /// Approximation: ln(Kw) ≈ 48.1645 - 13445.93/T - 23.6521*ln(T)
-        /// At 298.15 K → Kw = 1.008e-14 ✓
+        /// Ion product of water, 0-100 C:
+        /// ln(Kw) = 148.9802 - 13847.26/T - 23.6521*ln(T)   (Kw in mol^2/L^2, T in K)
+        /// 298.15 K -> 1.0e-14, 373.15 K -> ~5.6e-13.
         /// </summary>
         public static double GetWaterIonProduct(double temperatureK)
         {
             if (temperatureK < 273.15 || temperatureK > 373.15)
-                throw new ArgumentException("Temperature out of valid range (0–100°C)");
+                throw new ArgumentException("Temperature out of valid range (0-100 C)");
 
-            // Coefficients for ln(Kw) = A - B/T - C*ln(T)
-            double lnKw = 48.1645 - 13445.93 / temperatureK - 23.6521 * Math.Log(temperatureK);
+            double lnKw = 148.9802 - 13847.26 / temperatureK - 23.6521 * Math.Log(temperatureK);
             return Math.Exp(lnKw);
         }
 
         /// <summary>
-        /// Temperature correction for pKa using simplified van't Hoff.
-        /// pKa(T) ≈ pKa(25°C) + d(pKa)/dT * (T - 25)
+        /// Linear pKa temperature correction: pKa(T) = pKa(25 C) + dpKa/dT * (T - 25).
         /// </summary>
         public static double GetTemperatureCorrectedPka(
             double pkaAt25C,
@@ -237,108 +130,146 @@ namespace WetScrubber.Business.Thermodynamics
         {
             return pkaAt25C + temperatureCoefficientPerK * (temperatureC - 25.0);
         }
-    }
 
-    /// <summary>
-    /// Enhancement factor for reactive absorption.
-    /// Hatta number and reaction regime determination.
-    /// </summary>
-    public sealed class EnhancementFactor
-    {
-        /// <summary>Result of enhancement factor calculation</summary>
-        public sealed class Result
+        // Solves  f(x) = x - Kw/x - K*C/(K + x) = 0  for x = [H+] (acid) or [OH-] (base).
+        // f is strictly increasing in x, so bisection in log-space is robust.
+        private static double SolveMonoprotic(double c, double k, double kw, out bool converged)
         {
-            /// <summary>Dimensionless Hatta number Ha = √(k*Cb/DAB) / (kL)</summary>
-            public double HattaNumber { get; set; }
+            double lo = 1e-16;
+            double hi = Math.Max(1.0, c + 1.0);
+            double mid = Math.Sqrt(lo * hi);
+            converged = false;
 
-            /// <summary>Enhancement factor E (dimensionless, typically 1 to 100+)</summary>
-            public double Factor { get; set; }
+            for (int i = 0; i < 300; i++)
+            {
+                mid = Math.Sqrt(lo * hi);
+                double f = mid - kw / mid - k * c / (k + mid);
+                if (f > 0) hi = mid; else lo = mid;
 
-            /// <summary>Regime classification</summary>
-            public ReactionRegime Regime { get; set; }
+                if (hi / lo < 1.0 + 1e-12)
+                {
+                    converged = true;
+                    break;
+                }
+            }
 
-            /// <summary>Was reaction fast/instantaneous?</summary>
-            public bool IsReactionLimited { get; set; }
+            return mid;
         }
 
-        /// <summary>
-        /// Estimate enhancement factor based on Hatta number.
-        /// 
-        /// Ha < 0.1       → E ≈ 1 (slow reaction, physical absorption)
-        /// Ha ~ 0.1-2     → E intermediate (transition regime)
-        /// Ha > 2-3       → E >> 1 (instantaneous, interface-limited)
-        /// 
-        /// For instantaneous reaction: E ≈ 1 + (kL / k_rxn) * (Cbulk / Cboundary)
-        /// </summary>
-        public static Result CalculateEnhancementFactor(
-            double reactionRateConstantS_Inv,     // k for n-th order (units depend on order)
-            double bulkReagentConcentrationMolL,  // Cb or [OH-], [H+], etc.
-            double liquidDiffusivityM2S,           // DAB liquid-phase
-            double liquidFilmCoeffMS,              // kL
-            int reactionOrder = 1)                 // typical first-order
+        private static PhResult BuildResult(
+            double h, double oh, double kw, bool converged, string model, double c, double k)
         {
-            if (liquidDiffusivityM2S <= 0)
-                throw new ArgumentException("Diffusivity must be positive");
-            if (liquidFilmCoeffMS <= 0)
-                throw new ArgumentException("kL must be positive");
-
-            // Hatta number (simplified for 1st order in A, bulk reagent reaction)
-            // Ha = √(k1 * Cb / DAB) / kL
-            // where k1 is effective rate constant, Cb is reagent concentration
-            double kEffective = reactionRateConstantS_Inv * bulkReagentConcentrationMolL;
-            double hattaNumber = Math.Sqrt(kEffective / liquidDiffusivityM2S) / liquidFilmCoeffMS;
-
-            // Regime and enhancement factor
-            double enhancementFactor;
-            ReactionRegime regime;
-
-            if (hattaNumber < 0.1)
-            {
-                enhancementFactor = 1.0; // no enhancement; physical absorption
-                regime = ReactionRegime.PhysicalAbsorption;
-            }
-            else if (hattaNumber < 2.0)
-            {
-                // Intermediate: E ≈ Ha / tan(Ha) for instantaneous (or similar)
-                // Simplified: E ≈ hattaNumber
-                enhancementFactor = Math.Sqrt(1.0 + hattaNumber * hattaNumber);
-                regime = ReactionRegime.FastReactionNearInterface;
-            }
+            double balance;
+            if (model == "weak_acid")
+                balance = Math.Abs(h - oh - k * c / (k + h)) / Math.Max(h, 1e-16);
+            else if (model == "weak_base")
+                balance = Math.Abs(oh - h - k * c / (k + oh)) / Math.Max(oh, 1e-16);
             else
-            {
-                // Fast/instantaneous: E ≈ Ha / tan(Ha) ≈ Ha for large Ha
-                enhancementFactor = hattaNumber / Math.Tanh(hattaNumber);
-                regime = ReactionRegime.VeryFastReactionInterface;
-            }
+                balance = 0.0;
 
-            return new Result
+            return new PhResult
             {
-                HattaNumber = hattaNumber,
-                Factor = Math.Min(enhancementFactor, 100.0), // cap unrealistic values
-                Regime = regime,
-                IsReactionLimited = hattaNumber > 2.0
+                pH = -Math.Log10(h),
+                pOH = -Math.Log10(oh),
+                HydroniumConcentrationMolL = h,
+                HydroxideConcentrationMolL = oh,
+                Converged = converged,
+                EquilibriumModel = model,
+                ChargeBalance = balance
             };
         }
     }
 
     /// <summary>
-    /// Reaction stoichiometry and reagent consumption tracker.
+    /// Enhancement factor for reactive absorption (film theory).
+    /// </summary>
+    public sealed class EnhancementFactor
+    {
+        public sealed class Result
+        {
+            /// <summary>Hatta number  Ha = sqrt(k * Cb^n * D_A) / kL  (dimensionless)</summary>
+            public double HattaNumber { get; set; }
+
+            /// <summary>Enhancement factor E (dimensionless, >= 1)</summary>
+            public double Factor { get; set; }
+
+            public ReactionRegime Regime { get; set; }
+
+            public bool IsReactionLimited { get; set; }
+        }
+
+        public const double MaxFactor = 1000.0;
+
+        /// <summary>
+        /// Pseudo-first-order enhancement, rate = k * C_A * C_B^n.
+        ///   k1 = k * Cb^n            [1/s]
+        ///   Ha = sqrt(k1 * D_A) / kL [-]
+        ///   E  = Ha / tanh(Ha)       [-]  (-> 1 as Ha -> 0, -> Ha for Ha >> 1)
+        /// Units: Cb in kmol/m3 (= mol/L); k in (m3/kmol)^n / s; D_A in m2/s; kL in m/s.
+        /// Cap E additionally with the instantaneous-reaction limit
+        /// (see ReactiveEnhancementService).
+        /// </summary>
+        public static Result CalculateEnhancementFactor(
+            double reactionRateConstant,
+            double bulkReagentConcentrationMolL,
+            double liquidDiffusivityM2S,
+            double liquidFilmCoeffMS,
+            int reactionOrder = 1)
+        {
+            if (liquidDiffusivityM2S <= 0)
+                throw new ArgumentException("Diffusivity must be positive");
+            if (liquidFilmCoeffMS <= 0)
+                throw new ArgumentException("kL must be positive");
+            if (reactionRateConstant < 0 || bulkReagentConcentrationMolL < 0)
+                throw new ArgumentException("Rate constant and concentration must be non-negative");
+
+            double k1 = reactionRateConstant * Math.Pow(bulkReagentConcentrationMolL, Math.Max(reactionOrder, 0));
+            double ha = Math.Sqrt(k1 * liquidDiffusivityM2S) / liquidFilmCoeffMS;
+
+            double e;
+            if (ha < 1e-6)
+                e = 1.0;
+            else if (ha > 20.0)
+                e = ha;
+            else
+                e = ha / Math.Tanh(ha);
+
+            ReactionRegime regime;
+            if (ha < 0.1)
+                regime = ReactionRegime.PhysicalAbsorption;
+            else if (ha < 0.3)
+                regime = ReactionRegime.SlowReactionLiquidBulk;
+            else if (ha < 3.0)
+                regime = ReactionRegime.FastReactionNearInterface;
+            else
+                regime = ReactionRegime.VeryFastReactionInterface;
+
+            return new Result
+            {
+                HattaNumber = ha,
+                Factor = Math.Min(Math.Max(e, 1.0), MaxFactor),
+                Regime = regime,
+                IsReactionLimited = ha > 3.0
+            };
+        }
+    }
+
+    /// <summary>
+    /// Reaction stoichiometry and reagent consumption.
     /// </summary>
     public sealed class ReactionStoichiometry
     {
-        /// <summary>e.g., SO2 + 2OH− → SO3²− + H2O (stoich coeff: 1, 2, 1)</summary>
+        /// <summary>e.g. SO2 + 2NaOH -> Na2SO3 + H2O  (pollutant coeff 1, reagent coeff 2)</summary>
         public sealed class ReactantRatio
         {
             public string Pollutant { get; set; }
             public string Reagent { get; set; }
-            public double PollutantCoeff { get; set; }    // e.g., 1 for SO2
-            public double ReagentCoeff { get; set; }      // e.g., 2 for OH−
-            public double ReagentConsumptionPerPollutant { get; set; } // Reagent / Pollutant
+            public double PollutantCoeff { get; set; }
+            public double ReagentCoeff { get; set; }
+            public double ReagentConsumptionPerPollutant { get; set; }
         }
 
-        /// <summary>
-        /// Calculate stoichiometric reagent demand.
-        /// </summary>
+        /// <summary>Stoichiometric reagent demand, kmol/h.</summary>
         public static double GetReagentDemand(
             double pollutantAbsorbedKmolPerHr,
             double pollutantStoichCoeff,
@@ -350,17 +281,24 @@ namespace WetScrubber.Business.Thermodynamics
             return pollutantAbsorbedKmolPerHr * (reagentStoichCoeff / pollutantStoichCoeff);
         }
 
-        /// <summary>
-        /// Calculate excess reagent factor and utilization.
-        /// If excess = 1.5, then 50% more than stoichiometric is supplied.
-        /// </summary>
-        public static double GetReagentUtilization(
+        /// <summary>Excess factor = supplied / stoichiometric demand (1.5 = 50 % excess).</summary>
+        public static double GetExcessFactor(
             double reagentSuppliedKmolPerHr,
             double reagentDemandedStoichKmolPerHr)
         {
             if (reagentDemandedStoichKmolPerHr <= 0)
                 return 0.0;
-            return Math.Min(reagentSuppliedKmolPerHr / reagentDemandedStoichKmolPerHr, 1.0);
+            return reagentSuppliedKmolPerHr / reagentDemandedStoichKmolPerHr;
+        }
+
+        /// <summary>Utilization = demand / supplied, limited to [0, 1].</summary>
+        public static double GetReagentUtilization(
+            double reagentSuppliedKmolPerHr,
+            double reagentDemandedStoichKmolPerHr)
+        {
+            if (reagentSuppliedKmolPerHr <= 0)
+                return 0.0;
+            return Math.Min(Math.Max(reagentDemandedStoichKmolPerHr / reagentSuppliedKmolPerHr, 0.0), 1.0);
         }
     }
 }

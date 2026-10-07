@@ -28,7 +28,9 @@ namespace WetScrubber.Business.Flowsheet
             bool liquidWired = liquidIn != null && liquidIn.MassFlowKgS > 0;
             double liquidFlowKgS = liquidWired ? liquidIn.MassFlowKgS : LiquidFlowKgS;
             double liquidInTempC = liquidWired ? liquidIn.TemperatureC : LiquidInletTempC;
-            var liquidLoading = liquidWired ? liquidIn.PollutantLoadingKgKg : new Dictionary<string, double>();
+            var liquidLoading = liquidWired
+                ? liquidIn.PollutantLoadingKgKg
+                : new Dictionary<string, double>();
 
             var pollutants = gasIn.PollutantPpmByCode
                 .Select(kv => new MultiPollutantIterativeSolver.PollutantInput
@@ -75,12 +77,39 @@ namespace WetScrubber.Business.Flowsheet
                 PollutantLoadingKgKg = result.OutletLiquidLoadingKgKg
             };
 
-            return new FlowsheetPorts { Gas = gasOut, Liquid = liquidOut };
+            return new FlowsheetPorts
+            {
+                Gas = gasOut,
+                Liquid = liquidOut
+            };
         }
 
-        private double MolWeight(string code) => code switch { "SO2" => 64, "H2S" => 34, "NH3" => 17, _ => 50 };
-        private double Henry(string code) => code switch { "SO2" => 1.5e5, "H2S" => 9.7e4, "NH3" => 58, _ => 1e5 };
-        private double HeatAbs(string code) => code switch { "SO2" => -40000, "H2S" => -45000, "NH3" => -38000, _ => -40000 };
+        private double MolWeight(string code) =>
+            code switch
+            {
+                "SO2" => 64,
+                "H2S" => 34,
+                "NH3" => 17,
+                _ => 50
+            };
+
+        private double Henry(string code) =>
+            code switch
+            {
+                "SO2" => 1.5e5,
+                "H2S" => 9.7e4,
+                "NH3" => 58,
+                _ => 1e5
+            };
+
+        private double HeatAbs(string code) =>
+            code switch
+            {
+                "SO2" => -40000,
+                "H2S" => -45000,
+                "NH3" => -38000,
+                _ => -40000
+            };
     }
 
     public sealed class CoolerUnitOp : IUnitOperation
@@ -105,7 +134,11 @@ namespace WetScrubber.Business.Flowsheet
             // Indirect heat exchanger — no gas/liquid contact, so the
             // liquid stream (if any is being wired through the chain
             // for downstream recycle) passes through untouched.
-            return new FlowsheetPorts { Gas = gasOut, Liquid = inlet.Liquid };
+            return new FlowsheetPorts
+            {
+                Gas = gasOut,
+                Liquid = inlet.Liquid
+            };
         }
     }
 
@@ -117,21 +150,35 @@ namespace WetScrubber.Business.Flowsheet
         public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
             var gasIn = inlet.Gas;
+
             var cleaned = gasIn.PollutantPpmByCode
-                .ToDictionary(kv => kv.Key, kv => kv.Value * (1.0 - SeparationEfficiency));
+                .ToDictionary(
+                    kv => kv.Key,
+                    kv => kv.Value * (1.0 - SeparationEfficiency));
 
             var gasOut = new ProcessStream
             {
-                ActualFlowM3Hr = gasIn.ActualFlowM3Hr * SeparationEfficiency,
-                TemperatureC = gasIn.TemperatureC,
-                PressurePa = gasIn.PressurePa,
-                PollutantPpmByCode = cleaned
+                ActualFlowM3Hr =
+                    gasIn.ActualFlowM3Hr * SeparationEfficiency,
+
+                TemperatureC =
+                    gasIn.TemperatureC,
+
+                PressurePa =
+                    gasIn.PressurePa,
+
+                PollutantPpmByCode =
+                    cleaned
             };
 
             // Droplet carryover to the liquid stream isn't modeled yet
             // (same unsourced-data stance as before) — liquid passes
             // through unchanged.
-            return new FlowsheetPorts { Gas = gasOut, Liquid = inlet.Liquid };
+            return new FlowsheetPorts
+            {
+                Gas = gasOut,
+                Liquid = inlet.Liquid
+            };
         }
     }
 }

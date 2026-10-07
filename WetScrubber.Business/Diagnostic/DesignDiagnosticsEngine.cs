@@ -6,50 +6,31 @@ namespace WetScrubber.Business.Diagnostics
     /// Deterministic "symptom → diagnosis → recommendation" rule table for
     /// wet scrubber designs.
     ///
-    /// This is the engineering equivalent of a doctor's reference
-    /// guidelines: it does not invent anything per-design. It evaluates the
-    /// numbers the calculation engine already produced against a fixed set
-    /// of thresholds and returns whichever findings apply.
-    ///
-    /// IMPORTANT
-    /// =========
-    /// The thresholds below are a starting draft based on common scrubber
-    /// design practice (see e.g. Perry's Chemical Engineers' Handbook,
-    /// packed-tower and venturi design chapters). They should be reviewed
-    /// and, where necessary, corrected by an engineer with domain
-    /// expertise before this is relied on for real designs — the same way
-    /// a hospital validates its clinical reference ranges rather than
-    /// trusting a first draft blindly.
+    /// The calculation engine remains the source of record. This class only
+    /// evaluates calculated values against deterministic engineering checks.
     ///
     /// No AI is involved anywhere in this class.
     /// </summary>
     public sealed class DesignDiagnosticsEngine : IDesignDiagnosticsEngine
     {
-        // ── Thresholds (review with a scrubber design SME) ───────────
         private const double LowAbsorptionFactorThreshold = 1.2;
 
-        // "little margin" = actual L/G within this multiple of the minimum
+        // Actual L/G must be at least this multiple of the calculated minimum
+        // before the design is considered to have the requested operating
+        // margin.
         private const double TightLGMarginMultiple = 1.15;
 
-        // Typical upper bound for total pressure drop, by scrubber type (Pa).
         private const double PackedTowerPressureDropCeilingPa = 3000.0;
         private const double VenturiPressureDropCeilingPa = 8000.0;
         private const double SprayTowerPressureDropCeilingPa = 1500.0;
 
-        // Fallback target when a design has no pollutant record with an
-        // explicit TargetRemovalEfficiency (matches PollutantStream's own
-        // default of 95%). Used only as a floor for the check — never
-        // silently skip evaluating removal efficiency just because a
-        // target wasn't set.
-
-        // Margins layered on top of a computed minimum before it's shown
-        // as a suggested value — landing exactly on a threshold still
-        // reads as a "just cleared the exam" design, not a safe one.
         private const double PackingHeightSuggestionMultiple = 1.5;
         private const double AbsorptionFactorSuggestionMargin = 1.05;
         private const double RemovalEfficiencySuggestionMargin = 1.05;
 
         private const string LiquidToGasRatioField = "LiquidToGasRatio";
+
+        private const double MaxPlausiblePackingHeightM = 30.0;
 
         public IReadOnlyList<DesignFinding> Evaluate(DesignMetrics metrics)
         {
@@ -63,18 +44,16 @@ namespace WetScrubber.Business.Diagnostics
             EvaluateRemovalEfficiency(metrics, findings);
 
             EvaluatePackingAndSlurryProvenance(metrics, findings);
+
             return findings;
         }
 
-        // Packed-tower designs always produce a nonzero AbsorptionFactor and
-        // MinLGRatio when RunCalculation has actually run. If both are still
-        // zero, this row predates the columns being persisted (or the design
-        // was never recalculated after this feature shipped) — flag it
-        // rather than silently reporting "no findings", which would read as
-        // a clean bill of health instead of missing data.
-        private static void EvaluateStaleDiagnosticsData(DesignMetrics m, List<DesignFinding> findings)
+        private static void EvaluateStaleDiagnosticsData(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
-            if (m.ScrubberType != "Packed Tower") return;
+            if (m.ScrubberType != "Packed Tower")
+                return;
 
             if (m.AbsorptionFactor <= 0 && m.MinLGRatio <= 0)
             {
@@ -83,25 +62,20 @@ namespace WetScrubber.Business.Diagnostics
                     Code = "DIAGNOSTICS_DATA_STALE",
                     Severity = FindingSeverity.Info,
                     Symptom = "Absorption factor and minimum L/G ratio are both zero.",
-                    Diagnosis = "This design has not been recalculated since diagnostic tracking was added, so the checks below could not run.",
-                    Recommendation = "Re-run the calculation for this design, then regenerate the report."
+                    Diagnosis =
+                        "This design has not been recalculated since diagnostic tracking was added, so the checks below could not run.",
+                    Recommendation =
+                        "Re-run the calculation for this design, then regenerate the report."
                 });
             }
         }
 
-        // No real packed tower is built anywhere near this tall. If the
-        // engine outputs one anyway, it almost always means the L/G ratio
-        // is sitting right at (or past) the theoretical minimum — the
-        // "pinch point" where infinite packing height is required for the
-        // requested removal. This check is deliberately independent of
-        // the AbsorptionFactor/L-G-margin rules above: if those rules
-        // have a unit mismatch and miss the pinch condition, this one
-        // still catches the physically-impossible result it produces.
-        private const double MaxPlausiblePackingHeightM = 30.0;
-
-        private static void EvaluatePackingHeightPlausibility(DesignMetrics m, List<DesignFinding> findings)
+        private static void EvaluatePackingHeightPlausibility(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
-            if (m.PackingHeight <= MaxPlausiblePackingHeightM) return;
+            if (m.PackingHeight <= MaxPlausiblePackingHeightM)
+                return;
 
             double? suggested = m.MinLGRatio > 0
                 ? m.MinLGRatio * PackingHeightSuggestionMultiple
@@ -112,27 +86,31 @@ namespace WetScrubber.Business.Diagnostics
                 Code = "PACKING_HEIGHT_UNREALISTIC",
                 Severity = FindingSeverity.Critical,
                 Symptom = $"Calculated packing height is {m.PackingHeight:F1} m.",
-                Diagnosis = "This exceeds any physically buildable packed tower and indicates the design is operating at or beyond the minimum L/G ratio (the absorption pinch point), where packing height requirements approach infinity.",
-                Recommendation = "Increase the liquid-to-gas ratio well above the calculated minimum, or relax the target outlet concentration, then recalculate.",
+                Diagnosis =
+                    "This exceeds any physically buildable packed tower and indicates the design is operating at or beyond the minimum L/G ratio (the absorption pinch point), where packing height requirements approach infinity.",
+                Recommendation =
+                    "Increase the liquid-to-gas ratio well above the calculated minimum, or relax the target outlet concentration, then recalculate.",
                 AffectedFields = new[] { LiquidToGasRatioField },
                 SuggestedValue = suggested,
                 SuggestedValueLabel = suggested is double s
-                    ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}; min. viable is {m.MinLGRatio:F2})"
+                    ? $">= {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}; min. viable is {m.MinLGRatio:F2})"
                     : null
             });
         }
 
-        private static void EvaluateAbsorptionFactor(DesignMetrics m, List<DesignFinding> findings)
+        private static void EvaluateAbsorptionFactor(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
-            if (m.AbsorptionFactor <= 0) return; // not applicable (e.g. venturi/spray tower)
+            if (m.AbsorptionFactor <= 0)
+                return;
 
             if (m.AbsorptionFactor < LowAbsorptionFactorThreshold)
             {
-                // Absorption factor scales ~linearly with L/G ratio (all
-                // else held constant), so the L/G needed to clear the
-                // threshold scales the same way the shortfall does.
                 double? suggested = m.ActualLGRatio > 0
-                    ? m.ActualLGRatio * (LowAbsorptionFactorThreshold / m.AbsorptionFactor) * AbsorptionFactorSuggestionMargin
+                    ? m.ActualLGRatio
+                        * (LowAbsorptionFactorThreshold / m.AbsorptionFactor)
+                        * AbsorptionFactorSuggestionMargin
                     : null;
 
                 findings.Add(new DesignFinding
@@ -140,40 +118,78 @@ namespace WetScrubber.Business.Diagnostics
                     Code = "ABSORPTION_FACTOR_LOW",
                     Severity = FindingSeverity.Warning,
                     Symptom = $"Absorption factor is {m.AbsorptionFactor:F2}.",
-                    Diagnosis = "Liquid flow is insufficient for reliable absorption.",
-                    Recommendation = "Increase the L/G ratio or switch to a more reactive scrubbing liquid.",
+                    Diagnosis =
+                        "The liquid-to-gas ratio is too low to provide a reliable absorption driving force at the calculated conditions.",
+                    Recommendation =
+                        "Increase the L/G ratio or switch to a more reactive scrubbing liquid.",
                     AffectedFields = new[] { LiquidToGasRatioField },
                     SuggestedValue = suggested,
                     SuggestedValueLabel = suggested is double s
-                        ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
+                        ? $">= {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
                         : null
                 });
             }
         }
 
-        private static void EvaluateLGMargin(DesignMetrics m, List<DesignFinding> findings)
+        private static void EvaluateLGMargin(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
-            if (m.MinLGRatio <= 0 || m.ActualLGRatio <= 0) return; // not applicable
+            if (m.MinLGRatio <= 0 || m.ActualLGRatio <= 0)
+                return;
 
             double requiredMargin = m.MinLGRatio * TightLGMarginMultiple;
 
             if (m.ActualLGRatio < requiredMargin)
             {
+                bool materiallyBelowMinimum =
+                    m.ActualLGRatio < m.MinLGRatio;
+
+                string symptom;
+                string diagnosis;
+                string recommendation;
+
+                if (materiallyBelowMinimum)
+                {
+                    symptom =
+                        $"Actual L/G ratio ({m.ActualLGRatio:F2}) is below the minimum required ({m.MinLGRatio:F2}).";
+
+                    diagnosis =
+                        "The liquid flow is substantially below the calculated minimum required for the stated absorption duty. The design does not have sufficient liquid-to-gas capacity to support the requested performance.";
+
+                    recommendation =
+                        "Increase the liquid flow rate to above the calculated minimum and re-run the calculation. Do not treat this condition as a flooding diagnosis.";
+                }
+                else
+                {
+                    symptom =
+                        $"Actual L/G ratio ({m.ActualLGRatio:F2}) is close to the minimum required ({m.MinLGRatio:F2}).";
+
+                    diagnosis =
+                        "The design has limited operating margin above the calculated minimum liquid-to-gas ratio.";
+
+                    recommendation =
+                        "Increase the liquid flow rate or otherwise provide additional operating margin, then re-run the calculation.";
+                }
+
                 findings.Add(new DesignFinding
                 {
                     Code = "LG_MARGIN_TIGHT",
                     Severity = FindingSeverity.Warning,
-                    Symptom = $"Actual L/G ratio ({m.ActualLGRatio:F2}) is close to the minimum required ({m.MinLGRatio:F2}).",
-                    Diagnosis = "The design has little margin — flooding risk under upset conditions.",
-                    Recommendation = "Increase the liquid flow rate or reduce the gas velocity.",
+                    Symptom = symptom,
+                    Diagnosis = diagnosis,
+                    Recommendation = recommendation,
                     AffectedFields = new[] { LiquidToGasRatioField },
                     SuggestedValue = requiredMargin,
-                    SuggestedValueLabel = $"≥ {requiredMargin:F2} L/m³ gas (currently {m.ActualLGRatio:F2}; min. viable is {m.MinLGRatio:F2})"
+                    SuggestedValueLabel =
+                        $">= {requiredMargin:F2} L/m³ gas (currently {m.ActualLGRatio:F2}; min. viable is {m.MinLGRatio:F2})"
                 });
             }
         }
 
-        private static void EvaluatePressureDrop(DesignMetrics m, List<DesignFinding> findings)
+        private static void EvaluatePressureDrop(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
             double? ceiling = m.ScrubberType switch
             {
@@ -185,28 +201,24 @@ namespace WetScrubber.Business.Diagnostics
 
             if (ceiling.HasValue && m.PressureDrop > ceiling.Value)
             {
-                // No single input field maps cleanly to "tower diameter" —
-                // that's a calculated output, not something entered
-                // directly — so this stays qualitative rather than
-                // pointing at a field that doesn't actually control it.
                 findings.Add(new DesignFinding
                 {
                     Code = "PRESSURE_DROP_HIGH",
                     Severity = FindingSeverity.Warning,
-                    Symptom = $"Total pressure drop is {m.PressureDrop:F0} Pa, above the typical range for a {m.ScrubberType.ToLowerInvariant()} ({ceiling.Value:F0} Pa).",
-                    Diagnosis = "Excess fan energy cost, with possible flooding risk.",
-                    Recommendation = "Consider a larger tower diameter or lower-pressure-drop packing."
+                    Symptom =
+                        $"Total pressure drop is {m.PressureDrop:F0} Pa, above the typical range for a {m.ScrubberType.ToLowerInvariant()} ({ceiling.Value:F0} Pa).",
+                    Diagnosis =
+                        "Excess fan energy cost, with possible hydraulic operating concerns.",
+                    Recommendation =
+                        "Consider a larger tower diameter or lower-pressure-drop packing."
                 });
             }
         }
 
-        private static void EvaluateRemovalEfficiency(DesignMetrics m, List<DesignFinding> findings)
+        private static void EvaluateRemovalEfficiency(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
-            // Falls back to the conventional 95% removal target when no
-            // pollutant record is available, rather than silently skipping
-            // this check. A missing target must never be read as "this
-            // design is fine" — that's the one failure mode this whole
-            // engine exists to avoid.
             if (!(m.TargetRemovalEfficiency is double t) || t <= 0)
                 return;
 
@@ -214,41 +226,48 @@ namespace WetScrubber.Business.Diagnostics
 
             if (m.RemovalEfficiency < target)
             {
-                // Rough heuristic, not an NTU inversion: scales L/G by the
-                // same fraction the design is short of its efficiency
-                // target. Deliberately labeled "approximate" — good
-                // enough to give a non-expert a starting number, not a
-                // substitute for re-running the real calculation.
-                double? suggested = (m.ActualLGRatio > 0 && m.RemovalEfficiency > 0)
-                    ? m.ActualLGRatio * (target / m.RemovalEfficiency) * RemovalEfficiencySuggestionMargin
-                    : null;
+                double? suggested =
+                    (m.ActualLGRatio > 0 && m.RemovalEfficiency > 0)
+                        ? m.ActualLGRatio
+                            * (target / m.RemovalEfficiency)
+                            * RemovalEfficiencySuggestionMargin
+                        : null;
 
                 findings.Add(new DesignFinding
                 {
                     Code = "REMOVAL_EFFICIENCY_BELOW_TARGET",
                     Severity = FindingSeverity.Critical,
-                    Symptom = $"Removal efficiency is {m.RemovalEfficiency:F2}%, below the target of {target:F2}%.",
-                    Diagnosis = "The design will not meet its stated removal goal.",
-                    Recommendation = "Increase NTU (taller packing) or increase the L/G ratio.",
+                    Symptom =
+                        $"Removal efficiency is {m.RemovalEfficiency:F2}%, below the target of {target:F2}%.",
+                    Diagnosis =
+                        "The calculated mass-transfer performance is insufficient to meet the stated pollutant removal target.",
+                    Recommendation =
+                        "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.",
                     AffectedFields = new[] { LiquidToGasRatioField },
                     SuggestedValue = suggested,
                     SuggestedValueLabel = suggested is double s
-                        ? $"≥ {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
+                        ? $">= {s:F2} L/m³ gas (currently {m.ActualLGRatio:F2}) — approximate, re-run the calculation to confirm"
                         : null
                 });
             }
         }
-        private static void EvaluatePackingAndSlurryProvenance(DesignMetrics m, List<DesignFinding> findings)
+
+        private static void EvaluatePackingAndSlurryProvenance(
+            DesignMetrics m,
+            List<DesignFinding> findings)
         {
-            if (m.ScrubberType == "Packed Tower" && string.IsNullOrWhiteSpace(m.PackingCode))
+            if (m.ScrubberType == "Packed Tower" &&
+                string.IsNullOrWhiteSpace(m.PackingCode))
             {
                 findings.Add(new DesignFinding
                 {
                     Code = "PACKING_SELECTION_MISSING",
                     Severity = FindingSeverity.Warning,
                     Symptom = "No packing selection is stored with this design.",
-                    Diagnosis = "The calculation used the legacy default packing, so the result cannot be traced to a selected catalog record.",
-                    Recommendation = "Select a packing material and re-run the calculation before engineering review."
+                    Diagnosis =
+                        "The calculation used the legacy default packing, so the result cannot be traced to a selected catalog record.",
+                    Recommendation =
+                        "Select a packing material and re-run the calculation before engineering review."
                 });
             }
 
@@ -258,9 +277,12 @@ namespace WetScrubber.Business.Diagnostics
                 {
                     Code = "STRUCTURED_PACKING_HETP_ESTIMATE",
                     Severity = FindingSeverity.Info,
-                    Symptom = "Structured-packing height was estimated from nominal HETP.",
-                    Diagnosis = "Nominal HETP is a vendor/application-specific performance value, not a universal correlation.",
-                    Recommendation = "Confirm HETP against the selected vendor's hydraulic and mass-transfer data at the design loads."
+                    Symptom =
+                        "Structured-packing height was estimated from nominal HETP.",
+                    Diagnosis =
+                        "Nominal HETP is a vendor/application-specific performance value, not a universal correlation.",
+                    Recommendation =
+                        "Confirm HETP against the selected vendor's hydraulic and mass-transfer data at the design loads."
                 });
             }
 
@@ -270,9 +292,12 @@ namespace WetScrubber.Business.Diagnostics
                 {
                     Code = "LIMESTONE_SLURRY_HIGH_SOLIDS",
                     Severity = FindingSeverity.Warning,
-                    Symptom = $"Limestone solids loading is {m.SolidsLoadingWtPercent:F1} wt%.",
-                    Diagnosis = "High solids loading raises apparent viscosity and increases plugging, settling, and slurry-distribution risk.",
-                    Recommendation = "Verify recirculation velocity, agitator duty, nozzle passage size, and vendor fouling limits."
+                    Symptom =
+                        $"Limestone solids loading is {m.SolidsLoadingWtPercent:F1} wt%.",
+                    Diagnosis =
+                        "High solids loading raises apparent viscosity and increases plugging, settling, and slurry-distribution risk.",
+                    Recommendation =
+                        "Verify recirculation velocity, agitator duty, nozzle passage size, and vendor fouling limits."
                 });
             }
         }

@@ -163,8 +163,8 @@ namespace WetScrubber.Business.MassTransfer
                         double absorbedKmolS = removalFrac * pollutantFlowKmolS;
                         double absorbedKgS = absorbedKmolS * poll.MolecularWeight / 1000.0;
 
-                        // Heat from this pollutant
-                        double heatKW = absorbedKmolS * Math.Abs(poll.HeatOfAbsorptionKJKmol) / 1000.0;
+                        // Heat from this pollutant: kmol/s * kJ/kmol = kJ/s = kW
+                        double heatKW = absorbedKmolS * Math.Abs(poll.HeatOfAbsorptionKJKmol);
                         segmentHeatKW += heatKW;
 
                         segment.Pollutants[poll.Code] = new PollutantSegmentState
@@ -181,7 +181,7 @@ namespace WetScrubber.Business.MassTransfer
                     }
 
                     // Shared liquid temperature rise from sum of all pollutants
-                    double dT = segmentHeatKW * 3600.0 / (input.LiquidMassFlowKgS * LiquidHeatCapacityKJKgC);
+                    double dT = segmentHeatKW / (input.LiquidMassFlowKgS * LiquidHeatCapacityKJKgC);
                     liquidTempProfile[seg + 1] = liquidTempProfile[seg] + dT;
 
                     segment.LiquidOutletTempC = liquidTempProfile[seg + 1];

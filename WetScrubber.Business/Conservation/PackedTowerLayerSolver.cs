@@ -123,18 +123,22 @@ namespace WetScrubber.Business.Conservation
 
                 double yOutComputed = y;
 
-                // ── Rebuild liquid temperature profile from this pass's
-                //    absorption profile (liquid enters at the top, so its
-                //    cumulative pickup at height z is G·(y(z) - y_out)). ──
+                // ── Rebuild liquid temperature profile layer by layer.
+                //    Liquid enters at the top (index layerCount) at the inlet
+                //    temperature and flows down; each layer's heat pickup is
+                //    G·(y(z_i) - y(z_i+1)) and is added to the temperature
+                //    leaving the layer above it, not to the fixed inlet T. ──
                 var newLiquidTemp = new double[layerCount + 1];
-                for (int i = 0; i <= layerCount; i++)
+                newLiquidTemp[layerCount] = inletLiquidTemperatureK;
+                for (int i = layerCount - 1; i >= 0; i--)
                 {
-                    double yAtLayer = layers[i].GasMoleFraction;
-                    double molesAbsorbedKmolPerHr = gasMolarFluxKmolM2Hr * Math.Max(yAtLayer - yOutComputed, 0.0);
+                    double yBelow = layers[i].GasMoleFraction;
+                    double yAbove = layers[i + 1].GasMoleFraction;
+                    double layerAbsorbedKmolPerHr = gasMolarFluxKmolM2Hr * Math.Max(yBelow - yAbove, 0.0);
                     var thermal = HeatOfAbsorptionModel.TryCalculate(
-                        molesAbsorbedKmolPerHr / 3600.0, heatOfSolutionKJmol,
-                        liquidMassFluxKgM2Hr / 3600.0, liquidSpecificHeatKJKgK, inletLiquidTemperatureK);
-                    newLiquidTemp[i] = thermal?.OutletLiquidTemperatureK ?? inletLiquidTemperatureK;
+                        layerAbsorbedKmolPerHr / 3600.0, heatOfSolutionKJmol,
+                        liquidMassFluxKgM2Hr / 3600.0, liquidSpecificHeatKJKgK, newLiquidTemp[i + 1]);
+                    newLiquidTemp[i] = thermal?.OutletLiquidTemperatureK ?? newLiquidTemp[i + 1];
                 }
 
                 double maxTempShift = 0.0;
@@ -190,9 +194,12 @@ namespace WetScrubber.Business.Conservation
 
             var allLayers = new List<LayerProfile>();
             var yVecCurrent = new Dictionary<string, double>(inletGasComposition.MoleFractions);
+            bool converged = false;
+            int iterationsUsed = 0;
 
             for (int iter = 0; iter < maxIterations; iter++)
             {
+                iterationsUsed = iter + 1;
                 var layers = new List<LayerProfile>();
                 yVecCurrent = new Dictionary<string, double>(inletGasComposition.MoleFractions);
                 var xVecCurrent = new Dictionary<string, double>(inletLiquidComposition.MoleFractions);
@@ -225,14 +232,9 @@ namespace WetScrubber.Business.Conservation
                             yVecCurrent[code] = Math.Max(yVecCurrent[code] + dyVec[code], 0);
                     }
 
-                    double normSum = yVecCurrent.Values.Sum();
-                    if (normSum > 0)
-                        foreach (var code in yVecCurrent.Keys.ToList())
-                            yVecCurrent[code] /= normSum;
-
                     double dT = 0;
                     if (heatOfSolutionKJmol.HasValue && totalAbsorbedMoles > 0)
-                        dT = (totalAbsorbedMoles * heatOfSolutionKJmol.Value) / Math.Max(liquidMassFluxKgM2Hr, 1e-9) / Math.Max(liquidSpecificHeatKJKgK, 1e-9);
+                        dT = (totalAbsorbedMoles * 1000.0 * Math.Abs(heatOfSolutionKJmol.Value)) / Math.Max(liquidMassFluxKgM2Hr, 1e-9) / Math.Max(liquidSpecificHeatKJKgK, 1e-9);
 
                     tLocal = Math.Min(tLocal + Math.Abs(dT), 373.15);
                     liquidTempByLayer[layerIdx + 1] = tLocal;
@@ -255,13 +257,17 @@ namespace WetScrubber.Business.Conservation
                 yOutEstimate = new Dictionary<string, double>(yVecCurrent);
                 allLayers = layers;
 
-                if (maxYShift < convergenceTolerance) break;
+                if (maxYShift < convergenceTolerance)
+                {
+                    converged = true;
+                    break;
+                }
             }
 
             return new TowerSolverResult
             {
-                Converged = true,
-                IterationsUsed = maxIterations,
+                Converged = converged,
+                IterationsUsed = iterationsUsed,
                 OutletGasMoleFraction = yVecCurrent.GetValueOrDefault("POLLUTANT", 0),
                 OutletLiquidTemperatureK = liquidTempByLayer[layerCount],
                 Layers = allLayers

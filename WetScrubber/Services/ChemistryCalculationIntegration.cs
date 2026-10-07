@@ -45,9 +45,14 @@ namespace WetScrubber.Business.Services
             public double InletLiquidDiffusivityM2S { get; set; }
 
             // ── Solvent & Reagent ──
-            public string SolventCode { get; set; }  // "H2O", etc.
+            public string SolventCode { get; set; }
             public string ReagentCode { get; set; }
             public double ReagentConcentrationMolPerL { get; set; }
+
+            // Stoichiometric amount of reagent required per mole of absorbed
+            // pollutant. Sourced from the curated pollutant/liquid reaction
+            // pair by ChemistryUIService.
+            public double ReagentStoichiometricRatio { get; set; } = 1.0;
 
             // ── Thermodynamics ──
             public double TemperatureC { get; set; }
@@ -65,8 +70,8 @@ namespace WetScrubber.Business.Services
 
             // ── Chemistry Options ──
             public bool IncludeReactiveAbsorption { get; set; } = false;
-            public double? ReactionRateConstantS_Inv { get; set; }  // if reactive
-            public double? BulkReagentConcentrationMolL { get; set; }  // if reactive
+            public double? ReactionRateConstantS_Inv { get; set; }
+            public double? BulkReagentConcentrationMolL { get; set; }
             public int ReactionOrder { get; set; } = 1;
 
             // ── Flags ──
@@ -182,16 +187,24 @@ namespace WetScrubber.Business.Services
             if (input.Packing == null || !input.Packing.IsComplete)
             {
                 result.IsValid = false;
-                findings.Add("MASS TRANSFER: packing and tower data (area, size, critical surface tension, tower area, mass flows) are required for Onda KGa/kL.");
+                findings.Add(
+                    "MASS TRANSFER: packing and tower data (area, size, critical surface tension, tower area, mass flows) are required for Onda KGa/kL.");
                 result.AllFindings = findings;
                 return result;
             }
 
             double tempK = input.TemperatureC + 273.15;
-            double hYX = input.HenryConvention == HenrysLawConvention.GasReferenced
-                ? 1.0 / henryResult.Value
-                : henryResult.Value;
-            double hCgCl = HenrysConstantUnits.MoleFractionRatioToCgOverCl(hYX, tempK, input.PressureKPa);
+
+            double hYX =
+                input.HenryConvention == HenrysLawConvention.GasReferenced
+                    ? 1.0 / henryResult.Value
+                    : henryResult.Value;
+
+            double hCgCl =
+                HenrysConstantUnits.MoleFractionRatioToCgOverCl(
+                    hYX,
+                    tempK,
+                    input.PressureKPa);
 
             var fluid = new MassTransferFluidInput
             {
@@ -205,258 +218,529 @@ namespace WetScrubber.Business.Services
                 HenrysDimensionless = hCgCl
             };
 
-            var physicalCoeffs = MassTransferCoefficientProvider.Compute(input.Packing, fluid, tempK, 1.0);
+            var physicalCoeffs =
+                MassTransferCoefficientProvider.Compute(
+                    input.Packing,
+                    fluid,
+                    tempK,
+                    1.0);
 
             double enhancementFactor = 1.0;
+
             if (input.IncludeReactiveAbsorption)
             {
-                result.Enhancement = ReactiveEnhancementService.Compute(new ReactiveEnhancementInput
-                {
-                    PollutantCode = input.PollutantCode,
-                    Reagent = input.Reagent,
-                    ReagentConcentrationEqPerL = input.ReagentEquivalentsPerL,
-                    LiquidFilmCoeffMS = physicalCoeffs.LiquidFilmCoeffMS,
-                    PollutantLiquidDiffusivityM2S = input.InletLiquidDiffusivityM2S,
-                    HenrysDimensionless = hCgCl,
-                    GasPartialPressureKPa = input.InletGasMoleFractionPollutant * input.PressureKPa,
-                    TemperatureK = tempK,
-                    ReactionRateConstantS_Inv = input.ReactionRateConstantS_Inv,
-                    ReactionOrder = input.ReactionOrder
-                });
-                enhancementFactor = result.Enhancement.Factor;
+                result.Enhancement =
+                    ReactiveEnhancementService.Compute(
+                        new ReactiveEnhancementInput
+                        {
+                            PollutantCode = input.PollutantCode,
+                            Reagent = input.Reagent,
+                            ReagentConcentrationEqPerL =
+                                input.ReagentEquivalentsPerL,
+                            LiquidFilmCoeffMS =
+                                physicalCoeffs.LiquidFilmCoeffMS,
+                            PollutantLiquidDiffusivityM2S =
+                                input.InletLiquidDiffusivityM2S,
+                            HenrysDimensionless = hCgCl,
+                            GasPartialPressureKPa =
+                                input.InletGasMoleFractionPollutant *
+                                input.PressureKPa,
+                            TemperatureK = tempK,
+                            ReactionRateConstantS_Inv =
+                                input.ReactionRateConstantS_Inv,
+                            ReactionOrder =
+                                input.ReactionOrder
+                        });
+
+                enhancementFactor =
+                    result.Enhancement.Factor;
 
                 if (!result.Enhancement.ModelAvailable)
-                    findings.Add($"REACTION: {result.Enhancement.Note}");
+                    findings.Add(
+                        $"REACTION: {result.Enhancement.Note}");
             }
 
-            result.MassTransfer = MassTransferCoefficientProvider.Compute(input.Packing, fluid, tempK, enhancementFactor);
+            result.MassTransfer =
+                MassTransferCoefficientProvider.Compute(
+                    input.Packing,
+                    fluid,
+                    tempK,
+                    enhancementFactor);
 
-            result.EquilibriumValidation = ChemistryValidityChecker.ValidateEquilibriumAndMassTransfer(
-                henryResult.Value,
-                (double)input.HenryConvention,
-                1.0,  // activity coeff (assume ideal for now)
-                result.MassTransfer.GasSideKgaKmolM3HrKPa,
-                input.InletGasMoleFractionPollutant - henryResult.Value * input.InletLiquidMoleFraction);
+            result.EquilibriumValidation =
+                ChemistryValidityChecker.ValidateEquilibriumAndMassTransfer(
+                    henryResult.Value,
+                    (double)input.HenryConvention,
+                    1.0,
+                    result.MassTransfer.GasSideKgaKmolM3HrKPa,
+                    input.InletGasMoleFractionPollutant -
+                    henryResult.Value *
+                    input.InletLiquidMoleFraction);
 
             if (!result.EquilibriumValidation.IsValid)
             {
-                findings.Add("EQUILIBRIUM VALIDATION FAILED");
+                findings.Add(
+                    "EQUILIBRIUM VALIDATION FAILED");
             }
 
             // ════════════════════════════════════════════════════════════════
             // STEP 3: Solve Tower with Pinch Detection (Sections 9-10)
             // ════════════════════════════════════════════════════════════════
-            double targetOutletFraction = (100.0 - input.TargetRemovalEfficiencyPercent) / 100.0;
+            double targetOutletFraction =
+                (100.0 -
+                 input.TargetRemovalEfficiencyPercent) /
+                100.0;
 
             // Quick pinch check first
-            var (feasible, pinchMessage) = EnhancedPackedTowerSolver.QuickPinchCheck(
-                input.InletGasFlowKmolPerHr,
-                input.InletLiquidFlowKmolPerHr,
-                input.InletGasMoleFractionPollutant,
-                targetOutletFraction,
-                input.InletLiquidMoleFraction,
-                henryResult.Value,
-                input.PressureKPa);
+            var (feasible, pinchMessage) =
+                EnhancedPackedTowerSolver.QuickPinchCheck(
+                    input.InletGasFlowKmolPerHr,
+                    input.InletLiquidFlowKmolPerHr,
+                    input.InletGasMoleFractionPollutant,
+                    targetOutletFraction,
+                    input.InletLiquidMoleFraction,
+                    henryResult.Value,
+                    input.PressureKPa);
 
             if (!feasible)
             {
-                findings.Add($"PINCH CONDITION: {pinchMessage}");
+                findings.Add(
+                    $"PINCH CONDITION: {pinchMessage}");
             }
 
             // Full solver
-            result.TowerSolverResult = EnhancedPackedTowerSolver.SolveWithDiagnostics(
-                input.PackingHeightM,
-                input.LayerDiscretization,
-                input.InletGasFlowKmolPerHr,
-                input.InletLiquidFlowKmolPerHr,
-                input.InletLiquidDensityKgM3 * (input.InletLiquidFlowKmolPerHr / 1000.0),
-                3.85,  // kJ/(kg·K) for water, placeholder for general case
-                input.InletGasMoleFractionPollutant,
-                input.InletLiquidMoleFraction,
-                targetOutletFraction,
-                input.TemperatureC + 273.15,
-                input.HeatOfSolutionKJmol,
-                input.PressureKPa,
-                t => MassTransferCoefficientProvider.Compute(input.Packing, fluid, t, enhancementFactor).OverallKGaKmolM3HrKPa,
-                (t, x) => henryResult.Value); // local Henry's constant
+            result.TowerSolverResult =
+                EnhancedPackedTowerSolver.SolveWithDiagnostics(
+                    input.PackingHeightM,
+                    input.LayerDiscretization,
+                    input.InletGasFlowKmolPerHr,
+                    input.InletLiquidFlowKmolPerHr,
+                    input.InletLiquidDensityKgM3 *
+                    (input.InletLiquidFlowKmolPerHr / 1000.0),
+                    3.85,
+                    input.InletGasMoleFractionPollutant,
+                    input.InletLiquidMoleFraction,
+                    targetOutletFraction,
+                    input.TemperatureC + 273.15,
+                    input.HeatOfSolutionKJmol,
+                    input.PressureKPa,
+                    t =>
+                        MassTransferCoefficientProvider
+                            .Compute(
+                                input.Packing,
+                                fluid,
+                                t,
+                                enhancementFactor)
+                            .OverallKGaKmolM3HrKPa,
+                    (t, x) => henryResult.Value);
 
             // ════════════════════════════════════════════════════════════════
             // STEP 4: Validate Removal & Flows (Section 11)
             // ════════════════════════════════════════════════════════════════
-            double outletPollutantKmolPerHr = result.TowerSolverResult.OutletGasMoleFraction * input.InletGasFlowKmolPerHr;
-            double absorbedKmolPerHr = input.InletGasMoleFractionPollutant * input.InletGasFlowKmolPerHr - outletPollutantKmolPerHr;
-            double actualRemovalPercent = (absorbedKmolPerHr / (input.InletGasMoleFractionPollutant * input.InletGasFlowKmolPerHr + 1e-12)) * 100.0;
+            double outletPollutantKmolPerHr =
+                result.TowerSolverResult.OutletGasMoleFraction *
+                input.InletGasFlowKmolPerHr;
 
-            var removalValidation = ChemistryValidityChecker.ValidateRemovalAndFlows(
-                actualRemovalPercent / 100.0,
-                actualRemovalPercent,
-                input.InletGasMoleFractionPollutant * input.InletGasFlowKmolPerHr,
-                outletPollutantKmolPerHr,
-                input.InletGasFlowKmolPerHr,
-                input.InletLiquidFlowKmolPerHr,
-                input.InletLiquidFlowKmolPerHr / input.InletGasFlowKmolPerHr);
+            double absorbedKmolPerHr =
+                input.InletGasMoleFractionPollutant *
+                input.InletGasFlowKmolPerHr -
+                outletPollutantKmolPerHr;
+
+            double actualRemovalPercent =
+                (
+                    absorbedKmolPerHr /
+                    (
+                        input.InletGasMoleFractionPollutant *
+                        input.InletGasFlowKmolPerHr +
+                        1e-12
+                    )
+                ) * 100.0;
+
+            var removalValidation =
+                ChemistryValidityChecker.ValidateRemovalAndFlows(
+                    actualRemovalPercent / 100.0,
+                    actualRemovalPercent,
+                    input.InletGasMoleFractionPollutant *
+                    input.InletGasFlowKmolPerHr,
+                    outletPollutantKmolPerHr,
+                    input.InletGasFlowKmolPerHr,
+                    input.InletLiquidFlowKmolPerHr,
+                    input.InletLiquidFlowKmolPerHr /
+                    input.InletGasFlowKmolPerHr);
 
             if (!removalValidation.IsValid)
             {
-                findings.AddRange(removalValidation.Issues.Where(i => i.IsError).Select(i => i.Message));
+                findings.AddRange(
+                    removalValidation.Issues
+                        .Where(i => i.IsError)
+                        .Select(i => i.Message));
             }
 
             // ════════════════════════════════════════════════════════════════
             // STEP 5: Material Balance (Section 17)
             // ════════════════════════════════════════════════════════════════
-            var speciesBalance = MaterialBalanceTracker.CalculateBalance(
-                input.PollutantCode,
-                input.InletGasMoleFractionPollutant * input.InletGasFlowKmolPerHr,
-                outletPollutantKmolPerHr,
-                absorbedKmolPerHr,
-                0.0);  // no reaction assumed in this basic version
+            var speciesBalance =
+                MaterialBalanceTracker.CalculateBalance(
+                    input.PollutantCode,
+                    input.InletGasMoleFractionPollutant *
+                    input.InletGasFlowKmolPerHr,
+                    outletPollutantKmolPerHr,
+                    absorbedKmolPerHr,
+                    0.0);
 
-            result.MaterialBalance = MaterialBalanceTracker.AggregateBalances(
-                new[] { speciesBalance },
-                0.001);
+            result.MaterialBalance =
+                MaterialBalanceTracker.AggregateBalances(
+                    new[] { speciesBalance },
+                    0.001);
 
             if (!result.MaterialBalance.AllSpeciesBalanced)
             {
-                findings.Add($"MATERIAL BALANCE: {result.MaterialBalance.ClosureStatement}");
+                findings.Add(
+                    $"MATERIAL BALANCE: {result.MaterialBalance.ClosureStatement}");
             }
 
             // ════════════════════════════════════════════════════════════════
             // STEP 6: Reactive Absorption (Section 7)
             // ════════════════════════════════════════════════════════════════
-            if (input.IncludeReactiveAbsorption && result.Enhancement != null && result.Enhancement.ModelAvailable)
+            if (input.IncludeReactiveAbsorption &&
+                result.Enhancement != null &&
+                result.Enhancement.ModelAvailable)
             {
-                result.ReactionEnhancement = new EnhancementFactor.Result
-                {
-                    HattaNumber = result.Enhancement.HattaNumber,
-                    Factor = result.Enhancement.Factor,
-                    IsReactionLimited = result.Enhancement.InstantaneousLimitApplied,
-                    Regime = result.Enhancement.Regime == EnhancementRegime.Physical
-                        ? ReactionRegime.PhysicalAbsorption
-                        : result.Enhancement.Regime == EnhancementRegime.Instantaneous
-                            ? ReactionRegime.VeryFastReactionInterface
-                            : ReactionRegime.FastReactionNearInterface
-                };
+                result.ReactionEnhancement =
+                    new EnhancementFactor.Result
+                    {
+                        HattaNumber =
+                            result.Enhancement.HattaNumber,
+
+                        Factor =
+                            result.Enhancement.Factor,
+
+                        IsReactionLimited =
+                            result.Enhancement.InstantaneousLimitApplied,
+
+                        Regime =
+                            result.Enhancement.Regime ==
+                            EnhancementRegime.Physical
+                                ? ReactionRegime.PhysicalAbsorption
+                                : result.Enhancement.Regime ==
+                                  EnhancementRegime.Instantaneous
+                                    ? ReactionRegime.VeryFastReactionInterface
+                                    : ReactionRegime.FastReactionNearInterface
+                    };
             }
             else
             {
-                findings.Add("NOTE: Physical absorption approximation only (no reactive chemistry module active)");
+                findings.Add(
+                    "NOTE: Physical absorption approximation only (no reactive chemistry module active)");
             }
 
             // ════════════════════════════════════════════════════════════════
             // STEP 7: Generate Final Report (Section 18)
             // ════════════════════════════════════════════════════════════════
-            result.Report = new EnhancedChemistryReport
-            {
-                Conditions = new EnhancedChemistryReport.OperatingConditions
+            result.Report =
+                new EnhancedChemistryReport
                 {
-                    Pollutant = input.PollutantCode,
-                    PollutantCAS = input.PollutantCAS,
-                    InletConcentrationValue = input.InletGasMoleFractionPollutant * 1e6,
-                    InletConcentrationUnits = "ppmv",
-                    OutletConcentrationValue = result.TowerSolverResult.OutletGasMoleFraction * 1e6,
-                    OutletConcentrationUnits = "ppmv",
-                    RemovalEfficiencyPercent = actualRemovalPercent,
-                    GasFlowKmolPerHr = input.InletGasFlowKmolPerHr,
-                    LiquidFlowKmolPerHr = input.InletLiquidFlowKmolPerHr,
-                    LiquidToGasRatio = input.InletLiquidFlowKmolPerHr / input.InletGasFlowKmolPerHr,
-                    SolventName = input.SolventCode,
-                    ReagentName = input.ReagentCode,
-                    ReagentConcentrationMolPerL = input.ReagentConcentrationMolPerL,
-                    TemperatureC = input.TemperatureC,
-                    PressureKPa = input.PressureKPa
-                },
-
-                ModelSelections = new EnhancedChemistryReport.Models
-                {
-                    HenryLawModel = "Van't Hoff temperature correction",
-                    HenryConvention = input.HenryConvention == HenrysLawConvention.LiquidReferenced
-                        ? "Liquid Referenced (y* = H·x)"
-                        : "Gas Referenced (x* = H·y)",
-                    ActivityModel = "NRTL (if parameters available, else ideal)",
-                    ReactionModel = input.IncludeReactiveAbsorption ? "Hatta number / enhancement factor" : "None",
-                    DiffusivityModel = "Input lookup or correlation",
-                    MassTransferModel = "Two-film, layer-by-layer discretization",
-                    SaltingOutConsidered = input.ConsiderSaltingOut,
-                    TemperatureFeedbackIncluded = input.IncludeTemperatureFeedback,
-                    ReactiveAbsorptionModeled = input.IncludeReactiveAbsorption
-                },
-
-                Equilibrium = new EnhancedChemistryReport.EquilibriumSummary
-                {
-                    EquilibriumConcentrationYstarInlet = henryResult.Value * input.InletLiquidMoleFraction,
-                    EquilibriumConcentrationYstarOutlet = henryResult.Value * result.TowerSolverResult.OutletLiquidMoleFraction,
-                    LiquidPhaseEquilibriumXstorInlet = input.InletLiquidMoleFraction,
-                    LiquidPhaseEquilibriumXstarOutlet = result.TowerSolverResult.OutletLiquidMoleFraction,
-                    DrivingForceInletMolFraction = input.InletGasMoleFractionPollutant - (henryResult.Value * input.InletLiquidMoleFraction),
-                    DrivingForceOutletMolFraction = result.TowerSolverResult.OutletGasMoleFraction - (henryResult.Value * result.TowerSolverResult.OutletLiquidMoleFraction),
-                    PinchPointDetected = result.TowerSolverResult.PinchPointDetected,
-                    PinchWarning = result.TowerSolverResult.PinchDiagnosis
-                },
-
-                MassTransfer = new EnhancedChemistryReport.MassTransferBreakdown
-                {
-                    GasFilmCoefficientKgMS = result.MassTransfer.GasFilmCoeffKmolM2SPa,
-                    GasSideKgaKmolM3HrKPa = result.MassTransfer.GasSideKgaKmolM3HrKPa,
-                    LiquidFilmCoefficientKlMS = result.MassTransfer.LiquidFilmCoeffMS,
-                    LiquidSideKlaKmolM3HrMolL = result.MassTransfer.LiquidSideKlaKmolM3HrMolL,
-                    OverallKGaKmolM3HrKPa = result.MassTransfer.OverallKGaKmolM3HrKPa,
-                    GasSideResistanceFraction = result.MassTransfer.GasSideResistanceFraction,
-                    LiquidSideResistanceFraction = result.MassTransfer.LiquidSideResistanceFraction,
-                    ControllingResistance = result.MassTransfer.GasSideResistanceFraction >= 0.5
-                        ? "Gas-side"
-                        : "Liquid-side",
-                    EnhancementFactorFromReaction = result.Enhancement?.Factor ?? 1.0
-                },
-
-                Reagent = new EnhancedChemistryReport.ReagentConsumption
-                {
-                    AbsorbedPollutantKmolPerHr = absorbedKmolPerHr,
-                    StoichiometricReagentDemandKmolPerHr = absorbedKmolPerHr * 2.0,  // placeholder
-                    ReagentSuppliedKmolPerHr = input.InletLiquidFlowKmolPerHr * input.ReagentConcentrationMolPerL,
-                    ExcessReagentFactor = (input.InletLiquidFlowKmolPerHr * input.ReagentConcentrationMolPerL) / (absorbedKmolPerHr * 2.0 + 0.001),
-                    ReagentUtilizationFraction = Math.Min(absorbedKmolPerHr * 2.0 / (input.InletLiquidFlowKmolPerHr * input.ReagentConcentrationMolPerL + 0.001), 1.0),
-                    ReactionProductFormationKmolPerHr = absorbedKmolPerHr
-                },
-
-                MaterialBalance = new EnhancedChemistryReport.MaterialBalanceVerification
-                {
-                    InletPollutantKmolPerHr = speciesBalance.InletKmolPerHr,
-                    OutletGasPollutantKmolPerHr = speciesBalance.OutletGasKmolPerHr,
-                    AbsorbedIntoLiquidKmolPerHr = speciesBalance.AbsorbedKmolPerHr,
-                    ChemicallyReactedKmolPerHr = speciesBalance.ReactedKmolPerHr,
-                    OtherDisposalKmolPerHr = speciesBalance.OtherKmolPerHr,
-                    ClosureErrorKmolPerHr = speciesBalance.ClosureErrorKmolPerHr,
-                    ClosureErrorFraction = speciesBalance.FractionalError,
-                    IsBalanced = speciesBalance.IsBalanced(),
-                    ClosureStatement = result.MaterialBalance.ClosureStatement
-                },
-
-                Validity = new EnhancedChemistryReport.ValidityAssessment
-                {
-                    AllChecksPass = !result.TowerSolverResult.PinchPointDetected
-                        && result.TowerSolverResult.IsPhysicallyFeasible
-                        && result.MaterialBalance.AllSpeciesBalanced,
-                    CriticalErrorCount = result.TowerSolverResult.Warnings.Count,
-                    WarningCount = removalValidation.Issues.Count(i => !i.IsError),
-                    CriticalErrors = result.TowerSolverResult.Warnings.ToList(),
-                    Warnings = removalValidation.Issues.Where(i => !i.IsError).Select(i => i.Message).ToList(),
-                    HiddenAssumptions = new List<string>
+                    Conditions =
+                        new EnhancedChemistryReport.OperatingConditions
                         {
-                            input.IncludeReactiveAbsorption ? "" : "Physical absorption model only — not valid for reactive systems",
-                            input.UseTwoFilmModel ? "Two-film model with given interface" : "Alternate model",
-                            henryResult.SaltingOutApplied ? $"Salting-out considered (I={henryResult.IonicStrengthMolPerL:F3} mol/L)" : "Salting-out neglected"
-                        }.Where(s => !string.IsNullOrEmpty(s)).ToList()
-                },
+                            Pollutant =
+                                input.PollutantCode,
 
-                GeneratedAtUtc = DateTime.UtcNow
-            };
+                            PollutantCAS =
+                                input.PollutantCAS,
+
+                            InletConcentrationValue =
+                                input.InletGasMoleFractionPollutant *
+                                1e6,
+
+                            InletConcentrationUnits =
+                                "ppmv",
+
+                            OutletConcentrationValue =
+                                result.TowerSolverResult
+                                    .OutletGasMoleFraction *
+                                1e6,
+
+                            OutletConcentrationUnits =
+                                "ppmv",
+
+                            RemovalEfficiencyPercent =
+                                actualRemovalPercent,
+
+                            GasFlowKmolPerHr =
+                                input.InletGasFlowKmolPerHr,
+
+                            LiquidFlowKmolPerHr =
+                                input.InletLiquidFlowKmolPerHr,
+
+                            LiquidToGasRatio =
+                                input.InletLiquidFlowKmolPerHr /
+                                input.InletGasFlowKmolPerHr,
+
+                            SolventName =
+                                input.SolventCode,
+
+                            ReagentName =
+                                input.ReagentCode,
+
+                            ReagentConcentrationMolPerL =
+                                input.ReagentConcentrationMolPerL,
+
+                            TemperatureC =
+                                input.TemperatureC,
+
+                            PressureKPa =
+                                input.PressureKPa
+                        },
+
+                    ModelSelections =
+                        new EnhancedChemistryReport.Models
+                        {
+                            HenryLawModel =
+                                "Van't Hoff temperature correction",
+
+                            HenryConvention =
+                                input.HenryConvention ==
+                                HenrysLawConvention.LiquidReferenced
+                                    ? "Liquid Referenced (y* = H·x)"
+                                    : "Gas Referenced (x* = H·y)",
+
+                            ActivityModel =
+                                "NRTL (if parameters available, else ideal)",
+
+                            ReactionModel =
+                                input.IncludeReactiveAbsorption
+                                    ? "Hatta number / enhancement factor"
+                                    : "None",
+
+                            DiffusivityModel =
+                                "Input lookup or correlation",
+
+                            MassTransferModel =
+                                "Two-film, layer-by-layer discretization",
+
+                            SaltingOutConsidered =
+                                input.ConsiderSaltingOut,
+
+                            TemperatureFeedbackIncluded =
+                                input.IncludeTemperatureFeedback,
+
+                            ReactiveAbsorptionModeled =
+                                input.IncludeReactiveAbsorption
+                        },
+
+                    Equilibrium =
+                        new EnhancedChemistryReport.EquilibriumSummary
+                        {
+                            EquilibriumConcentrationYstarInlet =
+                                henryResult.Value *
+                                input.InletLiquidMoleFraction,
+
+                            EquilibriumConcentrationYstarOutlet =
+                                henryResult.Value *
+                                result.TowerSolverResult
+                                    .OutletLiquidMoleFraction,
+
+                            LiquidPhaseEquilibriumXstorInlet =
+                                input.InletLiquidMoleFraction,
+
+                            LiquidPhaseEquilibriumXstarOutlet =
+                                result.TowerSolverResult
+                                    .OutletLiquidMoleFraction,
+
+                            DrivingForceInletMolFraction =
+                                input.InletGasMoleFractionPollutant -
+                                (
+                                    henryResult.Value *
+                                    input.InletLiquidMoleFraction
+                                ),
+
+                            DrivingForceOutletMolFraction =
+                                result.TowerSolverResult
+                                    .OutletGasMoleFraction -
+                                (
+                                    henryResult.Value *
+                                    result.TowerSolverResult
+                                        .OutletLiquidMoleFraction
+                                ),
+
+                            PinchPointDetected =
+                                result.TowerSolverResult
+                                    .PinchPointDetected,
+
+                            PinchWarning =
+                                result.TowerSolverResult.PinchDiagnosis
+                        },
+
+                    MassTransfer =
+                        new EnhancedChemistryReport.MassTransferBreakdown
+                        {
+                            GasFilmCoefficientKgMS =
+                                result.MassTransfer
+                                    .GasFilmCoeffKmolM2SPa,
+
+                            GasSideKgaKmolM3HrKPa =
+                                result.MassTransfer
+                                    .GasSideKgaKmolM3HrKPa,
+
+                            LiquidFilmCoefficientKlMS =
+                                result.MassTransfer
+                                    .LiquidFilmCoeffMS,
+
+                            LiquidSideKlaKmolM3HrMolL =
+                                result.MassTransfer
+                                    .LiquidSideKlaKmolM3HrMolL,
+
+                            OverallKGaKmolM3HrKPa =
+                                result.MassTransfer
+                                    .OverallKGaKmolM3HrKPa,
+
+                            GasSideResistanceFraction =
+                                result.MassTransfer
+                                    .GasSideResistanceFraction,
+
+                            LiquidSideResistanceFraction =
+                                result.MassTransfer
+                                    .LiquidSideResistanceFraction,
+
+                            ControllingResistance =
+                                result.MassTransfer
+                                    .GasSideResistanceFraction >= 0.5
+                                    ? "Gas-side"
+                                    : "Liquid-side",
+
+                            EnhancementFactorFromReaction =
+                                result.Enhancement?.Factor ?? 1.0
+                        },
+
+                    Reagent =
+                        new EnhancedChemistryReport.ReagentConsumption
+                        {
+                            AbsorbedPollutantKmolPerHr =
+                                absorbedKmolPerHr,
+
+                            StoichiometricReagentDemandKmolPerHr =
+                                absorbedKmolPerHr *
+                                input.ReagentStoichiometricRatio,
+
+                            ReagentSuppliedKmolPerHr =
+                                input.InletLiquidFlowKmolPerHr *
+                                input.ReagentConcentrationMolPerL,
+
+                            ExcessReagentFactor =
+                                (
+                                    input.InletLiquidFlowKmolPerHr *
+                                    input.ReagentConcentrationMolPerL
+                                ) /
+                                (
+                                    absorbedKmolPerHr *
+                                    input.ReagentStoichiometricRatio +
+                                    0.001
+                                ),
+
+                            ReagentUtilizationFraction =
+                                Math.Min(
+                                    absorbedKmolPerHr *
+                                    input.ReagentStoichiometricRatio /
+                                    (
+                                        input.InletLiquidFlowKmolPerHr *
+                                        input.ReagentConcentrationMolPerL +
+                                        0.001
+                                    ),
+                                    1.0),
+
+                            ReactionProductFormationKmolPerHr =
+                                absorbedKmolPerHr
+                        },
+
+                    MaterialBalance =
+                        new EnhancedChemistryReport.MaterialBalanceVerification
+                        {
+                            InletPollutantKmolPerHr =
+                                speciesBalance.InletKmolPerHr,
+
+                            OutletGasPollutantKmolPerHr =
+                                speciesBalance.OutletGasKmolPerHr,
+
+                            AbsorbedIntoLiquidKmolPerHr =
+                                speciesBalance.AbsorbedKmolPerHr,
+
+                            ChemicallyReactedKmolPerHr =
+                                speciesBalance.ReactedKmolPerHr,
+
+                            OtherDisposalKmolPerHr =
+                                speciesBalance.OtherKmolPerHr,
+
+                            ClosureErrorKmolPerHr =
+                                speciesBalance.ClosureErrorKmolPerHr,
+
+                            ClosureErrorFraction =
+                                speciesBalance.FractionalError,
+
+                            IsBalanced =
+                                speciesBalance.IsBalanced(),
+
+                            ClosureStatement =
+                                result.MaterialBalance.ClosureStatement
+                        },
+
+                    Validity =
+                        new EnhancedChemistryReport.ValidityAssessment
+                        {
+                            AllChecksPass =
+                                !result.TowerSolverResult.PinchPointDetected
+                                && result.TowerSolverResult.IsPhysicallyFeasible
+                                && result.MaterialBalance.AllSpeciesBalanced,
+
+                            CriticalErrorCount =
+                                result.TowerSolverResult.Warnings.Count,
+
+                            WarningCount =
+                                removalValidation.Issues
+                                    .Count(i => !i.IsError),
+
+                            CriticalErrors =
+                                result.TowerSolverResult.Warnings.ToList(),
+
+                            Warnings =
+                                removalValidation.Issues
+                                    .Where(i => !i.IsError)
+                                    .Select(i => i.Message)
+                                    .ToList(),
+
+                            HiddenAssumptions =
+                                new List<string>
+                                {
+                                    input.IncludeReactiveAbsorption
+                                        ? ""
+                                        : "Physical absorption model only — not valid for reactive systems",
+
+                                    input.UseTwoFilmModel
+                                        ? "Two-film model with given interface"
+                                        : "Alternate model",
+
+                                    henryResult.SaltingOutApplied
+                                        ? $"Salting-out considered (I={henryResult.IonicStrengthMolPerL:F3} mol/L)"
+                                        : "Salting-out neglected"
+                                }
+                                .Where(s => !string.IsNullOrEmpty(s))
+                                .ToList()
+                        },
+
+                    GeneratedAtUtc =
+                        DateTime.UtcNow
+                };
 
             // ════════════════════════════════════════════════════════════════
             // FINAL ASSESSMENT
             // ════════════════════════════════════════════════════════════════
             result.AllFindings = findings;
-            result.IsValid = result.Report.Validity.AllChecksPass;
-            result.ReadyForIndustrialUse = result.IsValid
+
+            result.IsValid =
+                result.Report.Validity.AllChecksPass;
+
+            result.ReadyForIndustrialUse =
+                result.IsValid
                 && result.MaterialBalance.AllSpeciesBalanced
                 && !result.TowerSolverResult.PinchPointDetected;
 

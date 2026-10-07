@@ -3,60 +3,56 @@
 namespace WetScrubber.Business.Thermodynamics
 {
     /// <summary>
-    /// CRITICAL: Henry's law can be expressed in two conventions:
-    /// 
-    /// 1. LIQUID_REFERENCED (y = H * x)  — H in atm (or Pa)
-    ///    "Liquid-side convention": equilibrium partial pressure = H * x
-    ///    Common in gas absorption literature (Perry, McCabe)
-    /// 
-    /// 2. GAS_REFERENCED (x = H * y)     — H in mol/mol per mol/mol or Pa⁻¹
-    ///    "Gas-side convention": equilibrium liquid mole fraction = H * y
-    ///    Common in vapor-liquid equilibrium (thermodynamic) literature
-    /// 
-    /// Confusing these produces errors of 1000× or worse. This enum forces
-    /// explicit declaration at every point.
+    /// Henry's law can be expressed in two conventions; confusing them gives errors of 1000x or worse.
+    ///
+    /// LIQUID_REFERENCED:  y* = H * x   (H dimensionless, mole-fraction ratio; volatility form,
+    ///                                   INCREASES with temperature for exothermic dissolution)
+    /// GAS_REFERENCED:     x* = H * y   (H dimensionless; solubility form,
+    ///                                   DECREASES with temperature for exothermic dissolution)
+    ///
+    /// LiquidReferenced H = 1 / GasReferenced H  (exact, same pressure and temperature).
     /// </summary>
     public enum HenrysLawConvention
     {
         Undefined = 0,
-        /// <summary>y* = H * x  (equilibrium gas mole fraction from liquid)</summary>
+        /// <summary>y* = H * x</summary>
         LiquidReferenced = 1,
-        /// <summary>x* = H * y  (equilibrium liquid mole fraction from gas)</summary>
+        /// <summary>x* = H * y</summary>
         GasReferenced = 2
     }
 
     /// <summary>
-    /// Enhanced Henry's constant with convention, salting-out effects,
-    /// and validation. Replaces the bare double-based HenrysLawCalculator.
+    /// Henry's constant with convention, salting-out and validation.
     /// </summary>
     public sealed class EnhancedHenrysLaw
     {
-        private const double GasConstant = 8.314; // J/(mol*K)
+        private const double GasConstant = 8.314462; // J/(mol*K)
         private const double ReferenceTempK = 298.15;
 
         public class HenrysConstantResult
         {
-            /// <summary>Temperature-corrected H value (in whatever units the reference had)</summary>
+            /// <summary>Temperature- and salt-corrected H, in the requested convention.</summary>
             public double Value { get; set; }
 
-            /// <summary>Which convention was used</summary>
             public HenrysLawConvention Convention { get; set; }
 
-            /// <summary>Was salting-out effect applied?</summary>
             public bool SaltingOutApplied { get; set; }
 
-            /// <summary>Ionic strength used for salting-out, if any</summary>
             public double? IonicStrengthMolPerL { get; set; }
 
-            /// <summary>Magnitude of salting-out correction (multiplier on H)</summary>
+            /// <summary>Multiplier on the volatility-form H (y/x or Cg/Cl) from the Setchenow effect.</summary>
             public double SaltingOutFactor { get; set; } = 1.0;
 
-            /// <summary>True if H was clamped to avoid unphysical values</summary>
+            /// <summary>True if H was clamped to avoid unphysical values.</summary>
             public bool WasClamped { get; set; }
         }
 
         /// <summary>
-        /// Get temperature-corrected Henry's constant with full validation.
+        /// Temperature-corrected Henry's constant.
+        ///   C = -deltaH_soln / R   (K; positive for exothermic dissolution)
+        ///   LiquidReferenced: H(T) = H25 * exp( -C * (1/T - 1/Tref) )
+        ///   GasReferenced:    H(T) = H25 * exp( +C * (1/T - 1/Tref) )
+        /// fallbackTempCoeffK has the same meaning as C.
         /// </summary>
         public static HenrysConstantResult GetCorrectedConstant(
             double referenceHenrysConstantAt25C,
@@ -77,44 +73,47 @@ namespace WetScrubber.Business.Thermodynamics
                     $"Reference Henry's constant must be positive; got {referenceHenrysConstantAt25C}",
                     nameof(referenceHenrysConstantAt25C));
 
+            double temperatureK = temperatureC + 273.15;
+            if (temperatureK <= 0)
+                throw new ArgumentOutOfRangeException(nameof(temperatureC), "Temperature must be above absolute zero.");
+
             var result = new HenrysConstantResult { Convention = convention };
 
-            // Van't Hoff temperature correction
-            double tempCoeff = heatOfSolutionKJmol.HasValue
+            double tempCoeffK = heatOfSolutionKJmol.HasValue
                 ? -(heatOfSolutionKJmol.Value * 1000.0) / GasConstant
                 : fallbackTempCoeffK;
 
-            double temperatureK = temperatureC + 273.15;
+            double sign = convention == HenrysLawConvention.LiquidReferenced ? -1.0 : 1.0;
             double correctedH = referenceHenrysConstantAt25C
-                * Math.Exp(tempCoeff * (1.0 / temperatureK - 1.0 / ReferenceTempK));
+                * Math.Exp(sign * tempCoeffK * (1.0 / temperatureK - 1.0 / ReferenceTempK));
 
-            // Salting-out effect (Setchenow): ln(H/H0) = kH * I
-            // where kH is pollutant-specific, I is ionic strength
-            double saltingOutFactor = 1.0;
+            // Salting-out (Setchenow): ln(H_volatility,salt / H_volatility) = k * I
             if (ionicStrengthMolPerL.HasValue && ionicStrengthMolPerL.Value > 0.001)
             {
-                // kH varies by pollutant; this is a typical range for common gases
-                // For SO2: ~0.15 mol/L, CO2: ~0.13, H2S: ~0.08 (literature values)
-                double kH = GetSaltingOutCoefficient(pollutantCode);
-                double lnFactor = kH * ionicStrengthMolPerL.Value;
-                saltingOutFactor = Math.Exp(lnFactor);
+                double k = GetSaltingOutCoefficient(pollutantCode);
+                double factor = Math.Exp(k * ionicStrengthMolPerL.Value);
+
+                correctedH *= convention == HenrysLawConvention.LiquidReferenced ? factor : 1.0 / factor;
+
                 result.SaltingOutApplied = true;
                 result.IonicStrengthMolPerL = ionicStrengthMolPerL.Value;
-                result.SaltingOutFactor = saltingOutFactor;
+                result.SaltingOutFactor = factor;
             }
 
-            correctedH *= saltingOutFactor;
-
-            // Sanity checks
-            if (correctedH < HenrysConstantUnits.MinimumH)
+            if (double.IsNaN(correctedH) || double.IsInfinity(correctedH))
             {
                 result.WasClamped = true;
-                correctedH = HenrysConstantUnits.MinimumH;
+                correctedH = HenrysConstantUnits.MinimumHcc;
             }
-            if (correctedH > HenrysConstantUnits.MaximumH)
+            else if (correctedH < HenrysConstantUnits.MinimumHcc)
             {
                 result.WasClamped = true;
-                correctedH = HenrysConstantUnits.MaximumH;
+                correctedH = HenrysConstantUnits.MinimumHcc;
+            }
+            else if (correctedH > HenrysConstantUnits.MaximumHcc)
+            {
+                result.WasClamped = true;
+                correctedH = HenrysConstantUnits.MaximumHcc;
             }
 
             result.Value = correctedH;
@@ -122,8 +121,8 @@ namespace WetScrubber.Business.Thermodynamics
         }
 
         /// <summary>
-        /// Salting-out coefficient kH by pollutant (Setchenow equation).
-        /// Returns kH for ln(H/H0) = kH * I
+        /// Setchenow coefficient k (L/mol) for ln(H/H0) = k * I.
+        /// Placeholder values, not yet verified against a primary source.
         /// </summary>
         private static double GetSaltingOutCoefficient(string pollutantCode)
         {
@@ -132,16 +131,15 @@ namespace WetScrubber.Business.Thermodynamics
                 "SO2" => 0.15,
                 "CO2" => 0.13,
                 "H2S" => 0.08,
-                "HCL" => 0.20,  // acidic, salts out strongly
-                "NH3" => -0.05, // salts IN (negative kH)
-                _ => 0.10       // default moderate value
+                "HCL" => 0.20,
+                "NH3" => -0.05,
+                _ => 0.10
             };
         }
 
         /// <summary>
-        /// Convert between Henry's law conventions.
-        /// LiquidReferenced (y = H_L * x) to GasReferenced (x = H_G * y)
-        /// where H_G = RT / H_L (at given T, P)
+        /// Convert between conventions (dimensionless mole-fraction forms): H_G = 1 / H_L.
+        /// Temperature and pressure arguments are kept for API compatibility.
         /// </summary>
         public static double ConvertConvention(
             double henryValue,
@@ -150,27 +148,17 @@ namespace WetScrubber.Business.Thermodynamics
             double temperatureC,
             double pressureKPa)
         {
-            if (fromConvention == toConvention)
-                return henryValue;
-
             if (fromConvention == HenrysLawConvention.Undefined
                 || toConvention == HenrysLawConvention.Undefined)
                 throw new ArgumentException("Both conventions must be defined");
 
-            double tempK = temperatureC + 273.15;
-            double rt = GasConstant * tempK / 1000.0; // kPa·m³/mol = kPa·L/kmol ÷ 1000
+            if (fromConvention == toConvention)
+                return henryValue;
 
-            if (fromConvention == HenrysLawConvention.LiquidReferenced
-                && toConvention == HenrysLawConvention.GasReferenced)
-            {
-                // H_L in kPa → H_G = RT / H_L (dimensionless)
-                return (rt * pressureKPa) / henryValue;
-            }
-            else
-            {
-                // H_G (dimensionless) → H_L = RT / H_G (kPa)
-                return (rt * pressureKPa) / henryValue;
-            }
+            if (henryValue <= 0)
+                throw new ArgumentException("Henry value must be positive", nameof(henryValue));
+
+            return 1.0 / henryValue;
         }
     }
 }

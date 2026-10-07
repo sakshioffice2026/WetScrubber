@@ -14,6 +14,7 @@ namespace WetScrubber.Business.MassTransfer
         public Dictionary<string, double> LiquidMassFraction { get; set; } = new(); // kg/kg
         public double GasTemperatureK { get; set; }
         public double LiquidTemperatureK { get; set; }
+        public double CumulativeHeatKW { get; set; }          // kW, integral of dQ/dz from z=0
     }
 
     /// <summary>
@@ -56,6 +57,7 @@ namespace WetScrubber.Business.MassTransfer
             public double OutletLiquidTemperatureK { get; set; }
             public Dictionary<string, double> RemovalEfficiency { get; set; } = new();
             public bool Converged { get; set; }
+            public double TotalHeatAbsorbedKW { get; set; }       // kW, integrated over the full profile
         }
 
         public SolverOutput Solve(SolverInput input)
@@ -90,7 +92,8 @@ namespace WetScrubber.Business.MassTransfer
                 Profile = profile,
                 OutletGasTemperatureK = final.GasTemperatureK,
                 OutletLiquidTemperatureK = final.LiquidTemperatureK,
-                Converged = state.Height >= input.TowerHeightM
+                Converged = state.Height >= input.TowerHeightM,
+                TotalHeatAbsorbedKW = final.CumulativeHeatKW
             };
 
             foreach (var code in input.PollutantCodes)
@@ -144,17 +147,13 @@ namespace WetScrubber.Business.MassTransfer
                 double absorbedKgSPerM = -dCdz * gasFlow * input.TowerAreaM2;
                 derivs["_dW_" + code] = absorbedKgSPerM / Math.Max(input.LiquidMassFlowKgS, 1e-9);
 
-                // Heat: absorbed kmol/s * ΔH_abs
-                double absorbedKmolS = Math.Abs(dCdz) * gasFlow * input.TowerAreaM2 /
-                                       (input.MolWeightFn(code) / 1000.0);
-                double heatKW = absorbedKmolS * Math.Abs(input.HeatOfAbsorptionFn(code)) / 1000.0;
-                segmentHeatKW += heatKW;
+                // Heat: kg/s per m / (kg/kmol) = kmol/s per m;
+                // kmol/s per m * kJ/kmol = kW per m
+                double absorbedKmolSPerM = Math.Abs(dCdz) * gasFlow * input.TowerAreaM2 /
+                                           Math.Max(input.MolWeightFn(code), 1e-9);
+                double heatKWPerM = absorbedKmolSPerM * Math.Abs(input.HeatOfAbsorptionFn(code));
+                segmentHeatKW += heatKWPerM;
             }
-
-            // Liquid composition rise (simplified: mass accumulation)
-            double totalAbsorbed = 0;
-            foreach (var code in input.PollutantCodes)
-                totalAbsorbed += Math.Abs(derivs[code]) * input.MolWeightFn(code) / 1000.0;
 
             // Temperature changes
             double dTgas_dz = -segmentHeatKW / (input.GasMassFlowKgS * 1.05);  // Cp_gas ~1.05 kJ/kg·K
@@ -162,6 +161,7 @@ namespace WetScrubber.Business.MassTransfer
 
             derivs["_dTgas_dz"] = dTgas_dz;
             derivs["_dTliq_dz"] = dTliq_dz;
+            derivs["_dQ_dz"] = segmentHeatKW; // kW per m of packing
 
             return derivs;
         }
@@ -201,6 +201,8 @@ namespace WetScrubber.Business.MassTransfer
                 (dz / 6.0) * (k1["_dTgas_dz"] + 2 * k2["_dTgas_dz"] + 2 * k3["_dTgas_dz"] + k4["_dTgas_dz"]);
             yNew.LiquidTemperatureK = y.LiquidTemperatureK +
                 (dz / 6.0) * (k1["_dTliq_dz"] + 2 * k2["_dTliq_dz"] + 2 * k3["_dTliq_dz"] + k4["_dTliq_dz"]);
+            yNew.CumulativeHeatKW = y.CumulativeHeatKW +
+                (dz / 6.0) * (k1["_dQ_dz"] + 2 * k2["_dQ_dz"] + 2 * k3["_dQ_dz"] + k4["_dQ_dz"]);
 
             return yNew;
         }
@@ -218,6 +220,7 @@ namespace WetScrubber.Business.MassTransfer
 
             result.GasTemperatureK = y.GasTemperatureK + step * dydt["_dTgas_dz"];
             result.LiquidTemperatureK = y.LiquidTemperatureK + step * dydt["_dTliq_dz"];
+            result.CumulativeHeatKW = y.CumulativeHeatKW + step * dydt["_dQ_dz"];
 
             return result;
         }

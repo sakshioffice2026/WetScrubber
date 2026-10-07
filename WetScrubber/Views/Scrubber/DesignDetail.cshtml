@@ -17,6 +17,8 @@
     </a>
 }
 
+<div class="design-detail">
+
 <!-- Breadcrumb -->
 <div class="breadcrumb">
     <a asp-controller="Project" asp-action="Index">Projects</a>
@@ -29,7 +31,7 @@
 <!-- ── Header card ────────────────────────────────────────────── -->
 <div class="detail-header-card">
     <div>
-        <div class="detail-number" style="color:#3b82f6;">@Model.ScrubberType</div>
+        <div class="detail-number">@Model.ScrubberType</div>
         <div class="detail-title">@Model.DesignName</div>
         <div class="detail-meta">
             <div class="detail-meta-item">
@@ -93,22 +95,23 @@
 <!-- ── Previous results banner ────────────────────────────────── -->
 @if (Model.HasResults)
 {
-    <div style="background:#f0fdf8;border:0.5px solid #bbf7e0;border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
-        <div style="display:flex;align-items:center;gap:12px;">
-            <div style="width:36px;height:36px;background:#00d28c;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="#0b1120"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
+    <div class="dd-banner dd-banner-success">
+        <div class="dd-banner-main">
+            <div class="dd-banner-icon">
+                <svg viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
             </div>
             <div>
-                <div style="font-size:13px;font-weight:700;color:#059669;">Calculation results available</div>
-                <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-                    Tower: @Model.TowerDiameter m dia × @Model.TowerHeight m height &nbsp;|&nbsp;
-                    Removal: @Model.RemovalEfficiency.ToString("F1")% &nbsp;|&nbsp;
-                    ΔP: @Model.PressureDrop.ToString("F0") Pa
+                <div class="dd-banner-title">Calculation results available</div>
+                <div class="dd-banner-text">
+                    Tower: <strong>@Model.TowerDiameter</strong> <span class="dd-unit">m</span> dia × <strong>@Model.TowerHeight</strong> <span class="dd-unit">m</span> height
+                    <span class="dd-sep">|</span>
+                    Removal: <strong>@Model.RemovalEfficiency.ToString("F1")</strong><span class="dd-unit">%</span>
+                    <span class="dd-sep">|</span>
+                    ΔP: <strong>@Model.PressureDrop.ToString("F0")</strong> <span class="dd-unit">Pa</span>
                 </div>
             </div>
         </div>
-        <a asp-controller="Scrubber" asp-action="Results" asp-route-id="@Model.DesignId"
-           style="font-size:12px;font-weight:600;color:#059669;text-decoration:none;white-space:nowrap;">
+        <a class="dd-banner-link" asp-controller="Scrubber" asp-action="Results" asp-route-id="@Model.DesignId">
             View full results →
         </a>
     </div>
@@ -119,23 +122,22 @@
 {
     var critical = Model.Diagnostics.Count(f => f.Severity == "Critical");
     var warning = Model.Diagnostics.Count(f => f.Severity == "Warning");
-    <div style="background:@(critical > 0 ? "#fef2f2" : "#fffbeb");border:0.5px solid @(critical > 0 ? "#fecaca" : "#fde68a");border-radius:10px;padding:14px 20px;margin-bottom:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-            <div style="font-size:12.5px;color:@(critical > 0 ? "#991b1b" : "#92400e");">
+    <div class="dd-banner @(critical > 0 ? "dd-banner-danger" : "dd-banner-warn")">
+        <div class="dd-banner-head">
+            <div>
                 <strong>@Model.Diagnostics.Count finding@(Model.Diagnostics.Count == 1 ? "" : "s")</strong>
                 from the last calculation
                 @if (critical > 0) { <text> — @critical critical</text> }
                 @if (warning > 0) { <text>, @warning warning</text> }
             </div>
-            <a asp-controller="Scrubber" asp-action="Edit" asp-route-id="@Model.DesignId"
-               style="font-size:12px;font-weight:600;color:@(critical > 0 ? "#991b1b" : "#92400e");text-decoration:none;white-space:nowrap;">
+            <a class="dd-banner-link" asp-controller="Scrubber" asp-action="Edit" asp-route-id="@Model.DesignId">
                 Review &amp; edit inputs →
             </a>
         </div>
-        <ul style="margin:10px 0 0;padding-left:18px;font-size:12px;color:#444;">
+        <ul class="dd-findings">
             @foreach (var f in Model.Diagnostics)
             {
-                <li style="margin-bottom:4px;">@f.Symptom @f.Recommendation</li>
+                <li>@f.Symptom @f.Recommendation</li>
             }
         </ul>
     </div>
@@ -213,33 +215,27 @@
         </div>
     </div>
     <div class="form-card-body" style="padding:0;">
-        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+        <table class="dd-table">
             <thead>
-                <tr style="background:#fafafa;">
-                    <th style="padding:10px 16px;text-align:left;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Pollutant</th>
-                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Inlet (mg/Nm³)</th>
-                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Target Outlet</th>
-                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Removal %</th>
-                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Mol. Weight</th>
-                    <th style="padding:10px 16px;text-align:right;font-size:10px;font-weight:600;color:#aaa;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #f0f0f0;">Henry's H</th>
+                <tr>
+                    <th>Pollutant</th>
+                    <th>Inlet <span class="th-unit">(mg/Nm³)</span></th>
+                    <th>Target Outlet</th>
+                    <th>Removal %</th>
+                    <th>Mol. Weight</th>
+                    <th>Henry's H</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach (var p in Model.Pollutants)
                 {
-                    <tr style="border-bottom:0.5px solid #f8f8f8;">
-                        <td style="padding:12px 16px;">
-                            <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#eff6ff;color:#3b82f6;">
-                                @p.PollutantType
-                            </span>
-                        </td>
-                        <td style="padding:12px 16px;text-align:right;font-weight:600;color:#0b1120;">@p.InletConcentration.ToString("N1")</td>
-                        <td style="padding:12px 16px;text-align:right;color:#555;">@p.TargetOutletConcentration.ToString("N1")</td>
-                        <td style="padding:12px 16px;text-align:right;">
-                            <span style="color:#059669;font-weight:600;">@p.TargetRemovalEfficiency.ToString("F1")%</span>
-                        </td>
-                        <td style="padding:12px 16px;text-align:right;color:#888;">@p.MolecularWeight</td>
-                        <td style="padding:12px 16px;text-align:right;color:#888;">@p.HenrysLawConstant</td>
+                    <tr>
+                        <td><span class="dd-pill">@p.PollutantType</span></td>
+                        <td class="col-inlet">@p.InletConcentration.ToString("N1")</td>
+                        <td>@p.TargetOutletConcentration.ToString("N1")</td>
+                        <td class="col-removal">@p.TargetRemovalEfficiency.ToString("F1")%</td>
+                        <td class="col-muted">@p.MolecularWeight</td>
+                        <td class="col-muted">@p.HenrysLawConstant</td>
                     </tr>
                 }
             </tbody>
@@ -309,6 +305,8 @@
         </form>
     </div>
 }
+
+</div>
 
 @section Scripts {
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

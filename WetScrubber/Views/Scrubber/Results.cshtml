@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="~/css/project.css" />
     <link rel="stylesheet" href="~/css/scrubber.css" />
     <link rel="stylesheet" href="~/css/results.css" />
-    <link rel="stylesheet" href="~/css/results-theme.css" />
 }
 
 @section TopbarActions {
@@ -204,6 +203,7 @@
 <!-- ── Transfer unit data + L/G analysis row ─────────────────── -->
 @if (calcResult.NTU > 0)
 {
+    var lgMargin = calcResult.ActualLGRatio - calcResult.MinLGRatio;
     <div class="results-two-col">
 
         <!-- NTU/HTU card -->
@@ -219,7 +219,7 @@
                 </div>
                 <div class="data-row">
                     <span class="data-label">Height of Transfer Unit (HTU)</span>
-                    <span class="data-value">@calcResult.HTU.ToString("F3") m</span>
+                    <span class="data-value">@calcResult.HTU.ToString("F3")<span class="data-unit">m</span></span>
                 </div>
             </div>
         </div>
@@ -233,15 +233,15 @@
             <div class="results-data-body">
                 <div class="data-row">
                     <span class="data-label">Current L/G Ratio</span>
-                    <span class="data-value">@calcResult.ActualLGRatio.ToString("F2") L/m³</span>
+                    <span class="data-value">@calcResult.ActualLGRatio.ToString("F2")<span class="data-unit">L/m³</span></span>
                 </div>
                 <div class="data-row">
                     <span class="data-label">Minimum L/G Ratio</span>
-                    <span class="data-value">@calcResult.MinLGRatio.ToString("F2") L/m³</span>
+                    <span class="data-value">@calcResult.MinLGRatio.ToString("F2")<span class="data-unit">L/m³</span></span>
                 </div>
                 <div class="data-row">
                     <span class="data-label">Operating margin above minimum</span>
-                    <span class="data-value">@((calcResult.ActualLGRatio - calcResult.MinLGRatio) >= 0 ? "+" : "")@((calcResult.ActualLGRatio - calcResult.MinLGRatio).ToString("F2")) L/m³</span>
+                    <span class="data-value @(lgMargin < 0 ? "value-negative" : "value-positive")">@(lgMargin >= 0 ? "+" : "")@(lgMargin.ToString("F2"))<span class="data-unit">L/m³</span></span>
                 </div>
             </div>
         </div>
@@ -348,37 +348,39 @@
         }
         
         <div>
-            <h4 style="margin:0 0 12px 0; font-size:13px; color:#333;">Recorded Outcomes (<span style="color:#00d28c; font-weight:bold;">@outcomeCount</span> records)</h4>
+            <h4 style="margin:0 0 12px 0; font-size:13px; color:#0f172a;">Recorded Outcomes (<span class="results-count">@outcomeCount</span> records)</h4>
             @if (outcomes?.Count > 0)
             {
-                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <div class="results-table-wrap">
+                <table class="results-table">
                     <thead>
-                        <tr style="background:#f5f5f5; border-bottom:1px solid #ddd;">
-                            <th style="padding:8px; text-align:left;">Date</th>
-                            <th style="padding:8px; text-align:right;">Predicted %</th>
-                            <th style="padding:8px; text-align:right;">Measured %</th>
-                            <th style="padding:8px; text-align:right;">Δ %</th>
-                            <th style="padding:8px; text-align:right;">Pressure (Pa)</th>
-                            <th style="padding:8px; text-align:right;">Flow (m³/h)</th>
-                            <th style="padding:8px; text-align:right;">L/G</th>
+                        <tr>
+                            <th>Date</th>
+                            <th class="num">Predicted %</th>
+                            <th class="num">Measured %</th>
+                            <th class="num">Δ %</th>
+                            <th class="num">Pressure (Pa)</th>
+                            <th class="num">Flow (m³/h)</th>
+                            <th class="num">L/G</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach (var outcome in outcomes)
                         {
                             var delta = outcome.MeasuredRemovalEfficiency - outcome.PredictedRemovalEfficiency;
-                            <tr style="border-bottom:1px solid #eee;">
-                                <td style="padding:8px;">@outcome.CreatedAt.ToString("dd MMM HH:mm")</td>
-                                <td style="padding:8px; text-align:right;">@outcome.PredictedRemovalEfficiency.ToString("F2")</td>
-                                <td style="padding:8px; text-align:right;">@outcome.MeasuredRemovalEfficiency.ToString("F2")</td>
-                                <td style="padding:8px; text-align:right; color:@(delta >= 0 ? "#00d28c" : "#ff6b6b"); font-weight:bold;">@(delta >= 0 ? "+" : "")@delta.ToString("F2")</td>
-                                <td style="padding:8px; text-align:right;">@(outcome.MeasuredPressureDrop?.ToString("F0") ?? "—")</td>
-                                <td style="padding:8px; text-align:right;">@(outcome.MeasuredGasFlowRate?.ToString("F1") ?? "—")</td>
-                                <td style="padding:8px; text-align:right;">@(outcome.MeasuredLiquidToGasRatio?.ToString("F2") ?? "—")</td>
+                            <tr>
+                                <td>@outcome.CreatedAt.ToString("dd MMM HH:mm")</td>
+                                <td class="num">@outcome.PredictedRemovalEfficiency.ToString("F2")</td>
+                                <td class="num">@outcome.MeasuredRemovalEfficiency.ToString("F2")</td>
+                                <td class="num"><span class="delta-pill @(delta >= 0 ? "delta-pos" : "delta-neg")">@(delta >= 0 ? "+" : "")@delta.ToString("F2")</span></td>
+                                <td class="num">@(outcome.MeasuredPressureDrop?.ToString("F0") ?? "—")</td>
+                                <td class="num">@(outcome.MeasuredGasFlowRate?.ToString("F1") ?? "—")</td>
+                                <td class="num">@(outcome.MeasuredLiquidToGasRatio?.ToString("F2") ?? "—")</td>
                             </tr>
                         }
                     </tbody>
                 </table>
+                </div>
             }
             else
             {
@@ -427,11 +429,11 @@
                         {
                             label: 'Removal Efficiency (%)',
                             data: effData,
-                            borderColor: '#00d28c',
-                            backgroundColor: 'rgba(0,210,140,0.08)',
+                            borderColor: '#00b176',
+                            backgroundColor: 'rgba(0,177,118,0.08)',
                             tension: 0.4,
                             fill: true,
-                            pointBackgroundColor: '#00d28c',
+                            pointBackgroundColor: '#00b176',
                             pointRadius: 4,
                             yAxisID: 'y'
                         },

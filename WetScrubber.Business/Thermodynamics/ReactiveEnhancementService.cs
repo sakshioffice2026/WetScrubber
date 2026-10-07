@@ -13,17 +13,23 @@ namespace WetScrubber.Business.Thermodynamics
     {
         public string PollutantCode { get; set; } = "";
         public ReagentKind Reagent { get; set; } = ReagentKind.None;
+
+        /// <summary>Reagent concentration, equivalents per litre (= kmol/m3 of reactive sites).</summary>
         public double ReagentConcentrationEqPerL { get; set; }
+
         public double LiquidFilmCoeffMS { get; set; }
         public double PollutantLiquidDiffusivityM2S { get; set; }
-        public double HenrysDimensionless { get; set; }          // Cg/Cl
+
+        /// <summary>Dimensionless Henry's constant, Cg/Cl.</summary>
+        public double HenrysDimensionless { get; set; }
+
         public double GasPartialPressureKPa { get; set; }
         public double TemperatureK { get; set; } = 298.15;
 
-        /// <summary>mol reagent per mol pollutant (ChemicalReaction.StoichiometricRatio). 0 = unknown.</summary>
+        /// <summary>Equivalents of reagent consumed per mole of pollutant (SO2 + 2NaOH: 2). 0 = unknown.</summary>
         public double StoichiometricRatio { get; set; }
 
-        /// <summary>Verified reaction rate constant for EnhancementFactor (Hatta). Null = unknown.</summary>
+        /// <summary>Verified rate constant, rate = k*C_A*C_B^n, in (m3/kmol)^n/s. Null = unknown.</summary>
         public double? ReactionRateConstantS_Inv { get; set; }
         public int ReactionOrder { get; set; } = 1;
     }
@@ -34,23 +40,26 @@ namespace WetScrubber.Business.Thermodynamics
         public bool ModelAvailable { get; set; }
         public string Note { get; set; } = "";
         public double HattaNumber { get; set; }
+        public double InstantaneousFactor { get; set; }
         public bool InstantaneousLimitApplied { get; set; }
         public EnhancementRegime Regime { get; set; } = EnhancementRegime.Physical;
     }
 
     /// <summary>
-    /// Combines the existing EnhancementFactor (Hatta) with the
-    /// instantaneous-reaction limit:
-    ///   Ei = 1 + (D_B * C_B) / (nu * D_A * C_Ai)
-    /// No stoichiometry or rate constants are hard-coded here; they must be
-    /// supplied in the input. With neither, absorption stays physical (E = 1).
+    /// Enhancement factor for gas absorption with chemical reaction.
+    ///   Instantaneous limit:  Ei = 1 + (D_B * C_B) / (nu * D_A * C_Ai)
+    ///   Hatta (pseudo-first-order):  Ha = sqrt(k * C_B^n * D_A) / kL
+    ///   Combined (DeCoursey 1974):
+    ///     E = -Ha^2/(2(Ei-1)) + sqrt( Ha^4/(4(Ei-1)^2) + Ei*Ha^2/(Ei-1) + 1 )
+    /// Without both a rate constant and stoichiometry the result stays physical (E = 1)
+    /// unless only one of the two limits can be evaluated.
     /// </summary>
     public static class ReactiveEnhancementService
     {
-        private const double GasConstantKPaM3KmolK = 8.314;
+        private const double GasConstantKPaM3KmolK = 8.314462;
         private const double DiffusivityOHm2sAt298 = 5.27e-9;
         private const double DiffusivityHm2sAt298 = 9.31e-9;
-        private const double MaxFactor = 1000.0;
+        private const double MaxFactor = EnhancementFactor.MaxFactor;
 
         public static ReactiveEnhancementResult Compute(ReactiveEnhancementInput input)
         {
@@ -68,24 +77,22 @@ namespace WetScrubber.Business.Thermodynamics
                 return result;
             }
 
+            double? ha = null;
             double? hattaFactor = null;
             double? instantFactor = null;
-            var regime = EnhancementRegime.Physical;
 
             if (input.ReactionRateConstantS_Inv.HasValue && input.ReactionRateConstantS_Inv.Value > 0)
             {
-                var ha = EnhancementFactor.CalculateEnhancementFactor(
+                var h = EnhancementFactor.CalculateEnhancementFactor(
                     input.ReactionRateConstantS_Inv.Value,
                     input.ReagentConcentrationEqPerL,
                     input.PollutantLiquidDiffusivityM2S,
                     input.LiquidFilmCoeffMS,
                     input.ReactionOrder);
 
-                result.HattaNumber = ha.HattaNumber;
-                hattaFactor = ha.Factor;
-                regime = ha.Regime == ReactionRegime.PhysicalAbsorption
-                    ? EnhancementRegime.Physical
-                    : EnhancementRegime.Fast;
+                ha = h.HattaNumber;
+                hattaFactor = h.Factor;
+                result.HattaNumber = h.HattaNumber;
             }
 
             if (input.StoichiometricRatio > 0
@@ -96,11 +103,12 @@ namespace WetScrubber.Business.Thermodynamics
                             * (input.TemperatureK / 298.15);
                 double cB = input.ReagentConcentrationEqPerL;                                              // kmol/m3
                 double cGas = input.GasPartialPressureKPa / (GasConstantKPaM3KmolK * input.TemperatureK);  // kmol/m3
-                double cAi = Math.Max(cGas / input.HenrysDimensionless, 1e-12);                            // kmol/m3
+                double cAi = Math.Max(cGas / input.HenrysDimensionless, 1e-12);                            // kmol/m3 (Cl* = Cg/H)
 
                 instantFactor = Math.Min(
                     1.0 + (dB * cB) / (input.StoichiometricRatio * input.PollutantLiquidDiffusivityM2S * cAi),
                     MaxFactor);
+                result.InstantaneousFactor = instantFactor.Value;
             }
 
             if (!hattaFactor.HasValue && !instantFactor.HasValue)
@@ -110,34 +118,55 @@ namespace WetScrubber.Business.Thermodynamics
             }
 
             double factor;
-            if (hattaFactor.HasValue && instantFactor.HasValue)
+            EnhancementRegime regime;
+
+            if (ha.HasValue && instantFactor.HasValue)
             {
-                factor = Math.Min(hattaFactor.Value, instantFactor.Value);
-                if (instantFactor.Value <= hattaFactor.Value)
+                double ei = instantFactor.Value;
+                double haVal = ha.Value;
+
+                if (ei <= 1.0 + 1e-9)
+                {
+                    factor = 1.0;
+                }
+                else
+                {
+                    double ha2 = haVal * haVal;
+                    double a = ha2 / (2.0 * (ei - 1.0));
+                    factor = -a + Math.Sqrt(a * a + ei * ha2 / (ei - 1.0) + 1.0);
+                }
+
+                factor = Math.Min(Math.Max(factor, 1.0), Math.Min(ei, MaxFactor));
+
+                if (haVal >= 5.0 * ei)
                 {
                     result.InstantaneousLimitApplied = true;
                     regime = EnhancementRegime.Instantaneous;
                 }
+                else
+                {
+                    regime = haVal < 0.1 ? EnhancementRegime.Physical : EnhancementRegime.Fast;
+                }
+
+                result.Note = "Hatta number combined with the instantaneous-reaction limit (DeCoursey).";
             }
             else if (hattaFactor.HasValue)
             {
                 factor = hattaFactor.Value;
+                regime = ha.Value < 0.1 ? EnhancementRegime.Physical : EnhancementRegime.Fast;
+                result.Note = "Hatta enhancement (no stoichiometry supplied for the instantaneous cap).";
             }
             else
             {
-                factor = instantFactor!.Value;
+                factor = instantFactor.Value;
                 result.InstantaneousLimitApplied = true;
                 regime = EnhancementRegime.Instantaneous;
+                result.Note = "Instantaneous-reaction limit (no rate constant supplied; Hatta number not evaluated).";
             }
 
             result.ModelAvailable = true;
             result.Factor = Math.Max(factor, 1.0);
             result.Regime = regime;
-            result.Note = hattaFactor.HasValue && instantFactor.HasValue
-                ? "Hatta enhancement capped by the instantaneous-reaction limit."
-                : hattaFactor.HasValue
-                    ? "Hatta enhancement (no stoichiometry supplied for the instantaneous cap)."
-                    : "Instantaneous-reaction limit (no rate constant supplied; Hatta number not evaluated).";
             return result;
         }
     }

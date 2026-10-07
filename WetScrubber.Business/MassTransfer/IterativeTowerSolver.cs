@@ -97,11 +97,11 @@ namespace WetScrubber.Business.MassTransfer
                     double pollutantFlowInKmolS = (gasInletLocal / 1e6) * gasFlowKmolS;
                     double pollutantAbsorbedKmolS = removalFrac * pollutantFlowInKmolS;
 
-                    // Heat released (kJ/s)
-                    double heatKW = pollutantAbsorbedKmolS * Math.Abs(input.HeatOfAbsorptionKJKmol) / 1000.0;
+                    // Heat released: kmol/s * kJ/kmol = kJ/s = kW
+                    double heatKW = pollutantAbsorbedKmolS * Math.Abs(input.HeatOfAbsorptionKJKmol);
 
-                    // Temperature rise in liquid (assume no heat removal, only absorption)
-                    double dT = heatKW * 3600.0 / (input.LiquidMassFlowKgS * LiquidHeatCapacityKJKgC);
+                    // Temperature rise in liquid: kW / (kg/s * kJ/kg.K) = K
+                    double dT = heatKW / (input.LiquidMassFlowKgS * LiquidHeatCapacityKJKgC);
                     liquidTempProfile[seg + 1] = liquidTempProfile[seg] + dT;
 
                     output.Segments.Add(new TowerSegment
@@ -139,4 +139,4 @@ namespace WetScrubber.Business.MassTransfer
             return output;
         }
     }
-}
+}   

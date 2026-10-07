@@ -38,64 +38,131 @@ namespace WetScrubber.Services
         }
 
         // ── POST Calculation: run the engine, map to a report VM ───────
-        public ChemistryReportViewModel RunCalculation(ChemistryCalculationFormViewModel form)
+        public ChemistryReportViewModel RunCalculation(
+            ChemistryCalculationFormViewModel form)
         {
-            var pollutant = _uow.pollutantRepository.GetById(form.PollutantId);
-            var liquid = _uow.scrubbingLiquidRepository.GetById(form.ScrubbingLiquidId);
+            var pollutant =
+                _uow.pollutantRepository.GetById(form.PollutantId);
+
+            var liquid =
+                _uow.scrubbingLiquidRepository.GetById(form.ScrubbingLiquidId);
 
             if (pollutant == null || liquid == null)
-                throw new InvalidOperationException("Pollutant or scrubbing liquid not found.");
+                throw new InvalidOperationException(
+                    "Pollutant or scrubbing liquid not found.");
 
             // The engine hard-rejects a non-positive Henry's constant. Catch it
             // here with a clear message instead of letting ArgumentException
             // bubble up as an unhandled 500 — this happens when the pollutant's
             // master row was never given a DefaultHenrysLawConstant.
             if (pollutant.DefaultHenrysLawConstant <= 0)
+            {
                 throw new InvalidOperationException(
                     $"'{pollutant.DisplayName}' has no Henry's Law constant set (currently 0). " +
                     "Edit this pollutant on the Pollutants page and set a positive value before running a calculation.");
+            }
 
-            // Primary reaction for the pair (if curated) supplies the reagent
-            // stoichiometry defaults; falls back to a 1:1 physical estimate.
-            var reaction = _uow.chemicalReactionRepository.GetPrimaryForPair(form.PollutantId, form.ScrubbingLiquidId);
+            // Primary reaction for the pollutant/liquid pair supplies the
+            // reagent stoichiometric ratio when a curated reaction exists.
+            // A positive ratio is required; otherwise use the physical 1:1
+            // fallback.
+            var reaction =
+                _uow.chemicalReactionRepository
+                    .GetPrimaryForPair(
+                        form.PollutantId,
+                        form.ScrubbingLiquidId);
 
-            var input = new ChemistryCalculationIntegration.ChemistryCalculationInput
-            {
-                PollutantCode = pollutant.Code,
-                PollutantCAS = pollutant.Code,
-                PollutantMolecularWeightKgKmol = pollutant.DefaultMolecularWeight,
+            double reagentStoichiometricRatio =
+                reaction?.StoichiometricRatio > 0
+                    ? reaction.StoichiometricRatio
+                    : 1.0;
 
-                InletGasMoleFractionPollutant = form.InletConcentrationPpmv / 1_000_000.0,
-                InletGasFlowKmolPerHr = form.InletGasFlowKmolPerHr,
-                InletGasDensityKgM3 = form.InletGasDensityKgM3,
-                InletGasViscosityPas = form.InletGasViscosityPas,
-                InletGasDiffusivityM2S = form.InletGasDiffusivityM2S,
-                InletLiquidFlowKmolPerHr = form.InletLiquidFlowKmolPerHr,
-                InletLiquidMoleFraction = form.InletLiquidMoleFraction,
-                InletLiquidDensityKgM3 = form.InletLiquidDensityKgM3,
-                InletLiquidViscosityPas = form.InletLiquidViscosityPas,
-                InletLiquidDiffusivityM2S = form.InletLiquidDiffusivityM2S,
+            var input =
+                new ChemistryCalculationIntegration.ChemistryCalculationInput
+                {
+                    PollutantCode = pollutant.Code,
+                    PollutantCAS = pollutant.Code,
+                    PollutantMolecularWeightKgKmol =
+                        pollutant.DefaultMolecularWeight,
 
-                SolventCode = "H2O",
-                ReagentCode = liquid.Code,
-                ReagentConcentrationMolPerL = form.ReagentConcentrationMolPerL,
+                    InletGasMoleFractionPollutant =
+                        form.InletConcentrationPpmv / 1_000_000.0,
 
-                TemperatureC = form.TemperatureC,
-                PressureKPa = form.PressureKPa,
-                HenrysConstantAt25C = pollutant.DefaultHenrysLawConstant,
-                HenryConvention = HenrysLawConvention.LiquidReferenced,
+                    InletGasFlowKmolPerHr =
+                        form.InletGasFlowKmolPerHr,
 
-                PackingHeightM = form.PackingHeightM,
-                TargetRemovalEfficiencyPercent = form.TargetRemovalEfficiencyPercent,
+                    InletGasDensityKgM3 =
+                        form.InletGasDensityKgM3,
 
-                IncludeReactiveAbsorption = form.IncludeReactiveAbsorption,
-                ReactionRateConstantS_Inv = form.ReactionRateConstantS_Inv,
-                BulkReagentConcentrationMolL = form.BulkReagentConcentrationMolL
-            };
+                    InletGasViscosityPas =
+                        form.InletGasViscosityPas,
 
-            var result = ChemistryCalculationIntegration.ExecuteFullCalculation(input);
+                    InletGasDiffusivityM2S =
+                        form.InletGasDiffusivityM2S,
 
-            return MapToReportViewModel(result, pollutant, liquid, reaction);
+                    InletLiquidFlowKmolPerHr =
+                        form.InletLiquidFlowKmolPerHr,
+
+                    InletLiquidMoleFraction =
+                        form.InletLiquidMoleFraction,
+
+                    InletLiquidDensityKgM3 =
+                        form.InletLiquidDensityKgM3,
+
+                    InletLiquidViscosityPas =
+                        form.InletLiquidViscosityPas,
+
+                    InletLiquidDiffusivityM2S =
+                        form.InletLiquidDiffusivityM2S,
+
+                    SolventCode = "H2O",
+
+                    ReagentCode =
+                        liquid.Code,
+
+                    ReagentConcentrationMolPerL =
+                        form.ReagentConcentrationMolPerL,
+
+                    ReagentStoichiometricRatio =
+                        reagentStoichiometricRatio,
+
+                    TemperatureC =
+                        form.TemperatureC,
+
+                    PressureKPa =
+                        form.PressureKPa,
+
+                    HenrysConstantAt25C =
+                        pollutant.DefaultHenrysLawConstant,
+
+                    HenryConvention =
+                        HenrysLawConvention.LiquidReferenced,
+
+                    PackingHeightM =
+                        form.PackingHeightM,
+
+                    TargetRemovalEfficiencyPercent =
+                        form.TargetRemovalEfficiencyPercent,
+
+                    IncludeReactiveAbsorption =
+                        form.IncludeReactiveAbsorption,
+
+                    ReactionRateConstantS_Inv =
+                        form.ReactionRateConstantS_Inv,
+
+                    BulkReagentConcentrationMolL =
+                        form.BulkReagentConcentrationMolL
+                };
+
+            var result =
+                ChemistryCalculationIntegration
+                    .ExecuteFullCalculation(input);
+
+            return MapToReportViewModel(
+                result,
+                pollutant,
+                liquid,
+                reaction);
         }
 
         // ── Helpers ──────────────────────────────────────────────────
@@ -107,84 +174,178 @@ namespace WetScrubber.Services
         {
             var r = result.Report;
 
-            var vm = new ChemistryReportViewModel
-            {
-                PollutantName = pollutant.DisplayName,
-                PollutantFormula = pollutant.Formula,
-                LiquidName = liquid.DisplayName,
-                LiquidFormula = liquid.Formula,
+            double reagentStoichiometricRatio =
+                reaction?.StoichiometricRatio > 0
+                    ? reaction.StoichiometricRatio
+                    : 1.0;
 
-                IsValid = result.IsValid,
-                ReadyForIndustrialUse = result.ReadyForIndustrialUse,
-                AllFindings = result.AllFindings?.ToList() ?? new(),
-                GeneratedAtUtc = r?.GeneratedAtUtc ?? DateTime.UtcNow
-            };
+            var vm =
+                new ChemistryReportViewModel
+                {
+                    PollutantName =
+                        pollutant.DisplayName,
+
+                    PollutantFormula =
+                        pollutant.Formula,
+
+                    LiquidName =
+                        liquid.DisplayName,
+
+                    LiquidFormula =
+                        liquid.Formula,
+
+                    IsValid =
+                        result.IsValid,
+
+                    ReadyForIndustrialUse =
+                        result.ReadyForIndustrialUse,
+
+                    AllFindings =
+                        result.AllFindings?.ToList() ?? new(),
+
+                    GeneratedAtUtc =
+                        r?.GeneratedAtUtc ?? DateTime.UtcNow,
+
+                    ReagentStoichiometricRatio =
+                        reagentStoichiometricRatio
+                };
 
             if (r?.Conditions != null)
             {
-                vm.InletConcentrationValue = r.Conditions.InletConcentrationValue;
-                vm.InletConcentrationUnits = r.Conditions.InletConcentrationUnits;
-                vm.OutletConcentrationValue = r.Conditions.OutletConcentrationValue;
-                vm.OutletConcentrationUnits = r.Conditions.OutletConcentrationUnits;
-                vm.RemovalEfficiencyPercent = r.Conditions.RemovalEfficiencyPercent;
-                vm.GasFlowKmolPerHr = r.Conditions.GasFlowKmolPerHr;
-                vm.LiquidFlowKmolPerHr = r.Conditions.LiquidFlowKmolPerHr;
-                vm.LiquidToGasRatio = r.Conditions.LiquidToGasRatio;
-                vm.ReagentConcentrationMolPerL = r.Conditions.ReagentConcentrationMolPerL;
-                vm.TemperatureC = r.Conditions.TemperatureC;
-                vm.PressureKPa = r.Conditions.PressureKPa;
+                vm.InletConcentrationValue =
+                    r.Conditions.InletConcentrationValue;
+
+                vm.InletConcentrationUnits =
+                    r.Conditions.InletConcentrationUnits;
+
+                vm.OutletConcentrationValue =
+                    r.Conditions.OutletConcentrationValue;
+
+                vm.OutletConcentrationUnits =
+                    r.Conditions.OutletConcentrationUnits;
+
+                vm.RemovalEfficiencyPercent =
+                    r.Conditions.RemovalEfficiencyPercent;
+
+                vm.GasFlowKmolPerHr =
+                    r.Conditions.GasFlowKmolPerHr;
+
+                vm.LiquidFlowKmolPerHr =
+                    r.Conditions.LiquidFlowKmolPerHr;
+
+                vm.LiquidToGasRatio =
+                    r.Conditions.LiquidToGasRatio;
+
+                vm.ReagentConcentrationMolPerL =
+                    r.Conditions.ReagentConcentrationMolPerL;
+
+                vm.TemperatureC =
+                    r.Conditions.TemperatureC;
+
+                vm.PressureKPa =
+                    r.Conditions.PressureKPa;
             }
 
             if (r?.ModelSelections != null)
             {
-                vm.HenryLawModel = r.ModelSelections.HenryLawModel;
-                vm.HenryConvention = r.ModelSelections.HenryConvention;
-                vm.ActivityModel = r.ModelSelections.ActivityModel;
-                vm.ReactionModel = r.ModelSelections.ReactionModel;
-                vm.MassTransferModel = r.ModelSelections.MassTransferModel;
-                vm.SaltingOutConsidered = r.ModelSelections.SaltingOutConsidered;
-                vm.ReactiveAbsorptionModeled = r.ModelSelections.ReactiveAbsorptionModeled;
+                vm.HenryLawModel =
+                    r.ModelSelections.HenryLawModel;
+
+                vm.HenryConvention =
+                    r.ModelSelections.HenryConvention;
+
+                vm.ActivityModel =
+                    r.ModelSelections.ActivityModel;
+
+                vm.ReactionModel =
+                    r.ModelSelections.ReactionModel;
+
+                vm.MassTransferModel =
+                    r.ModelSelections.MassTransferModel;
+
+                vm.SaltingOutConsidered =
+                    r.ModelSelections.SaltingOutConsidered;
+
+                vm.ReactiveAbsorptionModeled =
+                    r.ModelSelections.ReactiveAbsorptionModeled;
             }
 
             if (r?.Equilibrium != null)
             {
-                vm.DrivingForceInletMolFraction = r.Equilibrium.DrivingForceInletMolFraction;
-                vm.DrivingForceOutletMolFraction = r.Equilibrium.DrivingForceOutletMolFraction;
-                vm.PinchPointDetected = r.Equilibrium.PinchPointDetected;
-                vm.PinchWarning = r.Equilibrium.PinchWarning;
+                vm.DrivingForceInletMolFraction =
+                    r.Equilibrium.DrivingForceInletMolFraction;
+
+                vm.DrivingForceOutletMolFraction =
+                    r.Equilibrium.DrivingForceOutletMolFraction;
+
+                vm.PinchPointDetected =
+                    r.Equilibrium.PinchPointDetected;
+
+                vm.PinchWarning =
+                    r.Equilibrium.PinchWarning;
             }
 
             if (r?.MassTransfer != null)
             {
-                vm.GasSideResistanceFraction = r.MassTransfer.GasSideResistanceFraction;
-                vm.LiquidSideResistanceFraction = r.MassTransfer.LiquidSideResistanceFraction;
-                vm.ControllingResistance = r.MassTransfer.ControllingResistance;
-                vm.EnhancementFactorFromReaction = r.MassTransfer.EnhancementFactorFromReaction;
+                vm.GasSideResistanceFraction =
+                    r.MassTransfer.GasSideResistanceFraction;
+
+                vm.LiquidSideResistanceFraction =
+                    r.MassTransfer.LiquidSideResistanceFraction;
+
+                vm.ControllingResistance =
+                    r.MassTransfer.ControllingResistance;
+
+                vm.EnhancementFactorFromReaction =
+                    r.MassTransfer.EnhancementFactorFromReaction;
             }
 
             if (r?.Reagent != null)
             {
-                vm.AbsorbedPollutantKmolPerHr = r.Reagent.AbsorbedPollutantKmolPerHr;
-                vm.StoichiometricReagentDemandKmolPerHr = r.Reagent.StoichiometricReagentDemandKmolPerHr;
-                vm.ReagentSuppliedKmolPerHr = r.Reagent.ReagentSuppliedKmolPerHr;
-                vm.ExcessReagentFactor = r.Reagent.ExcessReagentFactor;
-                vm.ReagentUtilizationFraction = r.Reagent.ReagentUtilizationFraction;
+                vm.AbsorbedPollutantKmolPerHr =
+                    r.Reagent.AbsorbedPollutantKmolPerHr;
+
+                vm.StoichiometricReagentDemandKmolPerHr =
+                    r.Reagent.StoichiometricReagentDemandKmolPerHr;
+
+                vm.ReagentSuppliedKmolPerHr =
+                    r.Reagent.ReagentSuppliedKmolPerHr;
+
+                vm.ExcessReagentFactor =
+                    r.Reagent.ExcessReagentFactor;
+
+                vm.ReagentUtilizationFraction =
+                    r.Reagent.ReagentUtilizationFraction;
             }
 
             if (r?.MaterialBalance != null)
             {
-                vm.ClosureErrorFraction = r.MaterialBalance.ClosureErrorFraction;
-                vm.IsBalanced = r.MaterialBalance.IsBalanced;
-                vm.ClosureStatement = r.MaterialBalance.ClosureStatement;
+                vm.ClosureErrorFraction =
+                    r.MaterialBalance.ClosureErrorFraction;
+
+                vm.IsBalanced =
+                    r.MaterialBalance.IsBalanced;
+
+                vm.ClosureStatement =
+                    r.MaterialBalance.ClosureStatement;
             }
 
             if (r?.Validity != null)
             {
-                vm.CriticalErrorCount = r.Validity.CriticalErrorCount;
-                vm.WarningCount = r.Validity.WarningCount;
-                vm.CriticalErrors = r.Validity.CriticalErrors;
-                vm.Warnings = r.Validity.Warnings;
-                vm.HiddenAssumptions = r.Validity.HiddenAssumptions;
+                vm.CriticalErrorCount =
+                    r.Validity.CriticalErrorCount;
+
+                vm.WarningCount =
+                    r.Validity.WarningCount;
+
+                vm.CriticalErrors =
+                    r.Validity.CriticalErrors;
+
+                vm.Warnings =
+                    r.Validity.Warnings;
+
+                vm.HiddenAssumptions =
+                    r.Validity.HiddenAssumptions;
             }
 
             return vm;

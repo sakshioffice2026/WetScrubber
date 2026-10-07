@@ -39,6 +39,9 @@ namespace WetScrubber.Models
         [Range(0, 100, ErrorMessage = "0–100 mol/L")]
         public double ReagentConcentrationMolPerL { get; set; } = 0.5;
 
+        [Range(0.000001, 1000, ErrorMessage = "Must be > 0")]
+        public double ReagentStoichiometricRatio { get; set; } = 1.0;
+
         // ── Operating conditions ──
         [Range(-50, 200, ErrorMessage = "-50–200 °C")]
         public double TemperatureC { get; set; } = 25;
@@ -113,6 +116,7 @@ namespace WetScrubber.Models
         public double EnhancementFactorFromReaction { get; set; }
 
         // ── Reagent ──
+        public double ReagentStoichiometricRatio { get; set; } = 1.0;
         public double AbsorbedPollutantKmolPerHr { get; set; }
         public double StoichiometricReagentDemandKmolPerHr { get; set; }
         public double ReagentSuppliedKmolPerHr { get; set; }

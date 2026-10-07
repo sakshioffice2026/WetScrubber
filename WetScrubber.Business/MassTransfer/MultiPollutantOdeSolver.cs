@@ -126,10 +126,16 @@ namespace WetScrubber.Business.MassTransfer
                 gasDensityKgM3 = input.LegacyGasDensityKgM3;
             }
 
+            // ppm (mole basis) -> kg/m3: y * (P / (R*T)) [kmol/m3] * MW [kg/kmol]
+            double inletGasMolarDensityKmolM3 =
+                input.PressureKPa / (8.314 * (input.GasTemperatureC + 273.15));
+
             var odeInput = new RigourousTowerOdeSolver.SolverInput
             {
                 PollutantCodes = input.Pollutants.Select(p => p.Code).ToList(),
-                InletConcKgM3 = input.Pollutants.ToDictionary(p => p.Code, p => p.InletPpm),
+                InletConcKgM3 = input.Pollutants.ToDictionary(
+                    p => p.Code,
+                    p => (p.InletPpm / 1e6) * inletGasMolarDensityKmolM3 * p.MolecularWeight),
                 InitialLiquidFraction = input.Pollutants.ToDictionary(
                     p => p.Code,
                     p => input.InletLiquidLoadingKgKg.TryGetValue(p.Code, out var loaded) ? loaded : 0.0001),
@@ -232,7 +238,9 @@ namespace WetScrubber.Business.MassTransfer
                     seg.Pollutants[code] = new PollutantSegmentState
                     {
                         PollutantCode = code,
-                        GasInletPpm = cNow,
+                        GasInletPpm = ConcKgM3ToPpm(
+                            cNow, inletGasMolarDensityKmolM3,
+                            input.Pollutants.First(p => p.Code == code).MolecularWeight),
                         RemovalFraction = Math.Clamp(removal, 0.0, 1.0)
                     };
                 }
@@ -240,10 +248,15 @@ namespace WetScrubber.Business.MassTransfer
                 output.Segments.Add(seg);
             }
 
-            output.TotalHeatAbsorbedKW = Math.Abs(
-                input.LiquidMassFlowKgS * 4.18 *
-                (odeOutput.OutletLiquidTemperatureK - (input.LiquidInletTempC + 273.15)));
+            // Integrated sum of per-pollutant heat release (kmol/s * kJ/kmol = kW)
+            output.TotalHeatAbsorbedKW = odeOutput.TotalHeatAbsorbedKW;
             return output;
+        }
+
+        private static double ConcKgM3ToPpm(double concKgM3, double gasMolarDensityKmolM3, double molecularWeight)
+        {
+            double denom = gasMolarDensityKmolM3 * molecularWeight;
+            return denom > 0 ? concKgM3 / denom * 1e6 : 0.0;
         }
     }
 }
