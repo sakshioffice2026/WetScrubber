@@ -810,3 +810,365 @@ a {
     height: 12px !important;
     flex-shrink: 0;
 }
+
+
+/* ═════════════════════════════════════════════════════════════
+   Scrubber Create — compact single-page layout (2 containers)
+   ═════════════════════════════════════════════════════════════ */
+
+.create-wizard {
+    background: #f8fafc;
+    padding: 16px;
+    border-radius: 10px;
+}
+
+/* ── Stepper header (sticky) ── */
+.create-wizard .steps-bar {
+    position: sticky;
+    top: 54px;
+    z-index: 20;
+    border-color: #e2e8f0;
+}
+
+.create-wizard .steps-bar .step-item {
+    cursor: pointer;
+    opacity: 0.5;
+    border-bottom: 3px solid transparent;
+    transition: opacity 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.create-wizard .steps-bar .step-item:hover { opacity: 0.8; }
+
+.create-wizard .steps-bar .step-item:focus-visible {
+    outline: 2px solid #10B981;
+    outline-offset: -2px;
+}
+
+.create-wizard .steps-bar .step-item .step-num {
+    background: #E5E7EB;
+    color: #6B7280;
+}
+
+.create-wizard .steps-bar .step-item.active {
+    opacity: 1;
+    background: rgba(16, 185, 129, 0.06);
+    border-bottom-color: #10B981;
+}
+
+.create-wizard .steps-bar .step-item.active .step-num {
+    background: #10B981;
+    color: #ffffff;
+}
+
+.create-wizard .steps-bar .step-item.active .step-label,
+.create-wizard .steps-bar .step-item.active .step-sub { color: #111827; }
+
+/* ── Containers ── */
+.create-wizard .wizard-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    margin-bottom: 16px;
+    padding: 0;
+}
+
+.create-wizard .step-block {
+    padding: 14px 16px 16px;
+    scroll-margin-top: 130px;
+}
+
+.create-wizard .step-block + .step-block { border-top: 1px solid #e2e8f0; }
+
+.create-wizard .step-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #334155;
+    margin-bottom: 12px;
+}
+
+.create-wizard .step-badge {
+    background: #10B981;
+    color: #ffffff;
+    font-size: 10px;
+    letter-spacing: 0.3px;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+/* ── Compact field grids ── */
+.create-wizard .fg-auto {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px 14px;
+}
+
+.create-wizard .step-block .fg2 { gap: 10px 14px; }
+
+.create-wizard .step-block .form-group label { font-size: 11.5px; margin-bottom: 3px; }
+
+.create-wizard .step-block .form-group input:not([type="checkbox"]),
+.create-wizard .step-block .form-group select {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 12.5px;
+}
+
+/* ── Gas | Pollutants panels ── */
+.create-wizard .gas-pollutant-container { row-gap: 14px; }
+
+.create-wizard .gp-col { display: flex; }
+
+.create-wizard .gp-panel {
+    flex: 1;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+
+.create-wizard .gp-panel-body { padding: 12px 14px 14px; }
+
+.create-wizard .card-title-sm {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
+/* ── Input + unit badge ── */
+.create-wizard .input-unit {
+    display: flex;
+    align-items: stretch;
+}
+
+.create-wizard .input-unit input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+}
+
+.create-wizard .unit-badge {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #64748b;
+    background: #f1f5f9;
+    border: 1px solid #e4e6ea;
+    border-top-right-radius: 7px;
+    border-bottom-right-radius: 7px;
+    white-space: nowrap;
+}
+
+/* ── Pollutants mini table ── */
+.create-wizard .pollutant-scroll { overflow-x: auto; }
+
+.create-wizard .pollutant-table-head,
+.create-wizard .pollutant-row {
+    grid-template-columns: minmax(90px, 1.4fr) repeat(4, minmax(62px, 1fr)) 32px;
+    min-width: 470px;
+    gap: 6px;
+}
+
+.create-wizard .pollutant-table-head {
+    display: grid;
+    padding: 0 8px 6px;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 8px;
+}
+
+.create-wizard .pollutant-row {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+}
+
+.create-wizard .pollutant-row .form-group label { display: none; }
+
+.create-wizard .pollutant-row input,
+.create-wizard .pollutant-row select {
+    height: 32px;
+    padding: 0 6px;
+    font-size: 12px;
+}
+
+.create-wizard .btn-add-pollutant { margin-top: 6px; }
+
+/* ── Footer action bar ── */
+.create-wizard .wizard-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    margin: 0 -16px -16px;
+    border-radius: 0 0 10px 10px;
+}
+
+.create-wizard .btn-wiz {
+    height: 36px;
+    padding: 0 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    background: #ffffff;
+    color: #0b1120;
+    border: 1px solid #e2e8f0;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.create-wizard .btn-wiz:hover { background: #f8fafc; border-color: #cbd5e1; }
+
+.create-wizard .btn-wiz.primary {
+    background: #10B981;
+    border-color: #10B981;
+    color: #ffffff;
+}
+
+.create-wizard .btn-wiz.primary:hover { background: #059669; border-color: #059669; }
+
+
+/* ═════════════════════════════════════════════════════════════
+   Sidebar navigation — grouped sections
+   ═════════════════════════════════════════════════════════════ */
+
+.sb-nav .sb-section {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0 18px;
+}
+
+.sb-nav .sb-section:first-child { margin-top: 0.5rem; }
+
+.sb-nav .sb-item {
+    gap: 0;
+    padding: 9px 16px 9px 12px;
+    border-left: 4px solid transparent;
+}
+
+.sb-nav .sb-item svg {
+    width: 18px;
+    height: 18px;
+    margin-right: 0.75rem;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+}
+
+.sb-nav .sb-item.active {
+    color: #ffffff;
+    background: #1e293b;
+    border-left-color: #10b981;
+}
+
+.sb-nav .sb-item.active svg { color: #10b981; }
+
+
+/* ── Step 3: liquid specs rows ── */
+.create-wizard .liquid-row-2 { margin-top: 2px; }
+
+.create-wizard .label-spacer { visibility: hidden; }
+
+.create-wizard .check-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+}
+
+.create-wizard .check-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #0b1120;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.create-wizard .check-inline input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #10B981;
+}
+
+.create-wizard .info-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 700;
+    font-style: italic;
+    cursor: help;
+    flex-shrink: 0;
+}
+
+.create-wizard .info-tip:hover,
+.create-wizard .info-tip:focus { background: #10B981; color: #ffffff; outline: none; }
+
+.create-wizard .info-tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 240px;
+    padding: 8px 10px;
+    background: #0f172a;
+    color: #f8fafc;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.4;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.15s;
+    z-index: 30;
+}
+
+.create-wizard .info-tip:hover::after,
+.create-wizard .info-tip:focus::after { opacity: 1; visibility: visible; }
+
+.create-wizard .slurry-card {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 10px 12px;
+}

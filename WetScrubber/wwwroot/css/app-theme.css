@@ -1,0 +1,168 @@
+/* ═════════════════════════════════════════════════════════════
+   app-theme.css — typography, form controls, badges and cards
+   Loaded after dashboard.css (see _Layout.cshtml)
+   ═════════════════════════════════════════════════════════════ */
+
+:root {
+    --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --slate-900: #0f172a;
+    --slate-600: #475569;
+    --slate-500: #64748b;
+    --slate-300: #cbd5e1;
+    --slate-200: #e2e8f0;
+    --slate-100: #f1f5f9;
+    --green-500: #10b981;
+}
+
+/* ── 1. Font family ── */
+body,
+input,
+select,
+textarea,
+button {
+    font-family: var(--font-ui);
+}
+
+    /* ── 2. Labels ── */
+    body .form-group label,
+    body label.form-label {
+        font-size: 0.725rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--slate-600);
+    }
+
+        body .form-group label .req {
+            color: #ef4444;
+        }
+
+        body .form-group label .unit {
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 500;
+            color: var(--slate-500);
+        }
+
+    /* checkbox labels stay sentence-case */
+    body .create-wizard .check-inline {
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--slate-900);
+    }
+
+    /* ── 2. Inputs ── */
+    body .form-group input:not([type="checkbox"]):not([type="radio"]),
+    body .form-group select,
+    body .form-group textarea,
+    body .form-control,
+    body .form-select {
+        font-weight: 500;
+        color: var(--slate-900);
+        border: 1px solid var(--slate-300);
+        border-radius: 6px;
+        background-color: #ffffff;
+    }
+
+        body .form-group input::placeholder,
+        body .form-control::placeholder {
+            color: #94a3b8;
+            font-weight: 400;
+        }
+
+        body .form-group input:not([type="checkbox"]):not([type="radio"]):focus,
+        body .form-group select:focus,
+        body .form-group textarea:focus,
+        body .form-control:focus,
+        body .form-select:focus {
+            border-color: var(--green-500);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+            outline: none;
+        }
+
+        body .form-group input.is-invalid,
+        body .form-group select.is-invalid {
+            border-color: #ef4444;
+        }
+
+    /* ── 2. Unit badges ── */
+    body .create-wizard .unit-badge,
+    body .input-group-text {
+        background-color: var(--slate-100);
+        color: var(--slate-500);
+        font-size: 0.8rem;
+        font-weight: 600;
+        border: 1px solid var(--slate-300);
+    }
+
+    body .create-wizard .input-unit input {
+        border-radius: 6px 0 0 6px;
+        border-right: none;
+    }
+
+    body .create-wizard .unit-badge {
+        border-radius: 0 6px 6px 0;
+    }
+
+    /* ── 3. Step pills & section titles ── */
+    body .create-wizard .step-badge {
+        background-color: #ecfdf5;
+        color: #047857;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        border: 1px solid #a7f3d0;
+    }
+
+    body .create-wizard .step-heading {
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        text-transform: none;
+        color: var(--slate-900);
+    }
+
+    body .create-wizard .card-title-sm {
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        text-transform: none;
+        color: var(--slate-900);
+    }
+
+    /* ── 4. Card containers ── */
+    body .card,
+    body .form-card,
+    body .create-wizard .wizard-card,
+    body .create-wizard .gp-panel {
+        background: #ffffff;
+        border: 1px solid var(--slate-200);
+        border-radius: 10px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    body .create-wizard .gp-panel {
+        box-shadow: none;
+    }
+
+
+/* ── Results: KPI rows (Bootstrap grid) ── */
+.results-kpi-row {
+    margin-bottom: 1rem;
+}
+
+    .results-kpi-row .h-100 {
+        height: 100% !important;
+    }
+
+    .results-kpi-row > .col {
+        display: flex;
+    }
+
+        .results-kpi-row > .col > .result-kpi {
+            width: 100%;
+        }

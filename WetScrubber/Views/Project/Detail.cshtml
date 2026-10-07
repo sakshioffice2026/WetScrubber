@@ -1,4 +1,4 @@
-﻿@using WetScrubber.Database.Enums
+@using WetScrubber.Database.Enums
 @model WetScrubber.Models.ProjectDetailViewModel
 @{
     ViewData["Title"] = Model.ProjectName;
@@ -101,16 +101,10 @@
 <div class="designs-card">
     <div class="designs-header">
         <div class="designs-title">Scrubber Designs (@Model.TotalDesigns)</div>
-        <div style="display:flex;gap:8px;align-items:center;">
-            <a href="/Agent/Index?projectId=@Model.ProjectId" class="btn-new-design">
-                <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="#0b1120" stroke-width="2" fill="none" /></svg>
-                Design with AI
-            </a>
-            <a href="/Scrubber/Create?projectId=@Model.ProjectId" class="btn-new-design">
+        <a href="/Scrubber/Create?projectId=@Model.ProjectId" class="btn-new-design">
                 <svg viewBox="0 0 16 16"><path d="M8 1v14M1 8h14" stroke="#0b1120" stroke-width="2" fill="none" /></svg>
                 Add Design
             </a>
-        </div>
     </div>
 
     @if (Model.Designs.Any())

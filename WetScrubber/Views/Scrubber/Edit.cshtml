@@ -1,4 +1,4 @@
-﻿@using WetScrubber.Database.Enums
+@using WetScrubber.Database.Enums
 @model WetScrubber.Models.EditDesignViewModel
 @{
     ViewData["Title"] = "Edit Design";
@@ -277,7 +277,7 @@
                             <input type="number" step="any"
                                    name="Pollutants[@i].TargetRemovalEfficiency"
                                    value="@Model.Pollutants[i].TargetRemovalEfficiency"
-                                   class="removal-eff" placeholder="95" />
+                                   class="removal-eff" placeholder="" />
                         </div>
                         <div class="form-group">
                             <label>Mol. Weight</label>
@@ -376,6 +376,13 @@
                     </select>
                     <span class="field-error">@Html.ValidationMessageFor(m => m.PackingCode)</span>
                     <span class="field-hint">Only used for Packed Tower sizing; ignored for other scrubber types.</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="PackingHeightOverride">Installed Packing Height (m)</label>
+                    <input asp-for="PackingHeightOverride" type="number" step="any" min="0" placeholder="0 = size from target outlet" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.PackingHeightOverride)</span>
+                    <span class="field-hint">Packed Tower: when greater than 0, removal efficiency is calculated at this height instead of being sized from the target outlet.</span>
                 </div>
 
                 <div class="form-group">
@@ -505,7 +512,7 @@
         <div class="form-group">
             <label>Removal %</label>
             <input type="number" step="any" name="Pollutants[INDEX].TargetRemovalEfficiency"
-                   class="removal-eff" placeholder="95" />
+                   class="removal-eff" placeholder="" />
         </div>
         <div class="form-group">
             <label>Mol. Weight</label>

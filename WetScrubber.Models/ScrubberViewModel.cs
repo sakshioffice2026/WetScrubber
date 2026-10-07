@@ -104,6 +104,10 @@ namespace WetScrubber.Models
         // empty post with "The Packing Type field is required," even
         // though an empty value is meant to fall back to PallRing50
         // (see ScrubberController.Create/Edit, which normalize it).
+        [Range(0, 100, ErrorMessage = "Must be between 0 and 100 m")]
+        [Display(Name = "Installed Packing Height (m)")]
+        public double PackingHeightOverride { get; set; }
+
         [Required(AllowEmptyStrings = true)]
         [Display(Name = "Packing Type")]
         public string PackingCode { get; set; } = "PallRing50";  // FK -> packing.Code, default to common choice
@@ -236,12 +240,12 @@ namespace WetScrubber.Models
         [Required]
         [Range(0, 1000000)]
         [Display(Name = "Target Outlet (mg/Nm³)")]
-        public double TargetOutletConcentration { get; set; } = 50;
+        public double TargetOutletConcentration { get; set; }
 
         [Required]
         [Range(1, 99.99)]
         [Display(Name = "Target Removal (%)")]
-        public double TargetRemovalEfficiency { get; set; } = 95;
+        public double TargetRemovalEfficiency { get; set; }
 
         [Range(1, 500)]
         [Display(Name = "Molecular Weight (g/mol)")]

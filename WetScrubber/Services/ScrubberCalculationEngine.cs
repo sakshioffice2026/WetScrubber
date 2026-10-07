@@ -187,11 +187,16 @@ namespace WetScrubber.Services
                     gasDensityKgM3: vm.GasDensity
                 );
 
-            result.PackingHeight = Math.Round(ntuResult.PackingHeight, 2);
-            result.NTU = Math.Round(ntuResult.NTU, 2);
+            double designPackingHeight = vm.PackingHeightOverride > 0
+                ? vm.PackingHeightOverride
+                : Math.Ceiling(ntuResult.PackingHeight * 100.0) / 100.0;
+
+            result.PackingHeight = Math.Round(designPackingHeight, 2);
+            result.NTU = Math.Round(designPackingHeight / Math.Max(ntuResult.HTU, 1e-9), 2);
             result.HTU = Math.Round(ntuResult.HTU, 2);
             result.AbsorptionFactor = Math.Round(ntuResult.AbsorptionFactor, 3);
-            result.RemovalEfficiency = Math.Round(ntuResult.RemovalEfficiency, 2);
+            result.RemovalEfficiency = Math.Round(
+                PackedTowerEfficiencyCalculator.AtHeight(designPackingHeight, ntuResult.HTU, ntuResult.AbsorptionFactor), 2);
 
             // 4. Total tower height = packing + 30% freeboard + 1m sump + 1m top
             result.TowerHeight = Math.Round(result.PackingHeight * 1.3 + 2.0, 2);

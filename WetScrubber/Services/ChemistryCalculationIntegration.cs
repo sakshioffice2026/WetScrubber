@@ -61,7 +61,7 @@ namespace WetScrubber.Business.Services
             // ── Tower Design ──
             public double PackingHeightM { get; set; }
             public int LayerDiscretization { get; set; } = 50;
-            public double TargetRemovalEfficiencyPercent { get; set; } = 95.0;
+            public double TargetRemovalEfficiencyPercent { get; set; }
 
             // ── Chemistry Options ──
             public bool IncludeReactiveAbsorption { get; set; } = false;

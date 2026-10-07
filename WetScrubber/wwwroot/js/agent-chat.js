@@ -10,8 +10,8 @@
         projectId: parseInt(root.dataset.projectId, 10),
         chatUrl: root.dataset.chatUrl,
         resetUrl: root.dataset.resetUrl,
-        saveUrl: root.dataset.saveUrl,
-        optimizeUrl: root.dataset.optimizeUrl
+        optimizeUrl: root.dataset.optimizeUrl,
+        saveUrl: root.dataset.saveUrl
     };
 
     var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
@@ -27,6 +27,8 @@
         results: document.getElementById('resultCard'),
         checks: document.getElementById('checksCard'),
         confirm: document.getElementById('btnConfirm'),
+        comparison: document.getElementById('optimizationComparisonCard'),
+        comparisonBody: document.getElementById('optimizationComparisonBody'),
         modal: document.getElementById('saveModal'),
         modalName: document.getElementById('saveDesignName'),
         modalError: document.getElementById('saveModalError'),
@@ -68,15 +70,26 @@
         totalPowerKW: ['Total power', 'kW']
     };
 
-    var MATERIAL_NAMES = { 1: 'FRP', 2: 'PP', 3: 'HDPE', 4: 'PVC', 5: 'SS316', 6: 'HastelloyC', 7: 'CarbonSteel' };
+    var MATERIAL_NAMES = {
+        1: 'FRP',
+        2: 'PP',
+        3: 'HDPE',
+        4: 'PVC',
+        5: 'SS316',
+        6: 'HastelloyC',
+        7: 'CarbonSteel'
+    };
 
     var busy = false;
     var designComplete = false;
 
     function fmt(value) {
         if (typeof value === 'number' && isFinite(value)) {
-            return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+            return value.toLocaleString(undefined, {
+                maximumFractionDigits: 2
+            });
         }
+
         return String(value);
     }
 
@@ -98,10 +111,8 @@
     function setBusy(state) {
         busy = state;
         el.send.disabled = state;
+        el.optimize.disabled = state;
         el.input.disabled = state;
-        if (el.optimize) {
-            el.optimize.disabled = state;
-        }
     }
 
     function postJson(url, body) {
@@ -114,12 +125,15 @@
             credentials: 'same-origin',
             body: JSON.stringify(body || {})
         }).then(function (res) {
-            return res.json().catch(function () { return {}; }).then(function (data) {
+            return res.json().catch(function () {
+                return {};
+            }).then(function (data) {
                 if (!res.ok) {
                     var err = new Error(data.error || 'Request failed.');
                     err.status = res.status;
                     throw err;
                 }
+
                 return data;
             });
         });
@@ -161,36 +175,67 @@
         if (draft) {
             Object.keys(DRAFT_LABELS).forEach(function (key) {
                 var value = draft[key];
+
                 if (value === null || value === undefined || value === '') {
                     return;
                 }
-                if ((key === 'shellMaterial' || key === 'internalMaterial') && typeof value === 'number') {
+
+                if ((key === 'shellMaterial' ||
+                    key === 'internalMaterial') &&
+                    typeof value === 'number') {
                     value = MATERIAL_NAMES[value] || value;
                 }
-                rows.push({ label: DRAFT_LABELS[key][0], value: fmt(value), unit: DRAFT_LABELS[key][1] });
+
+                rows.push({
+                    label: DRAFT_LABELS[key][0],
+                    value: fmt(value),
+                    unit: DRAFT_LABELS[key][1]
+                });
             });
         }
 
-        renderRows(el.draft, rows, 'Nothing captured yet.');
+        renderRows(
+            el.draft,
+            rows,
+            'Nothing captured yet.'
+        );
     }
 
     function renderResults(calc) {
         if (!calc) {
-            renderRows(el.results, [], 'Results appear once all required inputs are provided.');
+            renderRows(
+                el.results,
+                [],
+                'Results appear once all required inputs are provided.'
+            );
             return;
         }
 
         if (calc.error) {
-            renderRows(el.results, [{ label: 'Error', value: calc.error, unit: '' }], '');
+            renderRows(
+                el.results,
+                [{
+                    label: 'Error',
+                    value: calc.error,
+                    unit: ''
+                }],
+                ''
+            );
             return;
         }
 
         var rows = [];
+
         Object.keys(RESULT_LABELS).forEach(function (key) {
             if (calc[key] === null || calc[key] === undefined) {
                 return;
             }
-            rows.push({ label: RESULT_LABELS[key][0], value: fmt(calc[key]), unit: RESULT_LABELS[key][1] });
+
+            rows.push({
+                label: RESULT_LABELS[key][0],
+                value: fmt(calc[key]),
+                unit: RESULT_LABELS[key][1]
+            });
         });
 
         renderRows(el.results, rows, 'No results.');
@@ -220,7 +265,8 @@
             var status = String(c.status || '').toUpperCase();
 
             var row = document.createElement('div');
-            row.className = 'check-row check-' + status.toLowerCase();
+            row.className =
+                'check-row check-' + status.toLowerCase();
 
             var badge = document.createElement('span');
             badge.className = 'check-badge';
@@ -253,9 +299,118 @@
         });
     }
 
+    function getValue(source, keys) {
+        if (!source) {
+            return null;
+        }
+
+        for (var i = 0; i < keys.length; i++) {
+            if (source[keys[i]] !== null &&
+                source[keys[i]] !== undefined) {
+                return source[keys[i]];
+            }
+        }
+
+        return null;
+    }
+
+    function renderComparison(data) {
+        var before = data.before || data.current || data.original;
+        var after = data.after || data.optimized;
+
+        if (!before || !after) {
+            el.comparison.hidden = true;
+            return;
+        }
+
+        clear(el.comparisonBody);
+
+        var rows = [
+            {
+                label: 'Packing',
+                before: getValue(before, ['packingCode', 'packingUsed']),
+                after: getValue(after, ['packingCode', 'packingUsed'])
+            },
+            {
+                label: 'L/G (L/m³)',
+                before: getValue(before, ['actualLGRatio', 'liquidToGasRatio']),
+                after: getValue(after, ['actualLGRatio', 'liquidToGasRatio'])
+            },
+            {
+                label: 'Total Power (kW)',
+                before: getValue(before, ['totalPowerKW']),
+                after: getValue(after, ['totalPowerKW'])
+            },
+            {
+                label: 'Tower Diameter (m)',
+                before: getValue(before, ['towerDiameterM']),
+                after: getValue(after, ['towerDiameterM'])
+            },
+            {
+                label: 'Tower Height (m)',
+                before: getValue(before, ['towerHeightM']),
+                after: getValue(after, ['towerHeightM'])
+            },
+            {
+                label: 'Liquid Loading (m³/m²·h)',
+                before: getValue(before, ['liquidLoadingM3M2Hr']),
+                after: getValue(after, ['liquidLoadingM3M2Hr'])
+            },
+            {
+                label: 'Pressure Drop (Pa)',
+                before: getValue(before, ['pressureDropPa']),
+                after: getValue(after, ['pressureDropPa'])
+            },
+            {
+                label: 'Flooding (%)',
+                before: getValue(before, ['percentFlood']),
+                after: getValue(after, ['percentFlood'])
+            },
+            {
+                label: 'Predicted Removal (%)',
+                before: getValue(before, ['removalEfficiencyPct']),
+                after: getValue(after, ['removalEfficiencyPct'])
+            }
+        ];
+
+        rows.forEach(function (item) {
+            if (item.before === null && item.after === null) {
+                return;
+            }
+
+            var tr = document.createElement('tr');
+
+            var parameter = document.createElement('td');
+            parameter.textContent = item.label;
+
+            var beforeCell = document.createElement('td');
+            beforeCell.textContent =
+                item.before === null ? '—' : fmt(item.before);
+
+            var afterCell = document.createElement('td');
+            afterCell.textContent =
+                item.after === null ? '—' : fmt(item.after);
+
+            tr.appendChild(parameter);
+            tr.appendChild(beforeCell);
+            tr.appendChild(afterCell);
+
+            el.comparisonBody.appendChild(tr);
+        });
+
+        el.comparison.hidden =
+            el.comparisonBody.children.length === 0;
+    }
+
     function updateConfirm(data) {
-        var hasError = data.calculation && data.calculation.error;
-        designComplete = !!data.designComplete && !hasError;
+        var hasError =
+            data.calculation &&
+            data.calculation.error;
+
+        designComplete =
+            !!data.designComplete &&
+            !hasError;
+
         el.confirm.disabled = !designComplete;
     }
 
@@ -265,6 +420,7 @@
         }
 
         var text = el.input.value.trim();
+
         if (!text) {
             return;
         }
@@ -273,12 +429,16 @@
         el.input.value = '';
         setBusy(true);
 
-        var pending = addMessage('Thinking…', 'msg-ai msg-pending');
+        var pending =
+            addMessage('Thinking…', 'msg-ai msg-pending');
 
-        postJson(cfg.chatUrl, { message: text })
+        postJson(cfg.chatUrl, {
+            message: text
+        })
             .then(function (data) {
                 pending.classList.remove('msg-pending');
                 pending.textContent = data.message || '';
+
                 renderDraft(data.draft);
                 renderResults(data.calculation);
                 renderChecks(data.checks);
@@ -287,9 +447,11 @@
             .catch(function (err) {
                 pending.classList.remove('msg-pending');
                 pending.classList.add('msg-error');
-                pending.textContent = err.status === 401
-                    ? 'Your session has expired. Please log in again.'
-                    : err.message;
+
+                pending.textContent =
+                    err.status === 401
+                        ? 'Your session has expired. Please log in again.'
+                        : err.message;
             })
             .then(function () {
                 setBusy(false);
@@ -299,33 +461,43 @@
     }
 
     function optimizeDesign() {
-        if (busy) {
+        if (busy || !cfg.optimizeUrl) {
             return;
         }
 
-        addMessage('Optimize this design', 'msg-user');
         setBusy(true);
 
-        var pending = addMessage('Optimizing…', 'msg-ai msg-pending');
+        var pending =
+            addMessage('Optimizing the design…', 'msg-ai msg-pending');
 
-        postJson(cfg.optimizeUrl, {})
+        postJson(cfg.optimizeUrl, {
+            projectId: cfg.projectId
+        })
             .then(function (data) {
                 pending.classList.remove('msg-pending');
-                pending.textContent = data.message || '';
-                renderDraft(data.draft);
-                renderResults(data.calculation);
-                renderChecks(data.checks);
+                pending.textContent =
+                    data.message || 'Optimization completed.';
+
+                renderComparison(data);
+
+                if (data.calculation) {
+                    renderResults(data.calculation);
+                }
+
+                if (data.checks) {
+                    renderChecks(data.checks);
+                }
+
                 updateConfirm(data);
             })
             .catch(function (err) {
                 pending.classList.remove('msg-pending');
                 pending.classList.add('msg-error');
-                pending.textContent = err.status === 401
-                    ? 'Your session has expired. Please log in again.'
-                    : err.message;
+                pending.textContent = err.message;
             })
             .then(function () {
                 setBusy(false);
+                el.input.focus();
                 el.log.scrollTop = el.log.scrollHeight;
             });
     }
@@ -338,15 +510,27 @@
         postJson(cfg.resetUrl, {})
             .then(function () {
                 clear(el.log);
-                addMessage('Starting a new design. Describe your requirement.', 'msg-ai');
+
+                addMessage(
+                    'Starting a new design. Describe your requirement.',
+                    'msg-ai'
+                );
+
                 renderDraft(null);
                 renderResults(null);
                 renderChecks(null);
+
+                clear(el.comparisonBody);
+                el.comparison.hidden = true;
+
                 designComplete = false;
                 el.confirm.disabled = true;
             })
             .catch(function (err) {
-                addMessage(err.message, 'msg-ai msg-error');
+                addMessage(
+                    err.message,
+                    'msg-ai msg-error'
+                );
             });
     }
 
@@ -354,6 +538,7 @@
         if (!designComplete) {
             return;
         }
+
         el.modalError.hidden = true;
         el.modalName.value = '';
         el.modal.hidden = false;
@@ -374,13 +559,16 @@
         })
             .then(function (data) {
                 if (data.redirectUrl) {
-                    window.location.href = data.redirectUrl;
+                    window.location.href =
+                        data.redirectUrl;
                 } else {
                     closeModal();
                 }
             })
             .catch(function (err) {
-                el.modalError.textContent = err.message;
+                el.modalError.textContent =
+                    err.message;
+
                 el.modalError.hidden = false;
             })
             .then(function () {
@@ -390,6 +578,11 @@
 
     el.send.addEventListener('click', sendMessage);
 
+    el.optimize.addEventListener(
+        'click',
+        optimizeDesign
+    );
+
     el.input.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -397,14 +590,25 @@
         }
     });
 
-    if (el.optimize) {
-        el.optimize.addEventListener('click', optimizeDesign);
-    }
+    el.reset.addEventListener(
+        'click',
+        resetDesign
+    );
 
-    el.reset.addEventListener('click', resetDesign);
-    el.confirm.addEventListener('click', openModal);
-    el.modalCancel.addEventListener('click', closeModal);
-    el.modalSave.addEventListener('click', saveDesign);
+    el.confirm.addEventListener(
+        'click',
+        openModal
+    );
+
+    el.modalCancel.addEventListener(
+        'click',
+        closeModal
+    );
+
+    el.modalSave.addEventListener(
+        'click',
+        saveDesign
+    );
 
     el.modal.addEventListener('click', function (e) {
         if (e.target === el.modal) {

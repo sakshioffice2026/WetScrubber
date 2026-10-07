@@ -51,7 +51,7 @@ namespace WetScrubber.Models
         public double PackingHeightM { get; set; } = 5;
 
         [Range(0, 100, ErrorMessage = "0–100%")]
-        public double TargetRemovalEfficiencyPercent { get; set; } = 95;
+        public double TargetRemovalEfficiencyPercent { get; set; }
 
         // ── Reactive absorption (optional) ──
         public bool IncludeReactiveAbsorption { get; set; } = false;

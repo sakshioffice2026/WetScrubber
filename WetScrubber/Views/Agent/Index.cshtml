@@ -43,14 +43,18 @@
      data-optimize-url="@Url.Action("Optimize", "Agent")"
      data-save-url="@Url.Action("Save", "Agent")">
 
-    <!-- ── Chat column ───────────────────────────────────── -->
     <section class="agent-chat">
         <header class="agent-chat-head">
             <div>
                 <div class="agent-title">AI Design Assistant</div>
                 <div class="agent-sub">@projectName</div>
             </div>
-            <button type="button" class="agent-btn-ghost" id="btnReset">New design</button>
+
+            <button type="button"
+                    class="agent-btn-ghost"
+                    id="btnReset">
+                New design
+            </button>
         </header>
 
         <div class="agent-log" id="chatLog" aria-live="polite">
@@ -61,56 +65,137 @@
         </div>
 
         <div class="agent-input">
-            <textarea id="chatInput" rows="2" maxlength="2000"
+            <textarea id="chatInput"
+                      rows="2"
+                      maxlength="2000"
                       placeholder="e.g. 50,000 Nm³/hr gas with SO2 at 800 mg/Nm³, 150 °C, PP packing"></textarea>
-            <button type="button" class="agent-btn-ghost" id="btnOptimize" title="Find the lowest-power design that passes all checks">Optimize</button>
-            <button type="button" class="agent-btn" id="btnSend">Send</button>
+
+            <button type="button"
+                    class="agent-btn-ghost"
+                    id="btnOptimize"
+                    title="Find the lowest-power design that passes all checks">
+                Optimize
+            </button>
+
+            <button type="button"
+                    class="agent-btn"
+                    id="btnSend">
+                Send
+            </button>
         </div>
     </section>
 
-    <!-- ── Preview column ────────────────────────────────── -->
     <aside class="agent-preview">
 
         <div class="pcard">
             <div class="pcard-head">Design inputs</div>
+
             <div class="pcard-body" id="draftCard">
-                <div class="pcard-empty">Nothing captured yet.</div>
+                <div class="pcard-empty">
+                    Nothing captured yet.
+                </div>
             </div>
         </div>
 
         <div class="pcard">
             <div class="pcard-head">Calculated results</div>
+
             <div class="pcard-body" id="resultCard">
-                <div class="pcard-empty">Results appear once all required inputs are provided.</div>
+                <div class="pcard-empty">
+                    Results appear once all required inputs are provided.
+                </div>
             </div>
         </div>
 
         <div class="pcard">
             <div class="pcard-head">Physical checks</div>
+
             <div class="pcard-body" id="checksCard">
-                <div class="pcard-empty">No checks run yet.</div>
+                <div class="pcard-empty">
+                    No checks run yet.
+                </div>
             </div>
         </div>
 
-        <button type="button" class="agent-btn agent-btn-save" id="btnConfirm" disabled>
+        <div class="pcard comparison-section"
+             id="optimizationComparisonCard"
+             hidden>
+
+            <div class="pcard-head">
+                Before vs After Optimization
+            </div>
+
+            <div class="pcard-body">
+                <div class="comparison-table-wrapper">
+                    <table class="comparison-table"
+                           id="optimizationComparisonTable">
+
+                        <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Before</th>
+                                <th>After</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="optimizationComparisonBody">
+                        </tbody>
+
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <button type="button"
+                class="agent-btn agent-btn-save"
+                id="btnConfirm"
+                disabled>
             Confirm &amp; Save
         </button>
+
     </aside>
 </div>
 
-<!-- ── Confirm & Save modal ──────────────────────────────── -->
 <div class="agent-modal" id="saveModal" hidden>
-    <div class="agent-modal-box" role="dialog" aria-modal="true" aria-labelledby="saveModalTitle">
-        <h3 id="saveModalTitle">Save this design?</h3>
+    <div class="agent-modal-box"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="saveModalTitle">
+
+        <h3 id="saveModalTitle">
+            Save this design?
+        </h3>
+
         <p id="saveModalNote">
             The inputs will be saved to this project. You can then run the full calculation from the design page.
         </p>
-        <label for="saveDesignName">Design name</label>
-        <input type="text" id="saveDesignName" maxlength="200" placeholder="Design name" />
-        <div class="agent-modal-error" id="saveModalError" hidden></div>
+
+        <label for="saveDesignName">
+            Design name
+        </label>
+
+        <input type="text"
+               id="saveDesignName"
+               maxlength="200"
+               placeholder="Design name" />
+
+        <div class="agent-modal-error"
+             id="saveModalError"
+             hidden>
+        </div>
+
         <div class="agent-modal-actions">
-            <button type="button" class="agent-btn-ghost" id="btnSaveCancel">Cancel</button>
-            <button type="button" class="agent-btn" id="btnSaveConfirm">Save design</button>
+            <button type="button"
+                    class="agent-btn-ghost"
+                    id="btnSaveCancel">
+                Cancel
+            </button>
+
+            <button type="button"
+                    class="agent-btn"
+                    id="btnSaveConfirm">
+                Save design
+            </button>
         </div>
     </div>
 </div>

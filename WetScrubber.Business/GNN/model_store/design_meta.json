@@ -1,5 +1,6 @@
 {
-  "trained": false,
-  "n_samples": 0,
-  "trained_at": 1786087544.8987865
+  "trained": true,
+  "n_samples": 8,
+  "cv_r2": null,
+  "trained_at": 1786097732.5540147
 }

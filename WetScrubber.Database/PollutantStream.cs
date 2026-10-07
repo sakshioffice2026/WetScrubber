@@ -15,7 +15,7 @@ namespace WetScrubber.Database
 
         public double InletConcentration { get; set; }
         public double TargetOutletConcentration { get; set; }
-        public double TargetRemovalEfficiency { get; set; } = 95;
+        public double TargetRemovalEfficiency { get; set; }
         public double MolecularWeight { get; set; } = 64;
         public double HenrysLawConstant { get; set; }
 

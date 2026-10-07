@@ -41,7 +41,6 @@ namespace WetScrubber.Business.Diagnostics
         // default of 95%). Used only as a floor for the check — never
         // silently skip evaluating removal efficiency just because a
         // target wasn't set.
-        private const double DefaultRemovalEfficiencyTargetPercent = 95.0;
 
         // Margins layered on top of a computed minimum before it's shown
         // as a suggested value — landing exactly on a threshold still
@@ -208,9 +207,10 @@ namespace WetScrubber.Business.Diagnostics
             // this check. A missing target must never be read as "this
             // design is fine" — that's the one failure mode this whole
             // engine exists to avoid.
-            double target = (m.TargetRemovalEfficiency is double t && t > 0)
-                ? t
-                : DefaultRemovalEfficiencyTargetPercent;
+            if (!(m.TargetRemovalEfficiency is double t) || t <= 0)
+                return;
+
+            double target = t;
 
             if (m.RemovalEfficiency < target)
             {
