@@ -112,6 +112,7 @@ namespace WetScrubber.Controllers
             foreach (var k in keys) ModelState.Remove(k);
 
             NormalizeOptionalDefaults(model);
+            ValidateActualFlow(model);
 
             if (!ModelState.IsValid)
             {
@@ -258,6 +259,7 @@ namespace WetScrubber.Controllers
             foreach (var k in keys) ModelState.Remove(k);
 
             NormalizeOptionalDefaults(model);
+            ValidateActualFlow(model);
 
             var design = await LoadDesign(model.DesignId);
             if (design == null)
@@ -386,6 +388,7 @@ namespace WetScrubber.Controllers
 
             // Build ViewModel from DB data to pass into engine
             var vm = BuildCreateViewModel(design);
+            PollutantUnitConverter.ApplyEngineBasis(vm);
 
             // Run the calculation
             CalculationResult calcResult;
@@ -473,6 +476,7 @@ namespace WetScrubber.Controllers
             if (calcResult == null && design.Geometry != null)
             {
                 var vm = BuildCreateViewModel(design);
+                PollutantUnitConverter.ApplyEngineBasis(vm);
                 calcResult = _engine.RunCalculation(vm);
             }
 
@@ -1078,6 +1082,18 @@ namespace WetScrubber.Controllers
 
             if (string.IsNullOrWhiteSpace(model.PackingCode))
                 model.PackingCode = "PallRing50";
+        }
+
+        // Rejects an actual flow that disagrees with normal flow, temperature
+        // and pressure by more than PollutantUnitConverter.ActualFlowTolerance.
+        private void ValidateActualFlow(CreateDesignViewModel model)
+        {
+            if (!ModelState.IsValid && ModelState["ActualFlowRate"]?.Errors.Count > 0)
+                return;
+
+            string? message = PollutantUnitConverter.CheckActualFlow(model);
+            if (message != null)
+                ModelState.AddModelError(nameof(CreateDesignViewModel.ActualFlowRate), message);
         }
 
         // Fill pollutant + liquid dropdowns from the master tables.

@@ -53,6 +53,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 // ── MVC ───────────────────────────────────────────────────────────────────────
 builder.Services.AddControllersWithViews();
+FanSizingSettings.Load(builder.Configuration);
 //builder.Services.AddScoped<WetScrubber.Services.ScrubberCalculationEngine>();
 // ── Session (for TempData, flash messages) ────────────────────────────────────
 builder.Services.AddSession(options =>

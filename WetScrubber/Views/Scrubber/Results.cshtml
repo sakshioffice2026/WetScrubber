@@ -139,6 +139,10 @@
             <div class="result-kpi-label">Total Power</div>
             <div class="result-kpi-value">@calcResult.TotalPowerKW.ToString("F2")<span class="result-kpi-unit">kW</span></div>
             <div class="result-kpi-sub">Fan @calcResult.FanPowerKW.ToString("F1") + Pump @calcResult.PumpPowerKW.ToString("F1") kW</div>
+            @if (calcResult.SystemPressureDrop > 0)
+            {
+                <div class="result-kpi-sub">Fan basis: @calcResult.SystemPressureDrop.ToString("N0") Pa (packing + @calcResult.AuxiliaryPressureDropPa.ToString("N0") Pa system)</div>
+            }
         </div>
         </div>
 

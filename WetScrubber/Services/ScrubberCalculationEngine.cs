@@ -416,11 +416,20 @@ namespace WetScrubber.Services
                 floodResult.ExceedsRecommendedFlood;
 
             // 7. Power
+            // Fan is sized on the packing pressure drop plus a fixed allowance
+            // for ducting, inlet/outlet, demister and distributor losses.
+            result.AuxiliaryPressureDropPa =
+                FanSizingSettings.AuxiliaryPressureDropPa;
+
+            result.SystemPressureDrop =
+                result.PressureDrop +
+                FanSizingSettings.AuxiliaryPressureDropPa;
+
             result.FanPowerKW =
                 Math.Round(
                     CalculateFanPower(
                         gasFlowM3S,
-                        result.PressureDrop + 500),
+                        result.SystemPressureDrop),
                     2);
 
             result.PumpPowerKW =
@@ -2374,14 +2383,14 @@ namespace WetScrubber.Services
         public double CalculateFanPower(
             double flowRateM3S,
             double pressureDropPa,
-            double efficiency = 0.65)
+            double? efficiency = null)
             =>
                 (
                     flowRateM3S *
                     pressureDropPa
                 ) /
                 (
-                    efficiency *
+                    (efficiency ?? FanSizingSettings.Efficiency) *
                     1000
                 );
 
@@ -2666,6 +2675,11 @@ namespace WetScrubber.Services
         // Performance
         public double RemovalEfficiency { get; set; }
         public double PressureDrop { get; set; }
+
+        // Packing dP plus auxiliary allowance; the basis for fan power.
+        public double SystemPressureDrop { get; set; }
+        public double AuxiliaryPressureDropPa { get; set; }
+
         public double GasVelocity { get; set; }
 
         // Flooding
