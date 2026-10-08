@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using System.IO;
 using EngineeringAI.Core;
 using EngineeringAI.Core.Agent;
 using EngineeringAI.Core.Llm;
@@ -29,9 +30,35 @@ using WetScrubber.Services;
 var builder = WebApplication.CreateBuilder(args);
 //builder.Host.UseSerilog();
 
+var isDevelopment = builder.Environment.IsDevelopment();
+
+// Outside Development the predictor URL must be configured explicitly;
+// there is no localhost fallback.
+Uri ResolvePredictorBaseUri()
+{
+    var configured = builder.Configuration["ChemistryPrediction:BaseUrl"];
+
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        if (isDevelopment)
+            return new Uri("http://localhost:8500/");
+
+        throw new InvalidOperationException(
+            "ChemistryPrediction:BaseUrl must be configured outside Development.");
+    }
+
+    return new Uri(configured.TrimEnd('/') + "/");
+}
+
 //  MySQL Database
 // Database connection string
 var mysqlstr = builder.Configuration.GetConnectionString("DefaultConnection");
+
+if (string.IsNullOrWhiteSpace(mysqlstr))
+{
+    throw new InvalidOperationException(
+        "ConnectionStrings:DefaultConnection is not configured.");
+}
 // Register DbContext with MySQL
 builder.Services.AddDbContextPool<ApplicationDbContext>(options =>
     options.UseMySql(mysqlstr, MySqlServerVersion.LatestSupportedServerVersion));
@@ -48,12 +75,16 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.ExpireTimeSpan = TimeSpan.FromHours(8);
     options.SlidingExpiration = true;
     options.Cookie.HttpOnly = true;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    options.Cookie.SecurePolicy = isDevelopment
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Lax;
 });
 
 // ── MVC ───────────────────────────────────────────────────────────────────────
 builder.Services.AddControllersWithViews();
 FanSizingSettings.Load(builder.Configuration);
+DesignBasisSettings.Load(builder.Configuration);
 //builder.Services.AddScoped<WetScrubber.Services.ScrubberCalculationEngine>();
 // ── Session (for TempData, flash messages) ────────────────────────────────────
 builder.Services.AddSession(options =>
@@ -61,6 +92,10 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromMinutes(30);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    options.Cookie.SecurePolicy = isDevelopment
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Lax;
 });
 
 // Paste this directly above builder.Build(); in the main WetScrubber Web project Program.cs
@@ -71,7 +106,7 @@ builder.Services.Configure<WetScrubber.Business.AI.ChemistryPredictionOptions>(
 builder.Services.AddHttpClient<WetScrubber.Business.AI.IChemistryPredictionClient, WetScrubber.Business.AI.ChemistryPredictionClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WetScrubber.Business.AI.ChemistryPredictionOptions>>().Value;
-    client.BaseAddress = new Uri(string.IsNullOrEmpty(options.BaseUrl) ? "http://localhost:8500/" : options.BaseUrl);
+    client.BaseAddress = ResolvePredictorBaseUri();
     client.Timeout = TimeSpan.FromSeconds(5);
 });
 
@@ -82,13 +117,13 @@ builder.Services.AddHttpClient<WetScrubber.Business.AI.IChemistryPredictionClien
 builder.Services.AddHttpClient<WetScrubber.Business.AI.IDesignOutcomePredictionClient, WetScrubber.Business.AI.DesignOutcomePredictionClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WetScrubber.Business.AI.ChemistryPredictionOptions>>().Value;
-    client.BaseAddress = new Uri(string.IsNullOrEmpty(options.BaseUrl) ? "http://localhost:8500/" : options.BaseUrl);
+    client.BaseAddress = ResolvePredictorBaseUri();
 });
 
 builder.Services.AddHttpClient<WetScrubber.Business.AI.IModelRetrainTrigger, WetScrubber.Business.AI.ModelRetrainClient>((serviceProvider, client) =>
 {
     var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<WetScrubber.Business.AI.ChemistryPredictionOptions>>().Value;
-    client.BaseAddress = new Uri(string.IsNullOrEmpty(options.BaseUrl) ? "http://localhost:8500/" : options.BaseUrl);
+    client.BaseAddress = ResolvePredictorBaseUri();
 });
 
 
@@ -153,6 +188,17 @@ builder.Services.AddEngineeringDomain<WetScrubberDraftState>(sp =>
         }
     };
 });
+
+// Outside Development the model path must come from configuration and exist.
+var llamaModelPath =
+    builder.Configuration[$"{LlamaOptions.SectionName}:ModelPath"];
+
+if (!isDevelopment &&
+    (string.IsNullOrWhiteSpace(llamaModelPath) || !File.Exists(llamaModelPath)))
+{
+    throw new InvalidOperationException(
+        $"{LlamaOptions.SectionName}:ModelPath must point to an existing model file outside Development.");
+}
 
 var app = builder.Build();
 

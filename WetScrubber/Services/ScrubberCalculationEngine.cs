@@ -1,3 +1,4 @@
+using WetScrubber.Business.Exceptions;
 using WetScrubber.Business.MassTransfer;
 using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Database.Enums;
@@ -83,7 +84,7 @@ namespace WetScrubber.Services
         // ── Packing material defaults (Pall Rings 50mm) ───────────
         private const double DefaultPackingFactor = 66.0;    // Fp, 1/m
         private const double DefaultSurfaceArea = 112.0;     // m²/m³
-        private const double DefaultVoidFraction = 0.951;    // ε
+        private static double DefaultVoidFraction => DesignBasisSettings.DefaultVoidFraction;    // ε
         private const double DefaultGasFilmCoeff = 0.03;     // kGa kmol/m³·hr·kPa
         private const double DefaultLiquidFilmCoeff = 0.01;  // kLa m/hr — fallback path only
 
@@ -92,7 +93,7 @@ namespace WetScrubber.Services
         // as DefaultPackingFactor/DefaultSurfaceArea above.
         private const double DefaultNominalPackingSizeM = 0.05;
         private const double DefaultPackingCriticalSurfaceTensionNM = 0.075;
-        private const double DefaultLiquidSurfaceTensionNM = 0.0728;
+        private static double DefaultLiquidSurfaceTensionNM => DesignBasisSettings.DefaultLiquidSurfaceTensionNM;
         private const double WaterMolarDensityKmolM3 = 55.3;
         private const double SolventMolecularWeightGMol = 18.02;
 
@@ -223,10 +224,10 @@ namespace WetScrubber.Services
             // Phase 2: Wilke-Chang + Fuller diffusivities feeding
             // the Onda correlation for physically-derived kG/kL/aW.
             //
-            // Falls back to CalculateNtuHtu (old fixed-coefficient
-            // path) whenever required lookup data is unavailable.
+            // Missing lookup data or invalid properties throw; there is
+            // no fixed-coefficient fallback.
             var rateBased =
-                TryComputeOndaFilmCoefficients(
+                ComputeOndaFilmCoefficients(
                     pollutant,
                     vm,
                     gasMassVelocity,
@@ -236,8 +237,7 @@ namespace WetScrubber.Services
                     actualGasDensity);
 
             var ntuResult =
-                rateBased != null
-                    ? CalculateNtuHtuRateBased(
+                    CalculateNtuHtuRateBased(
                         inletConcentrationPpm:
                             pollutant.InletConcentration,
 
@@ -254,32 +254,7 @@ namespace WetScrubber.Services
                             rateBased.GasMolarVelocityKmolM2S,
 
                         overallKGaKmolM3S:
-                            rateBased.OverallKGaKmolM3S)
-                    : CalculateNtuHtu(
-                        inletConcentrationPpm:
-                            pollutant.InletConcentration,
-
-                        outletConcentrationPpm:
-                            targetOutletPpm,
-
-                        henrysLawConstant:
-                            henrysEquilibrium,
-
-                        liquidToGasRatioMolar:
-                            molarLG,
-
-                        gasFilmCoeff:
-                            DefaultGasFilmCoeff,
-
-                        liquidFilmCoeff:
-                            DefaultLiquidFilmCoeff,
-
-                        gasMassVelocity:
-                            gasMassVelocity,
-
-                        gasDensityKgM3:
-                            actualGasDensity
-                    );
+                            rateBased.OverallKGaKmolM3S);
 
             double designPackingHeight =
                 vm.PackingHeightOverride > 0
@@ -313,10 +288,10 @@ namespace WetScrubber.Services
                     2);
 
             // 4. Total tower height =
-            // packing + 30% freeboard + 1m sump + 1m top
+            // packing x (1 + freeboard factor) + sump/top allowance (DesignBasisSettings)
             result.TowerHeight =
                 Math.Round(
-                    result.PackingHeight * 1.3 + 2.0,
+                    result.PackingHeight * (1.0 + DesignBasisSettings.FreeboardFactor) + DesignBasisSettings.SumpAndTopAllowanceM,
                     2);
 
             // 5. Gas velocity inside tower
@@ -436,7 +411,7 @@ namespace WetScrubber.Services
                 Math.Round(
                     CalculatePumpPower(
                         liquidFlowM3Hr,
-                        result.TowerHeight + 5,
+                        result.TowerHeight + DesignBasisSettings.PackedPumpHeadOffsetM,
                         vm.LiquidDensity),
                     2);
 
@@ -605,12 +580,12 @@ namespace WetScrubber.Services
 
             result.TowerDiameter =
                 Math.Round(
-                    venturi.ThroatDiameter * 2.5,
+                    venturi.ThroatDiameter * DesignBasisSettings.VenturiDiameterFactor,
                     3);
 
             result.TowerHeight =
                 Math.Round(
-                    venturi.ThroatDiameter * 8,
+                    venturi.ThroatDiameter * DesignBasisSettings.VenturiHeightFactor,
                     2);
 
             result.PackingHeight = 0;
@@ -643,7 +618,7 @@ namespace WetScrubber.Services
                         vm.ActualFlowRate *
                         vm.LiquidToGasRatio /
                         1000.0,
-                        10,
+                        DesignBasisSettings.VenturiPumpHeadM,
                         vm.LiquidDensity),
                     2);
 
@@ -669,14 +644,26 @@ namespace WetScrubber.Services
         // ════════════════════════════════════════════════════════════
         //  SPRAY TOWER
         // ════════════════════════════════════════════════════════════
+        private static void RequirePositiveInput(string name, double value)
+        {
+            if (!(value > 0.0) || double.IsInfinity(value))
+                throw new PropertyOutOfBoundsException(
+                    name, value, 0.0, double.MaxValue);
+        }
+
         private CalculationResult RunSprayTowerCalc(
             CreateDesignViewModel vm)
         {
+            RequirePositiveInput(nameof(vm.ActualFlowRate), vm.ActualFlowRate);
+            RequirePositiveInput(nameof(vm.LiquidToGasRatio), vm.LiquidToGasRatio);
+            RequirePositiveInput(nameof(vm.GasDensity), vm.GasDensity);
+            RequirePositiveInput(nameof(vm.LiquidDensity), vm.LiquidDensity);
+
             var result =
                 new CalculationResult();
 
-            // Design gas velocity 0.8 m/s for spray tower
-            double designVelocity = 0.8;
+            // Design gas velocity from DesignBasisSettings (unverified placeholder)
+            double designVelocity = DesignBasisSettings.SprayTowerDesignVelocityMs;
 
             double gasFlowM3S =
                 vm.ActualFlowRate / 3600.0;
@@ -701,7 +688,7 @@ namespace WetScrubber.Services
 
             result.TowerHeight =
                 Math.Round(
-                    gasFlowM3S * 5 + 2.0,
+                    gasFlowM3S * DesignBasisSettings.SprayTowerHeightPerM3S + DesignBasisSettings.SprayTowerBaseHeightM,
                     2);
 
             result.PackingHeight = 0;
@@ -715,7 +702,7 @@ namespace WetScrubber.Services
                 Math.Round(
                     (1 -
                      Math.Exp(
-                         -0.5 *
+                         -DesignBasisSettings.SprayTowerRemovalCoefficient *
                          vm.LiquidToGasRatio)) *
                     100,
                     2);
@@ -740,7 +727,7 @@ namespace WetScrubber.Services
                 Math.Round(
                     CalculateFanPower(
                         gasFlowM3S,
-                        result.PressureDrop + 300),
+                        result.PressureDrop + DesignBasisSettings.SprayTowerAuxiliaryPressureDropPa),
                     2);
 
             result.PumpPowerKW =
@@ -749,7 +736,7 @@ namespace WetScrubber.Services
                         vm.ActualFlowRate *
                         vm.LiquidToGasRatio /
                         1000.0,
-                        8,
+                        DesignBasisSettings.SprayTowerPumpHeadM,
                         vm.LiquidDensity),
                     2);
 
@@ -888,7 +875,6 @@ namespace WetScrubber.Services
                 return idealGasFallback;
             }
 
-            try
             {
                 var mixture =
                     GasMixtureBuilder
@@ -907,10 +893,6 @@ namespace WetScrubber.Services
                         gasPressurePa / 1000.0);
 
                 return result.DensityKgM3;
-            }
-            catch
-            {
-                return idealGasFallback;
             }
         }
 
@@ -1304,7 +1286,7 @@ namespace WetScrubber.Services
         // ════════════════════════════════════════════════════════════
         //  PHASE 2 — Onda-derived film coefficients
         // ════════════════════════════════════════════════════════════
-        private RateBasedFilmResult? TryComputeOndaFilmCoefficients(
+        private RateBasedFilmResult ComputeOndaFilmCoefficients(
             PollutantInputViewModel pollutant,
             CreateDesignViewModel vm,
             double gasMassVelocity,
@@ -1317,10 +1299,9 @@ namespace WetScrubber.Services
                 _componentLookup == null ||
                 _packingLookup == null)
             {
-                return null;
+                throw new InvalidOperationException("Onda inputs require diffusion, component and packing lookups.");
             }
 
-            try
             {
                 string? pollutantCode =
                     _componentLookup
@@ -1329,7 +1310,7 @@ namespace WetScrubber.Services
                         ?.Code;
 
                 if (pollutantCode == null)
-                    return null;
+                    throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                 var soluteData =
                     _diffusionLookup
@@ -1349,7 +1330,7 @@ namespace WetScrubber.Services
                         .AssociationFactor == null ||
                     packingData == null)
                 {
-                    return null;
+                    throw new InvalidOperationException($"Missing Wilke-Chang/Onda data for {pollutantCode}, H2O or packing {packingCode}.");
                 }
 
                 double liquidTempK =
@@ -1395,40 +1376,38 @@ namespace WetScrubber.Services
                         pressureKPa:
                             pressureKPa);
 
+                // Mass velocities are per unit area, so a unit tower area
+                // is used to carry them through the packing input.
+                var ondaPacking =
+                    new PackingMassTransferInput
+                    {
+                        SpecificAreaM2M3 =
+                            packingData.SpecificAreaM2M3,
+                        NominalSizeM =
+                            packingData.NominalSizeM,
+                        CriticalSurfaceTensionNM =
+                            packingData.CriticalSurfaceTensionNM,
+                        LiquidSurfaceTensionNM =
+                            DefaultLiquidSurfaceTensionNM,
+                        TowerAreaM2 = 1.0,
+                        GasMassFlowKgS = gasMassVelocity,
+                        LiquidMassFlowKgS = liquidMassVelocity
+                    };
+
                 var onda =
                     OndaMassTransferCorrelation.Calculate(
-                        packingSpecificAreaM2M3:
-                            packingData
-                                .SpecificAreaM2M3,
-                        nominalPackingSizeM:
-                            packingData
-                                .NominalSizeM,
-                        criticalSurfaceTensionNM:
-                            packingData
-                                .CriticalSurfaceTensionNM,
-                        liquidSurfaceTensionNM:
-                            DefaultLiquidSurfaceTensionNM,
-                        liquidMassVelocityKgM2S:
-                            liquidMassVelocity,
-                        gasMassVelocityKgM2S:
-                            gasMassVelocity,
-                        liquidDensityKgM3:
-                            vm.LiquidDensity,
-                        gasDensityKgM3:
-                            actualGasDensityKgM3,
-                        liquidViscosityPas:
-                            vm.LiquidViscosity /
-                            1000.0,
-                        gasViscosityPas:
-                            vm.GasViscosity,
-                        liquidDiffusivityM2S:
-                            dL,
-                        gasDiffusivityM2S:
-                            dG,
-                        temperatureK:
+                        ondaPacking,
+                        new GasPhaseProperties(
                             gasTempK,
-                        pressureKPa:
-                            pressureKPa);
+                            actualGasDensityKgM3,
+                            vm.GasViscosity,
+                            dG),
+                        new LiquidPhaseProperties(
+                            liquidTempK,
+                            vm.LiquidDensity,
+                            vm.LiquidViscosity / 1000.0,
+                            dL,
+                            DefaultLiquidSurfaceTensionNM));
 
                 // Convert film coefficients to the mole-fraction basis
                 // used by the engine's y = H*x Henry-law convention.
@@ -1497,18 +1476,26 @@ namespace WetScrubber.Services
                 kLaX *=
                     enhancement.Factor;
 
+                if (!(kGaY > 0) || double.IsInfinity(kGaY))
+                    throw new PropertyOutOfBoundsException(
+                        "GasFilmVolumetricCoefficient",
+                        kGaY,
+                        0.0,
+                        double.MaxValue);
+
+                if (!(kLaX > 0) || double.IsInfinity(kLaX))
+                    throw new PropertyOutOfBoundsException(
+                        "LiquidFilmVolumetricCoefficient",
+                        kLaX,
+                        0.0,
+                        double.MaxValue);
+
                 double overallKGa =
                     1.0 /
                     (
-                        1.0 /
-                        Math.Max(
-                            kGaY,
-                            1e-9)
+                        1.0 / kGaY
                         +
-                        henrysLawConstant /
-                        Math.Max(
-                            kLaX,
-                            1e-9)
+                        henrysLawConstant / kLaX
                     );
 
                 double soluteMoleFraction =
@@ -1533,109 +1520,13 @@ namespace WetScrubber.Services
                         overallKGa
                 };
             }
-            catch
-            {
-                return null;
-            }
         }
 
-        // ════════════════════════════════════════════════════════════
-        //  PHASE 3 — Iterative tower solver with heat feedback
-        // ════════════════════════════════════════════════════════════
-        private IterativeTowerSolver.SolverOutput?
-            TryComputeIterativeTowerSolution(
-                PollutantInputViewModel pollutant,
-                CreateDesignViewModel vm,
-                double henrysLawConstant)
-        {
-            try
-            {
-                string? pollutantCode =
-                    _componentLookup?
-                        .GetByPollutantId(
-                            pollutant.PollutantType)
-                        ?.Code;
-
-                if (pollutantCode == null)
-                    return null;
-
-                double gasFlowM3S =
-                    vm.ActualFlowRate /
-                    3600.0;
-
-                double gasMassFlowKgS =
-                    gasFlowM3S *
-                    vm.GasDensity;
-
-                double liquidFlowM3S =
-                    vm.LiquidToGasRatio *
-                    gasFlowM3S /
-                    1000.0;
-
-                double liquidMassFlowKgS =
-                    liquidFlowM3S *
-                    vm.LiquidDensity;
-
-                var solverInput =
-                    new IterativeTowerSolver.SolverInput
-                    {
-                        GasInletPpm =
-                            pollutant
-                                .InletConcentration,
-
-                        GasOutletTargetPpm =
-                            pollutant
-                                .TargetOutletConcentration,
-
-                        GasTemperatureC =
-                            vm.InletTemperature,
-
-                        GasMassFlowKgS =
-                            gasMassFlowKgS,
-
-                        LiquidInletTempC =
-                            vm.LiquidTemperature,
-
-                        LiquidMassFlowKgS =
-                            liquidMassFlowKgS,
-
-                        LiquidDensityKgM3 =
-                            vm.LiquidDensity,
-
-                        HenrysLawConstantReference =
-                            henrysLawConstant,
-
-                        HeatOfAbsorptionKJKmol =
-                            HeatOfAbsorption
-                                .GetByPollutantCode(
-                                    pollutantCode),
-
-                        PollutantMolecularWeight =
-                            pollutant.MolecularWeight,
-
-                        HenrysLawTemperatureCorrectionFn =
-                            t =>
-                                GetHenrysLawTemperatureCorrectionFactor(
-                                    pollutantCode,
-                                    t)
-                    };
-
-                return
-                    IterativeTowerSolver
-                        .SolveIterative(
-                            solverInput,
-                            numSegments: 5);
-            }
-            catch
-            {
-                return null;
-            }
-        }
 
         // ════════════════════════════════════════════════════════════
         //  PHASE 4a — Multi-pollutant iterative solver
         // ════════════════════════════════════════════════════════════
-        private MultiPollutantIterativeSolver.SolverOutput?
+        private MultiPollutantIterativeSolver.SolverOutput
             TryComputeMultiPollutantIterativeSolution(
                 CreateDesignViewModel vm,
                 double henrysLawConstantReference,
@@ -1643,9 +1534,8 @@ namespace WetScrubber.Services
                 double crossSectionM2)
         {
             if (vm.Pollutants.Count == 0)
-                return null;
+                throw new ArgumentException("At least one pollutant is required.");
 
-            try
             {
                 var pollutantInputs =
                     new List<
@@ -1662,7 +1552,7 @@ namespace WetScrubber.Services
                             ?.Code;
 
                     if (pollutantCode == null)
-                        continue;
+                        throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                     double effectiveHenry =
                         GetEffectiveHenrysLawConstant(
@@ -1710,7 +1600,7 @@ namespace WetScrubber.Services
                 }
 
                 if (pollutantInputs.Count == 0)
-                    return null;
+                    throw new InvalidOperationException("No pollutant had a resolvable component code.");
 
                 double gasFlowM3S =
                     vm.ActualFlowRate /
@@ -1806,16 +1696,12 @@ namespace WetScrubber.Services
                             solverInput,
                             numSegments: 5);
             }
-            catch
-            {
-                return null;
-            }
         }
 
         // ════════════════════════════════════════════════════════════
         //  PHASE 4b — Multi-pollutant RK45 ODE solver
         // ════════════════════════════════════════════════════════════
-        private MultiPollutantOdeSolver.SolverOutput?
+        private MultiPollutantOdeSolver.SolverOutput
             TryComputeMultiPollutantOdeSolution(
                 CreateDesignViewModel vm,
                 double henrysLawConstantReference,
@@ -1823,9 +1709,8 @@ namespace WetScrubber.Services
                 double crossSectionM2)
         {
             if (vm.Pollutants.Count == 0)
-                return null;
+                throw new ArgumentException("At least one pollutant is required.");
 
-            try
             {
                 var pollutantInputs =
                     new List<
@@ -1842,7 +1727,7 @@ namespace WetScrubber.Services
                             ?.Code;
 
                     if (pollutantCode == null)
-                        continue;
+                        throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                     double effectiveHenry =
                         GetEffectiveHenrysLawConstant(
@@ -1890,7 +1775,7 @@ namespace WetScrubber.Services
                 }
 
                 if (pollutantInputs.Count == 0)
-                    return null;
+                    throw new InvalidOperationException("No pollutant had a resolvable component code.");
 
                 double gasFlowM3S =
                     vm.ActualFlowRate /
@@ -1966,10 +1851,6 @@ namespace WetScrubber.Services
                     MultiPollutantOdeSolver
                         .SolveOde(
                             odeInput);
-            }
-            catch
-            {
-                return null;
             }
         }
 
@@ -2149,6 +2030,15 @@ namespace WetScrubber.Services
             double liquidDensityKgM3 = 1000,
             double gasViscosityPas = 1.81e-5)
         {
+            RequirePositiveInput(nameof(gasFlowRateM3S), gasFlowRateM3S);
+            RequirePositiveInput(nameof(throatVelocityMs), throatVelocityMs);
+            RequirePositiveInput(nameof(liquidToGasRatioLM3), liquidToGasRatioLM3);
+            RequirePositiveInput(nameof(gasDensityKgM3), gasDensityKgM3);
+            RequirePositiveInput(nameof(particleDensityKgM3), particleDensityKgM3);
+            RequirePositiveInput(nameof(particleDiameterMicron), particleDiameterMicron);
+            RequirePositiveInput(nameof(liquidDensityKgM3), liquidDensityKgM3);
+            RequirePositiveInput(nameof(gasViscosityPas), gasViscosityPas);
+
             double throatArea =
                 gasFlowRateM3S /
                 throatVelocityMs;
@@ -2198,9 +2088,7 @@ namespace WetScrubber.Services
                 (
                     18.0 *
                     gasVisc *
-                    Math.Max(
-                        throatDiam,
-                        0.001)
+                    throatDiam
                 );
 
             double collEff =
@@ -2304,7 +2192,6 @@ namespace WetScrubber.Services
                 return defaultTempCoeff;
             }
 
-            try
             {
                 var data =
                     _henrysLawLookup
@@ -2323,10 +2210,6 @@ namespace WetScrubber.Services
                     ) /
                     GasConstant;
             }
-            catch
-            {
-                return defaultTempCoeff;
-            }
         }
 
         private double GetSoluteActivityCoefficient(
@@ -2340,7 +2223,6 @@ namespace WetScrubber.Services
                 return 1.0;
             }
 
-            try
             {
                 double xSolute =
                     Math.Min(
@@ -2370,10 +2252,6 @@ namespace WetScrubber.Services
                         binary);
 
                 return result.GammaB;
-            }
-            catch
-            {
-                return 1.0;
             }
         }
 

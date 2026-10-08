@@ -93,20 +93,6 @@ namespace WetScrubber.Business.Thermodynamics
             };
         }
 
-        /// <summary>
-        /// Legacy single-temperature entry point. The same temperature is applied
-        /// to gas and liquid phases; use the overload with separate temperatures.
-        /// </summary>
-        [Obsolete("Use Compute(packing, fluid, gasTemperatureK, liquidTemperatureK, enhancementFactor).")]
-        public static MassTransferCoefficients Compute(
-            PackingMassTransferInput packing,
-            MassTransferFluidInput fluid,
-            double temperatureK,
-            double enhancementFactor)
-        {
-            return Compute(packing, fluid, temperatureK, temperatureK, enhancementFactor);
-        }
-
         private static void RequireFinitePositive(string name, double value)
         {
             if (double.IsNaN(value) || double.IsInfinity(value) || value <= 0)

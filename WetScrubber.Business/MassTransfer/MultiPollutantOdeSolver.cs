@@ -338,9 +338,12 @@ namespace WetScrubber.Business.MassTransfer
                 sumY += y;
             }
 
+            if (!(sumY < 1.0))
+                throw new PropertyOutOfBoundsException("TotalPollutantMoleFraction", sumY, 0.0, 1.0);
+
             var result = new Dictionary<string, double>();
             foreach (var kv in ys)
-                result[kv.Key] = kv.Value / Math.Max(1.0 - sumY, 1e-12);
+                result[kv.Key] = kv.Value / (1.0 - sumY);
             return result;
         }
 

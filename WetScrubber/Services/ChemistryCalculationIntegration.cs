@@ -325,6 +325,7 @@ namespace WetScrubber.Business.Services
                     input.Packing,
                     fluid,
                     gasTemperatureK,
+                    liquidTemperatureK,
                     1.0);
 
             double enhancementFactor = 1.0;
@@ -381,6 +382,7 @@ namespace WetScrubber.Business.Services
                     input.Packing,
                     fluid,
                     gasTemperatureK,
+                    liquidTemperatureK,
                     enhancementFactor);
 
             result.EquilibriumValidation =
@@ -457,18 +459,15 @@ namespace WetScrubber.Business.Services
                     input.HeatOfSolutionKJmol,
                     input.PressureKPa,
 
-                    // Gas-side Onda coefficient uses gas temperature.
-                    // The current MassTransferCoefficientProvider API accepts
-                    // one temperature, so gas temperature remains the
-                    // correlation temperature until that provider is
-                    // independently refactored to expose separate gas/liquid
-                    // temperatures.
+                    // Gas-film properties use the gas temperature; liquid-film
+                    // properties use the local liquid-layer temperature t (K).
                     t =>
                         MassTransferCoefficientProvider
                             .Compute(
                                 input.Packing,
                                 fluid,
                                 gasTemperatureK,
+                                t,
                                 enhancementFactor)
                             .OverallKGaKmolM3HrKPa,
 
@@ -1046,4 +1045,4 @@ namespace WetScrubber.Business.Services
             return 18.015;
         }
     }
-}
+} 
