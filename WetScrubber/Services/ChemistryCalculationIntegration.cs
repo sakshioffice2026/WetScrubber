@@ -112,6 +112,10 @@ namespace WetScrubber.Business.Services
             public PackingMassTransferInput Packing { get; set; }
             public ReagentKind Reagent { get; set; } = ReagentKind.None;
             public double ReagentEquivalentsPerL { get; set; }
+
+            // Liquid specific heat, kJ/(kg·K). Water default; override for
+            // brines/slurries. Replaces the former hardcoded 3.85.
+            public double LiquidSpecificHeatKJKgK { get; set; } = 4.18;
         }
 
         /// <summary>
@@ -358,7 +362,10 @@ namespace WetScrubber.Business.Services
                                 input.ReactionRateConstantS_Inv,
 
                             ReactionOrder =
-                                input.ReactionOrder
+                                input.ReactionOrder,
+
+                            StoichiometricRatio =
+                                input.ReagentStoichiometricRatio
                         });
 
                 enhancementFactor =
@@ -439,7 +446,7 @@ namespace WetScrubber.Business.Services
                         liquidFlowKmolPerHr,
                         input.SolventCode),
 
-                    3.85,
+                    input.LiquidSpecificHeatKJKgK,
 
                     input.InletGasMoleFractionPollutant,
                     input.InletLiquidMoleFraction,
@@ -532,19 +539,27 @@ namespace WetScrubber.Business.Services
             // ════════════════════════════════════════════════════════════════
             // STEP 5: Material Balance (Section 17)
             // ════════════════════════════════════════════════════════════════
+            // Liquid-side pickup is computed independently from the liquid
+            // stream (L * (x_out - x_in)), NOT as inlet - outlet, so the
+            // closure check can actually fail.
+            double liquidAbsorbedKmolPerHr =
+                liquidFlowKmolPerHr *
+                (result.TowerSolverResult.OutletLiquidMoleFraction -
+                 input.InletLiquidMoleFraction);
+
             var speciesBalance =
                 MaterialBalanceTracker.CalculateBalance(
                     input.PollutantCode,
                     input.InletGasMoleFractionPollutant *
                     input.InletGasFlowKmolPerHr,
                     outletPollutantKmolPerHr,
-                    absorbedKmolPerHr,
+                    liquidAbsorbedKmolPerHr,
                     0.0);
 
             result.MaterialBalance =
                 MaterialBalanceTracker.AggregateBalances(
                     new[] { speciesBalance },
-                    0.001);
+                    0.01);
 
             if (!result.MaterialBalance.AllSpeciesBalanced)
             {

@@ -86,11 +86,6 @@ namespace WetScrubber.Services
         private const double DefaultVoidFraction = 0.951;    // ε
         private const double DefaultGasFilmCoeff = 0.03;     // kGa kmol/m³·hr·kPa
         private const double DefaultLiquidFilmCoeff = 0.01;  // kLa m/hr — fallback path only
-        private const double AuxiliaryPressureLossPa = 500.0;   // duct, inlet/outlet, demister, distributor allowance for fan sizing
-        private const double PumpDistributorHeadM = 15.0;       // static lift above tower + spray/distributor head for pump sizing
-        private const double BilletPressureDropCp = 0.55;       // packing constant (Pall ring class), not yet validated against vendor data
-        private const double MaxBedHeightM = 6.0;                // max height of one packed bed before redistribution
-        private const double RedistributorSectionHeightM = 1.0;  // height allowance per redistributor between beds
 
         // Phase 2 — Onda correlation packing/fluid defaults. Same
         // "standard textbook value, not independently sourced" caveat
@@ -127,18 +122,9 @@ namespace WetScrubber.Services
                 vm.Pollutants.FirstOrDefault()
                 ?? new PollutantInputViewModel();
 
-
-            // Gas flow at operating conditions, derived from the normal flow so
-            // liquid flow, velocity and power share one basis with the diameter.
-            double actualFlowM3Hr =
-                vm.NormalFlowRate > 0
-                    ? vm.NormalFlowRate
-                      * ((vm.InletTemperature + 273.15) / 273.15)
-                      * (101325.0 / Math.Max(vm.InletPressure, 1.0))
-                    : vm.ActualFlowRate;
             // 1. Liquid flow rate from L/G ratio
             double liquidFlowM3Hr =
-                actualFlowM3Hr *
+                vm.ActualFlowRate *
                 vm.LiquidToGasRatio /
                 1000.0;
 
@@ -189,9 +175,29 @@ namespace WetScrubber.Services
                     vm.LiquidTemperature,
                     vm.InletPressure / 1000.0);
 
+            // Reactive equilibrium basis: for an irreversible fast reaction
+            // (e.g. SO2/HCl/H2S/Cl2 + NaOH, NH3 + acid) with reagent in
+            // stoichiometric sufficiency, the equilibrium back-pressure of
+            // the free pollutant is ~0, so the NTU / minimum-L/G equilibrium
+            // uses a negligible effective H. The PHYSICAL H (henrysTemp)
+            // is still used for Onda coefficients and the enhancement factor.
+            // Effective target outlet: explicit outlet ppm, else derived from
+            // target removal %, else the 95 % default. A zero/blank target no
+            // longer silently becomes a 0.0001 ppm floor (~99.99 %).
+            double targetOutletPpm =
+                ResolveTargetOutletPpm(pollutant);
+
+            var reactiveBasis =
+                GetReactiveEquilibriumBasis(pollutant, vm);
+
+            double henrysEquilibrium =
+                reactiveBasis.UseReactiveEquilibrium
+                    ? HenrysConstantUnits.MinimumH
+                    : henrysTemp;
+
             // Calculate gas flow and cross-sectional area
             double gasFlowM3S =
-                actualFlowM3Hr / 3600.0;
+                vm.ActualFlowRate / 3600.0;
 
             double crossSection =
                 Math.PI *
@@ -236,10 +242,10 @@ namespace WetScrubber.Services
                             pollutant.InletConcentration,
 
                         outletConcentrationPpm:
-                            pollutant.TargetOutletConcentration,
+                            targetOutletPpm,
 
                         henrysLawConstant:
-                            henrysTemp,
+                            henrysEquilibrium,
 
                         liquidToGasRatioMolar:
                             molarLG,
@@ -254,10 +260,10 @@ namespace WetScrubber.Services
                             pollutant.InletConcentration,
 
                         outletConcentrationPpm:
-                            pollutant.TargetOutletConcentration,
+                            targetOutletPpm,
 
                         henrysLawConstant:
-                            henrysTemp,
+                            henrysEquilibrium,
 
                         liquidToGasRatioMolar:
                             molarLG,
@@ -308,20 +314,9 @@ namespace WetScrubber.Services
 
             // 4. Total tower height =
             // packing + 30% freeboard + 1m sump + 1m top
-            // Bed split: a single packed bed is limited to min(6 m, 8 x diameter);
-            // each extra bed needs a liquid redistributor section between beds.
-            double maxBedHeightM = Math.Min(MaxBedHeightM, 8.0 * result.TowerDiameter);
-            int numberOfBeds = Math.Max(
-                1,
-                (int)Math.Ceiling(result.PackingHeight / Math.Max(maxBedHeightM, 0.5)));
-
-            result.NumberOfBeds = numberOfBeds;
-            result.BedHeight = Math.Round(result.PackingHeight / numberOfBeds, 2);
-
             result.TowerHeight =
                 Math.Round(
-                    result.PackingHeight * 1.3 + 2.0
-                    + (numberOfBeds - 1) * RedistributorSectionHeightM,
+                    result.PackingHeight * 1.3 + 2.0,
                     2);
 
             // 5. Gas velocity inside tower
@@ -371,10 +366,7 @@ namespace WetScrubber.Services
 
                         liquidViscosityPas:
                             vm.LiquidViscosity /
-                            1000.0,
-
-                        gasViscosityPas:
-                            vm.GasViscosity
+                            1000.0
                     ) *
                     result.PackingHeight,
                     2);
@@ -428,14 +420,14 @@ namespace WetScrubber.Services
                 Math.Round(
                     CalculateFanPower(
                         gasFlowM3S,
-                        result.PressureDrop + AuxiliaryPressureLossPa),
+                        result.PressureDrop + 500),
                     2);
 
             result.PumpPowerKW =
                 Math.Round(
                     CalculatePumpPower(
                         liquidFlowM3Hr,
-                        result.TowerHeight + PumpDistributorHeadM,
+                        result.TowerHeight + 5,
                         vm.LiquidDensity),
                     2);
 
@@ -443,17 +435,21 @@ namespace WetScrubber.Services
             double minMolarLG =
                 CalculateMinimumLiquidGasRatio(
                     pollutant.InletConcentration,
-                    pollutant.TargetOutletConcentration,
-                    henrysTemp);
+                    targetOutletPpm,
+                    henrysEquilibrium);
 
             result.MinLGRatio =
-                Math.Round(
-                    MolarToVolumetricLiquidToGasRatio(
-                        minMolarLG,
-                        vm.LiquidDensity,
-                        vm.InletTemperature,
-                        vm.InletPressure),
-                    3);
+                reactiveBasis.UseReactiveEquilibrium
+                    ? Math.Round(
+                        reactiveBasis.MinLiquidToGasLPerM3,
+                        3)
+                    : Math.Round(
+                        MolarToVolumetricLiquidToGasRatio(
+                            minMolarLG,
+                            vm.LiquidDensity,
+                            vm.InletTemperature,
+                            vm.InletPressure),
+                        3);
 
             result.ActualLGRatio =
                 vm.LiquidToGasRatio;
@@ -470,10 +466,10 @@ namespace WetScrubber.Services
             result.SensitivityPoints =
                 RunLGRatioSensitivity(
                     pollutant.InletConcentration,
-                    henrysTemp,
+                    henrysEquilibrium,
                     ntuResult.NTU,
                     ntuResult.HTU,
-                    pollutant.TargetOutletConcentration,
+                    targetOutletPpm,
                     vm.LiquidDensity,
                     vm.InletTemperature,
                     vm.InletPressure);
@@ -1166,6 +1162,122 @@ namespace WetScrubber.Services
         // Reagent class and equivalents/L inferred from liquid pH and wt%.
         // pH >= 8 -> NaOH
         // pH <= 6 -> H2SO4
+        // Explicit outlet ppm -> else from target removal % -> else 95 %.
+        private static double ResolveTargetOutletPpm(
+            PollutantInputViewModel pollutant)
+        {
+            if (pollutant.TargetOutletConcentration > 0.0)
+                return pollutant.TargetOutletConcentration;
+
+            if (pollutant.TargetRemovalEfficiency > 0.0 &&
+                pollutant.TargetRemovalEfficiency < 100.0)
+            {
+                return pollutant.InletConcentration *
+                       (1.0 - pollutant.TargetRemovalEfficiency / 100.0);
+            }
+
+            return pollutant.InletConcentration * 0.05;
+        }
+
+        private readonly struct ReactiveEquilibriumBasis
+        {
+            public ReactiveEquilibriumBasis(
+                bool useReactiveEquilibrium,
+                double minLiquidToGasLPerM3)
+            {
+                UseReactiveEquilibrium = useReactiveEquilibrium;
+                MinLiquidToGasLPerM3 = minLiquidToGasLPerM3;
+            }
+
+            public bool UseReactiveEquilibrium { get; }
+
+            // Stoichiometric minimum: litres of reagent solution per
+            // actual m3 of gas needed to neutralise (y_in - y_out).
+            public double MinLiquidToGasLPerM3 { get; }
+        }
+
+        // Reaction-limited equilibrium applies only when the pollutant /
+        // reagent pair has known stoichiometry AND the supplied reagent
+        // (L/G x equivalents/L) covers the stoichiometric demand. Otherwise
+        // the physical Henry constant is kept (conservative).
+        private ReactiveEquilibriumBasis GetReactiveEquilibriumBasis(
+            PollutantInputViewModel pollutant,
+            CreateDesignViewModel vm)
+        {
+            string? code =
+                _componentLookup?
+                    .GetByPollutantId(pollutant.PollutantType)
+                    ?.Code;
+
+            var (kind, eqPerL) = GetReagentSpec(vm);
+
+            double nu =
+                GetReagentEquivalentsPerMolePollutant(code, kind);
+
+            if (nu <= 0.0 || eqPerL <= 0.0)
+                return new ReactiveEquilibriumBasis(false, 0.0);
+
+            double y1 = pollutant.InletConcentration / 1_000_000.0;
+            double y2 = ResolveTargetOutletPpm(pollutant) / 1_000_000.0;
+
+            double gasKmolPerM3 =
+                vm.InletPressure /
+                (8314.462 * (vm.InletTemperature + 273.15));
+
+            // kmol reagent-eq per m3 gas / (kmol-eq per m3 liquid) -> m3 liquid; x1000 -> L
+            double minLPerM3 =
+                nu *
+                Math.Max(y1 - y2, 0.0) *
+                gasKmolPerM3 /
+                eqPerL *
+                1000.0;
+
+            bool sufficient =
+                vm.LiquidToGasRatio >= minLPerM3;
+
+            return new ReactiveEquilibriumBasis(
+                sufficient,
+                minLPerM3);
+        }
+
+        // Equivalents of reagent consumed per mole of absorbed pollutant.
+        //   Caustic: SO2 + 2NaOH, H2S + 2NaOH, Cl2 + 2NaOH -> 2 ; HCl + NaOH -> 1
+        //   Acid:    NH3 + H+ -> 1
+        // Returns 0 (unknown) when the pair is not covered, so the
+        // enhancement service falls back to its non-instantaneous path.
+        private static double GetReagentEquivalentsPerMolePollutant(
+            string? pollutantCode,
+            ReagentKind reagentKind)
+        {
+            if (string.IsNullOrWhiteSpace(pollutantCode))
+                return 0.0;
+
+            string code = pollutantCode.Trim().ToUpperInvariant();
+
+            if (reagentKind == ReagentKind.Caustic)
+            {
+                return code switch
+                {
+                    "SO2" => 2.0,
+                    "H2S" => 2.0,
+                    "CL2" => 2.0,
+                    "HCL" => 1.0,
+                    _ => 0.0
+                };
+            }
+
+            if (reagentKind == ReagentKind.Acid)
+            {
+                return code switch
+                {
+                    "NH3" => 1.0,
+                    _ => 0.0
+                };
+            }
+
+            return 0.0;
+        }
+
         private (ReagentKind Kind, double MolesPerLiter) GetReagentSpec(
            CreateDesignViewModel vm)
         {
@@ -1365,7 +1477,12 @@ namespace WetScrubber.Services
                                 pressureKPa,
 
                             TemperatureK =
-                                liquidTempK
+                                liquidTempK,
+
+                            StoichiometricRatio =
+                                GetReagentEquivalentsPerMolePollutant(
+                                    pollutantCode,
+                                    reagentKind)
                         });
 
                 kLaX *=
@@ -1958,28 +2075,19 @@ namespace WetScrubber.Services
             double liquidDensityKgM3,
             double packingSurfaceAreaM2M3,
             double voidFraction,
-            double liquidViscosityPas,
-            double gasViscosityPas = 1.85e-5)
+            double liquidViscosityPas)
         {
             double epsilon = voidFraction;
             double ap = packingSurfaceAreaM2M3;
             double uG = gasVelocityMs;
 
-            // Dry pressure drop per metre of packing:
-            //   psi0 * (ap / eps^3) * rho_G * uG^2 / 2
-            //   psi0 = Cp * (64/Re_G + 1.8/Re_G^0.08)
-            double dEq = 6.0 * (1.0 - epsilon) / Math.Max(ap, 1e-6);
-            double reG = Math.Max(
-                uG * dEq * gasDensityKgM3 /
-                (Math.Max(gasViscosityPas, 1e-9) * (1.0 - epsilon)),
-                1e-6);
-            double psi0 =
-                BilletPressureDropCp *
-                (64.0 / reG + 1.8 / Math.Pow(reG, 0.08));
-
+            // Dry-bed pressure drop per metre, Pa/m:
+            //   0.764 * ap * rho * u^2 / (2 * eps^3)
+            // (the former extra (1 - eps) factor under-predicted dP ~20x)
             double dryDP =
-                psi0 *
-                (ap / Math.Pow(epsilon, 3)) *
+                0.764 /
+                Math.Pow(epsilon, 3) *
+                ap *
                 gasDensityKgM3 *
                 Math.Pow(uG, 2) /
                 2.0;
@@ -2014,7 +2122,7 @@ namespace WetScrubber.Services
                     Math.Max(
                         epsWet,
                         0.01),
-                    1.5);
+                    3.0);
 
             return dryDP * wetFact;
         }
@@ -2540,9 +2648,20 @@ namespace WetScrubber.Services
         // Geometry
         public double TowerDiameter { get; set; }
         public double TowerHeight { get; set; }
-        public int NumberOfBeds { get; set; } = 1;
-        public double BedHeight { get; set; }
         public double PackingHeight { get; set; }
+
+        // Bed split (used by Results.cshtml). Single bed unless set.
+        public int NumberOfBeds { get; set; } = 1;
+
+        private double? _bedHeight;
+        public double BedHeight
+        {
+            get => _bedHeight
+                   ?? (NumberOfBeds > 0
+                        ? PackingHeight / NumberOfBeds
+                        : PackingHeight);
+            set => _bedHeight = value;
+        }
 
         // Performance
         public double RemovalEfficiency { get; set; }

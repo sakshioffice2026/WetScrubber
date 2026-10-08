@@ -11,6 +11,7 @@ using EngineeringAI.Core.Llm;
 using WetScrubber.Business.AI;
 using WetScrubber.Business.Diagnostics;
 using WetScrubber.Business.Reports;
+using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Database;
 using WetScrubber.Repositories;
 using WetScrubber.Repositories.Contracts;
@@ -18,7 +19,7 @@ using WetScrubber.Repositories.Interfaces;
 using WetScrubber.Repositories.Repositories;
 using WetScrubber.Plugins;
 using WetScrubber.Services;
-using Microsoft.Extensions.DependencyInjection;
+
 //// ── Serilog setup ────────────────────────────────────────────────────────────
 //Log.Logger = new LoggerConfiguration()
 //    .WriteTo.Console()
@@ -117,6 +118,10 @@ builder.Services.AddScoped<IDesignReportRepository, DesignReportRepository>();
 
 // Register Repositories
 builder.Services.AddScoped<IUnitOfWork, UnitOfWorks>();
+
+// ── FIX: ChemistryUIService requires IHenrysLawLookup. ──
+builder.Services.AddScoped<IHenrysLawLookup, EfHenrysLawLookup>();
+
 builder.Services.AddScoped<WetScrubber.Services.ChemistryUIService>();
 
 #endregion

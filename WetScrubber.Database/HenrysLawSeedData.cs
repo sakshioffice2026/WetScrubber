@@ -8,7 +8,7 @@ namespace WetScrubber.Database
     /// chemistrypredictor.py KNOWN_REACTIONS (ReferenceSourceId = 2).
     /// HeatOfSolutionKJmol is negative for exothermic dissolution; SO2 is sourced from
     /// ReferenceSourceId = 3 (Goldberg and Parker, 1985), consistent with Sander (2023),
-    /// d ln H / d(1/T) = 3100 K for SO2. HCl, NH3, H2S and Cl2 heats are -slope*R from Sander (2023), ReferenceSourceId = 1000.
+    /// d ln H / d(1/T) = 3100 K for SO2. Other species stay null until sourced.
     /// ReferenceSource Ids 1-3 are seeded in ApplicationDbContext; 1000 avoids key clashes.
     /// </summary>
     public static class HenrysLawSeedData
@@ -27,10 +27,17 @@ namespace WetScrubber.Database
         public static readonly HenrysLawData[] Rows = new[]
         {
             Row(1, "SO2", 0.034, -26.97, 3),
-            Row(2, "HCl", 0.00002, -19.12, 1000),     // Sander (2023): d ln Hs/d(1/T) = 2300 K
-            Row(3, "NH3", 0.00069, -34.92, 1000),     // Sander (2023): d ln Hs/d(1/T) = 4200 K
-            Row(4, "H2S", 0.40, -17.46, 1000),       // Sander (2023): d ln Hs/d(1/T) = 2100 K
-            Row(5, "Cl2", 0.66, -26.60, 1000)        // Sander (2023): d ln Hs/d(1/T) = 3200 K
+            // HCl: heat of solution intentionally null. The tabulated 9000 K
+            // (-74.8 kJ/mol) is for the effective constant (H x Ka) incl.
+            // dissociation, not the physical Cg/Cl constant seeded here.
+            Row(2, "HCl", 0.00002),
+            // d ln Hs / d(1/T) = 4200 K -> -34.9 kJ/mol (Sander 2023)
+            Row(3, "NH3", 0.00069, -34.92, 1000),
+            // d ln Hs / d(1/T) = 2100 K -> -17.46 kJ/mol (JPL / Sander 2023)
+            Row(4, "H2S", 0.40, -17.46, 1000),
+            // d ln Hs / d(1/T) = 2000 K -> -16.63 kJ/mol (JPL / Sander 2023;
+            // effective value incl. Cl2/HOCl hydrolysis)
+            Row(5, "Cl2", 0.66, -16.63, 1000)
         };
 
         private static HenrysLawData Row(
