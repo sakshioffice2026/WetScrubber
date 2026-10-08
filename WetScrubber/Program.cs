@@ -18,7 +18,7 @@ using WetScrubber.Repositories.Interfaces;
 using WetScrubber.Repositories.Repositories;
 using WetScrubber.Plugins;
 using WetScrubber.Services;
-
+using Microsoft.Extensions.DependencyInjection;
 //// ── Serilog setup ────────────────────────────────────────────────────────────
 //Log.Logger = new LoggerConfiguration()
 //    .WriteTo.Console()

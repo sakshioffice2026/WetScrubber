@@ -207,6 +207,11 @@
     <script src="~/js/dashboard.js"></script>
 
     @* Page-specific scripts injected by each view *@
+    @if (Context.Session.GetInt32("UserId") != null)
+    {
+        <partial name="_ChatWidget" />
+    }
+
     @await RenderSectionAsync("Scripts", required: false)
 
 </body>

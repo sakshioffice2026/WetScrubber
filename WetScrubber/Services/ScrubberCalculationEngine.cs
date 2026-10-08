@@ -86,6 +86,11 @@ namespace WetScrubber.Services
         private const double DefaultVoidFraction = 0.951;    // ε
         private const double DefaultGasFilmCoeff = 0.03;     // kGa kmol/m³·hr·kPa
         private const double DefaultLiquidFilmCoeff = 0.01;  // kLa m/hr — fallback path only
+        private const double AuxiliaryPressureLossPa = 500.0;   // duct, inlet/outlet, demister, distributor allowance for fan sizing
+        private const double PumpDistributorHeadM = 15.0;       // static lift above tower + spray/distributor head for pump sizing
+        private const double BilletPressureDropCp = 0.55;       // packing constant (Pall ring class), not yet validated against vendor data
+        private const double MaxBedHeightM = 6.0;                // max height of one packed bed before redistribution
+        private const double RedistributorSectionHeightM = 1.0;  // height allowance per redistributor between beds
 
         // Phase 2 — Onda correlation packing/fluid defaults. Same
         // "standard textbook value, not independently sourced" caveat
@@ -122,9 +127,18 @@ namespace WetScrubber.Services
                 vm.Pollutants.FirstOrDefault()
                 ?? new PollutantInputViewModel();
 
+
+            // Gas flow at operating conditions, derived from the normal flow so
+            // liquid flow, velocity and power share one basis with the diameter.
+            double actualFlowM3Hr =
+                vm.NormalFlowRate > 0
+                    ? vm.NormalFlowRate
+                      * ((vm.InletTemperature + 273.15) / 273.15)
+                      * (101325.0 / Math.Max(vm.InletPressure, 1.0))
+                    : vm.ActualFlowRate;
             // 1. Liquid flow rate from L/G ratio
             double liquidFlowM3Hr =
-                vm.ActualFlowRate *
+                actualFlowM3Hr *
                 vm.LiquidToGasRatio /
                 1000.0;
 
@@ -177,7 +191,7 @@ namespace WetScrubber.Services
 
             // Calculate gas flow and cross-sectional area
             double gasFlowM3S =
-                vm.ActualFlowRate / 3600.0;
+                actualFlowM3Hr / 3600.0;
 
             double crossSection =
                 Math.PI *
@@ -294,9 +308,20 @@ namespace WetScrubber.Services
 
             // 4. Total tower height =
             // packing + 30% freeboard + 1m sump + 1m top
+            // Bed split: a single packed bed is limited to min(6 m, 8 x diameter);
+            // each extra bed needs a liquid redistributor section between beds.
+            double maxBedHeightM = Math.Min(MaxBedHeightM, 8.0 * result.TowerDiameter);
+            int numberOfBeds = Math.Max(
+                1,
+                (int)Math.Ceiling(result.PackingHeight / Math.Max(maxBedHeightM, 0.5)));
+
+            result.NumberOfBeds = numberOfBeds;
+            result.BedHeight = Math.Round(result.PackingHeight / numberOfBeds, 2);
+
             result.TowerHeight =
                 Math.Round(
-                    result.PackingHeight * 1.3 + 2.0,
+                    result.PackingHeight * 1.3 + 2.0
+                    + (numberOfBeds - 1) * RedistributorSectionHeightM,
                     2);
 
             // 5. Gas velocity inside tower
@@ -346,7 +371,10 @@ namespace WetScrubber.Services
 
                         liquidViscosityPas:
                             vm.LiquidViscosity /
-                            1000.0
+                            1000.0,
+
+                        gasViscosityPas:
+                            vm.GasViscosity
                     ) *
                     result.PackingHeight,
                     2);
@@ -400,14 +428,14 @@ namespace WetScrubber.Services
                 Math.Round(
                     CalculateFanPower(
                         gasFlowM3S,
-                        result.PressureDrop + 500),
+                        result.PressureDrop + AuxiliaryPressureLossPa),
                     2);
 
             result.PumpPowerKW =
                 Math.Round(
                     CalculatePumpPower(
                         liquidFlowM3Hr,
-                        result.TowerHeight + 5,
+                        result.TowerHeight + PumpDistributorHeadM,
                         vm.LiquidDensity),
                     2);
 
@@ -1930,17 +1958,28 @@ namespace WetScrubber.Services
             double liquidDensityKgM3,
             double packingSurfaceAreaM2M3,
             double voidFraction,
-            double liquidViscosityPas)
+            double liquidViscosityPas,
+            double gasViscosityPas = 1.85e-5)
         {
             double epsilon = voidFraction;
             double ap = packingSurfaceAreaM2M3;
             double uG = gasVelocityMs;
 
+            // Dry pressure drop per metre of packing:
+            //   psi0 * (ap / eps^3) * rho_G * uG^2 / 2
+            //   psi0 = Cp * (64/Re_G + 1.8/Re_G^0.08)
+            double dEq = 6.0 * (1.0 - epsilon) / Math.Max(ap, 1e-6);
+            double reG = Math.Max(
+                uG * dEq * gasDensityKgM3 /
+                (Math.Max(gasViscosityPas, 1e-9) * (1.0 - epsilon)),
+                1e-6);
+            double psi0 =
+                BilletPressureDropCp *
+                (64.0 / reG + 1.8 / Math.Pow(reG, 0.08));
+
             double dryDP =
-                0.764 *
-                (1 - epsilon) /
-                Math.Pow(epsilon, 3) *
-                ap *
+                psi0 *
+                (ap / Math.Pow(epsilon, 3)) *
                 gasDensityKgM3 *
                 Math.Pow(uG, 2) /
                 2.0;
@@ -1975,7 +2014,7 @@ namespace WetScrubber.Services
                     Math.Max(
                         epsWet,
                         0.01),
-                    3.0);
+                    1.5);
 
             return dryDP * wetFact;
         }
@@ -2501,6 +2540,8 @@ namespace WetScrubber.Services
         // Geometry
         public double TowerDiameter { get; set; }
         public double TowerHeight { get; set; }
+        public int NumberOfBeds { get; set; } = 1;
+        public double BedHeight { get; set; }
         public double PackingHeight { get; set; }
 
         // Performance

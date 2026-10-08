@@ -116,7 +116,12 @@ namespace WetScrubber.Business.Thermodynamics
             Flowsheet.FlowsheetPorts outletPorts,
             double heatReleasedKW)
         {
-            double gasFlowKgS = 1.0;  // Placeholder — would come from inlet gas flow
+            // Inlet gas mass flow from actual volumetric flow, ideal-gas density
+            // with air molar mass (28.96 g/mol) as the carrier-gas basis.
+            double inletTempK = inletPorts.Gas.TemperatureC + 273.15;
+            double inletPressurePa = inletPorts.Gas.PressurePa > 0 ? inletPorts.Gas.PressurePa : 101325.0;
+            double gasDensityKgM3 = inletPressurePa * 0.02896 / (8.314462 * inletTempK);
+            double gasFlowKgS = inletPorts.Gas.ActualFlowM3Hr / 3600.0 * gasDensityKgM3;
             double liquidFlowKgS = outletPorts.Liquid?.MassFlowKgS ?? 0.0;
 
             return ValidateEnergyBalance(

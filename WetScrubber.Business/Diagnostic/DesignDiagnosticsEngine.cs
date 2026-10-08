@@ -42,6 +42,7 @@ namespace WetScrubber.Business.Diagnostics
             EvaluateLGMargin(metrics, findings);
             EvaluatePressureDrop(metrics, findings);
             EvaluateRemovalEfficiency(metrics, findings);
+            EvaluateMaterialTemperature(metrics, findings);
 
             EvaluatePackingAndSlurryProvenance(metrics, findings);
 
@@ -250,6 +251,54 @@ namespace WetScrubber.Business.Diagnostics
                         : null
                 });
             }
+        }
+
+        // Maximum continuous service temperature (°C) per construction material.
+        // Same limits as ScrubberPhysicalChecker.
+        private static readonly System.Collections.Generic.Dictionary<string, double> MaxServiceTempC =
+            new System.Collections.Generic.Dictionary<string, double>(System.StringComparer.OrdinalIgnoreCase)
+            {
+                ["PP"] = 80,
+                ["HDPE"] = 60,
+                ["PVC"] = 60,
+                ["FRP"] = 90,
+                ["SS316"] = 400,
+                ["HastelloyC"] = 600,
+                ["CarbonSteel"] = 400
+            };
+
+        private static void EvaluateMaterialTemperature(
+            DesignMetrics m,
+            List<DesignFinding> findings)
+        {
+            CheckMaterial("Shell material", "ShellMaterial", m.ShellMaterial, m.InletTemperatureC, findings);
+            CheckMaterial("Internal material", "InternalMaterial", m.InternalMaterial, m.InletTemperatureC, findings);
+        }
+
+        private static void CheckMaterial(
+            string label,
+            string field,
+            string? material,
+            double inletTempC,
+            List<DesignFinding> findings)
+        {
+            if (string.IsNullOrWhiteSpace(material) || !MaxServiceTempC.TryGetValue(material, out double limit))
+                return;
+
+            if (inletTempC <= limit)
+                return;
+
+            findings.Add(new DesignFinding
+            {
+                Code = "MATERIAL_TEMPERATURE_EXCEEDED",
+                Severity = FindingSeverity.Critical,
+                Symptom = $"{label} {material} is rated to {limit:F0} °C but the inlet gas is {inletTempC:F0} °C.",
+                Diagnosis =
+                    "The inlet gas temperature exceeds the maximum continuous service temperature of this material, so it can soften, creep or fail.",
+                Recommendation =
+                    "Select a higher-rated material (e.g. SS316 or Hastelloy C) or add a quench or cooling stage upstream, then recalculate.",
+                AffectedFields = new[] { field }
+            });
         }
 
         private static void EvaluatePackingAndSlurryProvenance(

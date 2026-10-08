@@ -973,6 +973,23 @@ namespace WetScrubber.Controllers
                                           d.Project.CreatedByUserId == userId);
         }
 
+        private string ResolveLiquidName(int? liquidId)
+        {
+            if (liquidId == null)
+                return "-";
+
+            var liquid = _dbContext.ScrubbingLiquids
+                .AsNoTracking()
+                .FirstOrDefault(l => l.Id == liquidId.Value);
+
+            if (liquid == null)
+                return liquidId.Value.ToString();
+
+            return string.IsNullOrEmpty(liquid.Formula)
+                ? liquid.DisplayName
+                : $"{liquid.DisplayName} ({liquid.Formula})";
+        }
+
         private DesignDetailViewModel BuildDetailViewModel(ScrubberDesign d, DesignReport? report = null) => new()
         {
             DesignId = d.DesignId,
@@ -991,7 +1008,7 @@ namespace WetScrubber.Controllers
             InletPressure = d.GasStream?.InletPressure ?? 0,
             MoistureContent = d.GasStream?.MoistureContent ?? 0,
             GasDensity = d.GasStream?.GasDensity ?? 0,
-            LiquidType = d.LiquidSpec?.LiquidType.ToString() ?? "-",
+            LiquidType = ResolveLiquidName(d.LiquidSpec?.LiquidType),
             LiquidPH = d.LiquidSpec?.pH ?? 0,
             LiquidConcentration = d.LiquidSpec?.Concentration ?? 0,
             LiquidToGasRatio = d.LiquidSpec?.LiquidToGasRatio ?? 0,

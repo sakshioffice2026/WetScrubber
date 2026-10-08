@@ -1,3 +1,4 @@
+﻿
 ﻿using System;
 using System.Linq;
 using WetScrubber.Business.Services;
@@ -9,14 +10,20 @@ using WetScrubber.Repositories.Repositories;
 namespace WetScrubber.Services
 {
     // UI orchestration layer for the Chemistry Calculation page.
-    // Never touches ApplicationDbContext directly (matches ChemistryController's
-    // pattern) — reads master data through IUnitOfWork and the authoritative
-    // Henry's-law lookup, hands the numbers to
-    // ChemistryCalculationIntegration, and flattens the result into the
-    // view-friendly ChemistryReportViewModel. No engineering number is
-    // computed here; this class only wires inputs/outputs together.
+    //
+    // Responsibilities:
+    //   - Read master data through IUnitOfWork.
+    //   - Read authoritative Henry's-law data.
+    //   - Build ChemistryCalculationIntegration input.
+    //   - Supply a complete PackingMassTransferInput.
+    //   - Execute the chemistry calculation.
+    //   - Map the result into ChemistryReportViewModel.
+    //
+    // This class does not modify the repository or database.
     public class ChemistryUIService
     {
+        private const double WaterMolecularWeightKgPerKmol = 18.015;
+
         private readonly UnitOfWorks _uow;
         private readonly IHenrysLawLookup _henrysLawLookup;
 
@@ -33,59 +40,83 @@ namespace WetScrubber.Services
                 ?? throw new ArgumentNullException(nameof(henrysLawLookup));
         }
 
-        // ── GET Calculation: build the empty form with dropdowns ───────
+        // ─────────────────────────────────────────────────────────────
+        // GET: Build calculation form
+        // ─────────────────────────────────────────────────────────────
+
         public ChemistryCalculationFormViewModel BuildForm()
         {
             var vm = new ChemistryCalculationFormViewModel();
+
             PopulateDropdowns(vm);
+
             return vm;
         }
 
-        public void PopulateDropdowns(ChemistryCalculationFormViewModel vm)
+        public void PopulateDropdowns(
+            ChemistryCalculationFormViewModel vm)
         {
-            vm.Pollutants = _uow.pollutantRepository.GetAll(activeOnly: true);
-            vm.Liquids = _uow.scrubbingLiquidRepository.GetAll(activeOnly: true);
+            if (vm == null)
+                throw new ArgumentNullException(nameof(vm));
+
+            vm.Pollutants =
+                _uow.pollutantRepository.GetAll(activeOnly: true);
+
+            vm.Liquids =
+                _uow.scrubbingLiquidRepository.GetAll(activeOnly: true);
         }
 
-        // ── POST Calculation: run the engine, map to a report VM ───────
+        // ─────────────────────────────────────────────────────────────
+        // POST: Execute calculation
+        // ─────────────────────────────────────────────────────────────
+
         public ChemistryReportViewModel RunCalculation(
             ChemistryCalculationFormViewModel form)
         {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+
             var pollutant =
                 _uow.pollutantRepository.GetById(form.PollutantId);
 
             var liquid =
-                _uow.scrubbingLiquidRepository.GetById(form.ScrubbingLiquidId);
+                _uow.scrubbingLiquidRepository.GetById(
+                    form.ScrubbingLiquidId);
 
             if (pollutant == null || liquid == null)
+            {
                 throw new InvalidOperationException(
                     "Pollutant or scrubbing liquid not found.");
+            }
 
-            // The authoritative Henry's-law record is keyed by pollutant
-            // code and stores H_ReferenceAt25C as dimensionless Cg/Cl
-            // volatility-form data. Do not use Pollutant.DefaultHenrysLawConstant
-            // here because that value does not guarantee the same convention.
+            // ─────────────────────────────────────────────────────────
+            // Henry's law
+            // ─────────────────────────────────────────────────────────
+
             var henryData =
                 _henrysLawLookup.GetByPollutantCode(pollutant.Code);
 
             if (henryData == null)
             {
                 throw new InvalidOperationException(
-                    $"No active authoritative Henry's Law record exists for pollutant '{pollutant.Code}'. " +
-                    "Add the pollutant to HenrysLawData before running a chemistry calculation.");
+                    $"No active authoritative Henry's Law record exists " +
+                    $"for pollutant '{pollutant.Code}'. " +
+                    "Add the pollutant to HenrysLawData before running " +
+                    "a chemistry calculation.");
             }
 
             if (henryData.H_ReferenceAt25C <= 0)
             {
                 throw new InvalidOperationException(
-                    $"The authoritative Henry's Law constant for pollutant '{pollutant.Code}' " +
-                    $"must be positive; received {henryData.H_ReferenceAt25C}.");
+                    $"The authoritative Henry's Law constant for pollutant " +
+                    $"'{pollutant.Code}' must be positive; received " +
+                    $"{henryData.H_ReferenceAt25C}.");
             }
 
-            // Primary reaction for the pollutant/liquid pair supplies the
-            // reagent stoichiometric ratio when a curated reaction exists.
-            // A positive ratio is required; otherwise use the physical 1:1
-            // fallback.
+            // ─────────────────────────────────────────────────────────
+            // Reaction stoichiometry
+            // ─────────────────────────────────────────────────────────
+
             var reaction =
                 _uow.chemicalReactionRepository
                     .GetPrimaryForPair(
@@ -93,18 +124,48 @@ namespace WetScrubber.Services
                         form.ScrubbingLiquidId);
 
             double reagentStoichiometricRatio =
-                reaction?.StoichiometricRatio > 0
-                    ? reaction.StoichiometricRatio
-                    : 1.0;
+                ResolveReactionStoichiometricRatio(reaction);
+
+            // ─────────────────────────────────────────────────────────
+            // Liquid flow
+            //
+            // The current form exposes liquid flow in kmol/hr.
+            //
+            // ChemistryCalculationIntegration also supports volumetric
+            // liquid flow. Derive the equivalent physical volumetric flow
+            // from the current molar flow and liquid density.
+            // ─────────────────────────────────────────────────────────
+
+            double inletLiquidFlowM3PerHr =
+                ResolveLiquidVolumetricFlowM3PerHr(form);
+
+            // ─────────────────────────────────────────────────────────
+            // Complete packing input
+            // ─────────────────────────────────────────────────────────
+
+            var packing =
+                BuildStandardPackingInput(
+                    form,
+                    inletLiquidFlowM3PerHr);
+
+            // ─────────────────────────────────────────────────────────
+            // Integration input
+            // ─────────────────────────────────────────────────────────
 
             var input =
                 new ChemistryCalculationIntegration.ChemistryCalculationInput
                 {
-                    PollutantCode = pollutant.Code,
-                    PollutantCAS = pollutant.Code,
+                    // Pollutant
+                    PollutantCode =
+                        pollutant.Code,
+
+                    PollutantCAS =
+                        pollutant.Code,
+
                     PollutantMolecularWeightKgKmol =
                         pollutant.DefaultMolecularWeight,
 
+                    // Gas stream
                     InletGasMoleFractionPollutant =
                         form.InletConcentrationPpmv / 1_000_000.0,
 
@@ -119,6 +180,10 @@ namespace WetScrubber.Services
 
                     InletGasDiffusivityM2S =
                         form.InletGasDiffusivityM2S,
+
+                    // Liquid stream
+                    InletLiquidFlowM3PerHr =
+                        inletLiquidFlowM3PerHr,
 
                     InletLiquidFlowKmolPerHr =
                         form.InletLiquidFlowKmolPerHr,
@@ -135,7 +200,9 @@ namespace WetScrubber.Services
                     InletLiquidDiffusivityM2S =
                         form.InletLiquidDiffusivityM2S,
 
-                    SolventCode = "H2O",
+                    // Solvent / reagent
+                    SolventCode =
+                        "H2O",
 
                     ReagentCode =
                         liquid.Code,
@@ -146,16 +213,21 @@ namespace WetScrubber.Services
                     ReagentStoichiometricRatio =
                         reagentStoichiometricRatio,
 
-                    TemperatureC =
-                        form.TemperatureC,
+                    // Temperatures
+                    //
+                    // Gas temperature is used by gas-side calculations.
+                    // Liquid temperature is used by Henry's law and
+                    // liquid-side calculations.
+                    GasTemperatureC =
+                        form.GasTemperatureC,
+
+                    LiquidTemperatureC =
+                        form.LiquidTemperatureC,
 
                     PressureKPa =
                         form.PressureKPa,
 
-                    // IMPORTANT:
-                    // This is now the authoritative Henry's-law database
-                    // value in volatility form (Cg/Cl), not the legacy
-                    // Pollutant.DefaultHenrysLawConstant.
+                    // Henry's law
                     HenrysConstantAt25C =
                         henryData.H_ReferenceAt25C,
 
@@ -165,12 +237,14 @@ namespace WetScrubber.Services
                     HenryConvention =
                         HenrysLawConvention.LiquidReferenced,
 
+                    // Tower
                     PackingHeightM =
                         form.PackingHeightM,
 
                     TargetRemovalEfficiencyPercent =
                         form.TargetRemovalEfficiencyPercent,
 
+                    // Reactive absorption
                     IncludeReactiveAbsorption =
                         form.IncludeReactiveAbsorption,
 
@@ -178,33 +252,199 @@ namespace WetScrubber.Services
                         form.ReactionRateConstantS_Inv,
 
                     BulkReagentConcentrationMolL =
-                        form.BulkReagentConcentrationMolL
+                        form.BulkReagentConcentrationMolL,
+
+                    // Packing / mass transfer
+                    Packing =
+                        packing
                 };
+
+            // ─────────────────────────────────────────────────────────
+            // Execute calculation
+            // ─────────────────────────────────────────────────────────
 
             var result =
                 ChemistryCalculationIntegration
                     .ExecuteFullCalculation(input);
 
+            // IMPORTANT:
+            // Pass the actual double variable here.
+            //
+            // Do NOT pass:
+            //     ResolveReactionStoichiometricRatio
+            //
+            // because that would be a method group rather than a double.
             return MapToReportViewModel(
                 result,
                 pollutant,
                 liquid,
-                reaction);
+                input.GasTemperatureC,
+                input.LiquidTemperatureC,
+                reagentStoichiometricRatio);
         }
 
-        // ── Helpers ──────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────
+        // Liquid flow helper
+        // ─────────────────────────────────────────────────────────────
+
+        private static double ResolveLiquidVolumetricFlowM3PerHr(
+            ChemistryCalculationFormViewModel form)
+        {
+            if (form.InletLiquidFlowKmolPerHr <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Inlet liquid flow must be greater than zero.");
+            }
+
+            if (form.InletLiquidDensityKgM3 <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Inlet liquid density must be greater than zero.");
+            }
+
+            /*
+             * For the current H2O solvent basis:
+             *
+             *     mass flow kg/hr
+             *       = kmol/hr × kg/kmol
+             *
+             *     volumetric flow m3/hr
+             *       = mass flow / density
+             *
+             * Therefore:
+             *
+             *     Vdot = n_dot × MW / rho
+             */
+
+            return
+                form.InletLiquidFlowKmolPerHr *
+                WaterMolecularWeightKgPerKmol /
+                form.InletLiquidDensityKgM3;
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Packing input
+        // ─────────────────────────────────────────────────────────────
+
+        private static PackingMassTransferInput BuildStandardPackingInput(
+            ChemistryCalculationFormViewModel form,
+            double inletLiquidFlowM3PerHr)
+        {
+            if (form == null)
+                throw new ArgumentNullException(nameof(form));
+
+            if (inletLiquidFlowM3PerHr <= 0)
+            {
+                throw new InvalidOperationException(
+                    "Liquid volumetric flow must be greater than zero.");
+            }
+
+            /*
+             * Standard fallback packing values.
+             *
+             * These are deliberately isolated here because the current
+             * ChemistryCalculationFormViewModel does not expose packing
+             * selection or tower diameter.
+             */
+
+            const double specificAreaM2M3 = 110.0;
+            const double nominalSizeM = 0.050;
+            const double criticalSurfaceTensionNM = 0.033;
+            const double liquidSurfaceTensionNM = 0.072;
+
+            // Temporary standard tower cross-sectional area.
+            const double towerAreaM2 = 1.0;
+
+            // Liquid mass flow:
+            //
+            //     kg/hr = m3/hr × kg/m3
+            //     kg/s  = kg/hr / 3600
+            double liquidMassFlowKgS =
+                inletLiquidFlowM3PerHr *
+                form.InletLiquidDensityKgM3 /
+                3600.0;
+
+            /*
+             * The current form does not expose total gas mass flow.
+             * The integration only requires a positive value for the
+             * packing mass-transfer input, so preserve the existing gas
+             * flow basis here.
+             *
+             * This should be replaced by an authoritative total-gas
+             * mass-flow field when that field is added to the form model.
+             */
+            double gasMassFlowKgS =
+                form.InletGasFlowKmolPerHr / 3600.0;
+
+            var packing =
+                new PackingMassTransferInput
+                {
+                    SpecificAreaM2M3 =
+                        specificAreaM2M3,
+
+                    NominalSizeM =
+                        nominalSizeM,
+
+                    CriticalSurfaceTensionNM =
+                        criticalSurfaceTensionNM,
+
+                    LiquidSurfaceTensionNM =
+                        liquidSurfaceTensionNM,
+
+                    TowerAreaM2 =
+                        towerAreaM2,
+
+                    GasMassFlowKgS =
+                        gasMassFlowKgS,
+
+                    LiquidMassFlowKgS =
+                        liquidMassFlowKgS
+                };
+
+            // Defensive contract check.
+            if (!packing.IsComplete)
+            {
+                throw new InvalidOperationException(
+                    "The packing mass-transfer input is incomplete.");
+            }
+
+            return packing;
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Reaction stoichiometry helper
+        // ─────────────────────────────────────────────────────────────
+
+        private static double ResolveReactionStoichiometricRatio(
+            Database.ChemicalReaction? reaction)
+        {
+            return reaction?.StoichiometricRatio > 0
+                ? reaction.StoichiometricRatio
+                : 1.0;
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Result mapping
+        // ─────────────────────────────────────────────────────────────
+
         private static ChemistryReportViewModel MapToReportViewModel(
             ChemistryCalculationIntegration.ChemistryCalculationResult result,
             Database.Pollutant pollutant,
             Database.ScrubbingLiquid liquid,
-            Database.ChemicalReaction? reaction)
+            double gasTemperatureC,
+            double liquidTemperatureC,
+            double reagentStoichiometricRatio)
         {
-            var r = result.Report;
+            if (result == null)
+                throw new ArgumentNullException(nameof(result));
 
-            double reagentStoichiometricRatio =
-                reaction?.StoichiometricRatio > 0
-                    ? reaction.StoichiometricRatio
-                    : 1.0;
+            if (pollutant == null)
+                throw new ArgumentNullException(nameof(pollutant));
+
+            if (liquid == null)
+                throw new ArgumentNullException(nameof(liquid));
+
+            var r = result.Report;
 
             var vm =
                 new ChemistryReportViewModel
@@ -228,14 +468,31 @@ namespace WetScrubber.Services
                         result.ReadyForIndustrialUse,
 
                     AllFindings =
-                        result.AllFindings?.ToList() ?? new(),
+                        result.AllFindings?.ToList()
+                        ?? new(),
 
                     GeneratedAtUtc =
-                        r?.GeneratedAtUtc ?? DateTime.UtcNow,
+                        r?.GeneratedAtUtc
+                        ?? DateTime.UtcNow,
 
                     ReagentStoichiometricRatio =
-                        reagentStoichiometricRatio
+                        reagentStoichiometricRatio,
+
+                    // ChemistryReportViewModel has separate temperature
+                    // properties. The current EnhancedChemistryReport
+                    // Conditions DTO still has only the legacy
+                    // TemperatureC property, so use the authoritative
+                    // calculation input values here.
+                    GasTemperatureC =
+                        gasTemperatureC,
+
+                    LiquidTemperatureC =
+                        liquidTemperatureC
                 };
+
+            // ─────────────────────────────────────────────────────────
+            // Operating conditions
+            // ─────────────────────────────────────────────────────────
 
             if (r?.Conditions != null)
             {
@@ -266,12 +523,24 @@ namespace WetScrubber.Services
                 vm.ReagentConcentrationMolPerL =
                     r.Conditions.ReagentConcentrationMolPerL;
 
-                vm.TemperatureC =
-                    r.Conditions.TemperatureC;
+                // DO NOT use:
+                //
+                // vm.TemperatureC = r.Conditions.TemperatureC;
+                //
+                // ChemistryReportViewModel uses:
+                //     GasTemperatureC
+                //     LiquidTemperatureC
+                //
+                // and the legacy report DTO does not expose separate
+                // temperature properties.
 
                 vm.PressureKPa =
                     r.Conditions.PressureKPa;
             }
+
+            // ─────────────────────────────────────────────────────────
+            // Model selections
+            // ─────────────────────────────────────────────────────────
 
             if (r?.ModelSelections != null)
             {
@@ -297,6 +566,10 @@ namespace WetScrubber.Services
                     r.ModelSelections.ReactiveAbsorptionModeled;
             }
 
+            // ─────────────────────────────────────────────────────────
+            // Equilibrium
+            // ─────────────────────────────────────────────────────────
+
             if (r?.Equilibrium != null)
             {
                 vm.DrivingForceInletMolFraction =
@@ -312,6 +585,10 @@ namespace WetScrubber.Services
                     r.Equilibrium.PinchWarning;
             }
 
+            // ─────────────────────────────────────────────────────────
+            // Mass transfer
+            // ─────────────────────────────────────────────────────────
+
             if (r?.MassTransfer != null)
             {
                 vm.GasSideResistanceFraction =
@@ -326,6 +603,10 @@ namespace WetScrubber.Services
                 vm.EnhancementFactorFromReaction =
                     r.MassTransfer.EnhancementFactorFromReaction;
             }
+
+            // ─────────────────────────────────────────────────────────
+            // Reagent
+            // ─────────────────────────────────────────────────────────
 
             if (r?.Reagent != null)
             {
@@ -345,6 +626,10 @@ namespace WetScrubber.Services
                     r.Reagent.ReagentUtilizationFraction;
             }
 
+            // ─────────────────────────────────────────────────────────
+            // Material balance
+            // ─────────────────────────────────────────────────────────
+
             if (r?.MaterialBalance != null)
             {
                 vm.ClosureErrorFraction =
@@ -356,6 +641,10 @@ namespace WetScrubber.Services
                 vm.ClosureStatement =
                     r.MaterialBalance.ClosureStatement;
             }
+
+            // ─────────────────────────────────────────────────────────
+            // Validity / diagnostics
+            // ─────────────────────────────────────────────────────────
 
             if (r?.Validity != null)
             {
@@ -379,3 +668,4 @@ namespace WetScrubber.Services
         }
     }
 }
+

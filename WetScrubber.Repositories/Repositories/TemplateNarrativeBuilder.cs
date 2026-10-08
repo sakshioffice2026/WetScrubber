@@ -93,8 +93,14 @@ namespace WetScrubber.Business.Reports
 
             sb.AppendLine($"Actual Gas Flow : {gas.ActualFlowRate} m³/h");
             sb.AppendLine($"Normal Gas Flow : {gas.NormalFlowRate} Nm³/h");
-            sb.AppendLine($"Temperature : {gas.InletTemperature}");
-            sb.AppendLine($"Pressure : {gas.InletPressure}");
+            sb.AppendLine($"Temperature : {gas.InletTemperature:N1} °C");
+            sb.AppendLine($"Pressure : {gas.InletPressure:N0} Pa");
+
+            foreach (var p in gas.Pollutants ?? new System.Collections.Generic.List<PollutantStream>())
+            {
+                sb.AppendLine($"Pollutant (id {p.PollutantType}) inlet concentration : {p.InletConcentration:N2}");
+                sb.AppendLine($"Pollutant (id {p.PollutantType}) target removal : {p.TargetRemovalEfficiency:N2} %");
+            }
 
             sb.AppendLine();
         }
@@ -124,9 +130,9 @@ namespace WetScrubber.Business.Reports
 
             sb.AppendLine($"Density : {liquid.Density:N2} kg/m³");
 
-            sb.AppendLine($"Viscosity : {liquid.Viscosity:N2}");
+            sb.AppendLine($"Viscosity : {liquid.Viscosity:N2} cP");
 
-            sb.AppendLine($"Liquid/Gas Ratio : {liquid.LiquidToGasRatio:N2}");
+            sb.AppendLine($"Liquid/Gas Ratio : {liquid.LiquidToGasRatio:N2} L/m³");
 
             sb.AppendLine();
         }
@@ -178,7 +184,10 @@ namespace WetScrubber.Business.Reports
                 PackingCode = geometry.PackingCode ?? design.PackingCode,
                 PackingSizingMethod = geometry.PackingSizingMethod,
                 IsLimestoneSlurry = geometry.IsLimestoneSlurry,
-                SolidsLoadingWtPercent = geometry.SolidsLoadingWtPercent
+                SolidsLoadingWtPercent = geometry.SolidsLoadingWtPercent,
+                InletTemperatureC = design.GasStream?.InletTemperature ?? 0.0,
+                ShellMaterial = design.ShellMaterial.ToString(),
+                InternalMaterial = design.InternalMaterial.ToString()
             };
 
             var findings = _diagnosticsEngine.Evaluate(metrics);

@@ -84,7 +84,8 @@
             </div>
             <div class="result-kpi-label">Removal Efficiency</div>
             <div class="result-kpi-value">@calcResult!.RemovalEfficiency.ToString("F2")<span class="result-kpi-unit">%</span></div>
-            <div class="result-kpi-sub">Target achieved</div>
+            @{ var targetEff = design.Pollutants.FirstOrDefault()?.TargetRemovalEfficiency ?? 0.0; }
+            <div class="result-kpi-sub">@(calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
         </div>
         </div>
 
@@ -167,7 +168,7 @@
             </div>
             <div class="result-kpi-label">Tower Height</div>
             <div class="result-kpi-value">@calcResult.TowerHeight.ToString("F2")<span class="result-kpi-unit">m</span></div>
-            <div class="result-kpi-sub">Including freeboard</div>
+            <div class="result-kpi-sub">Including freeboard@(calcResult.NumberOfBeds > 1 ? " and redistributors" : "")</div>
         </div>
         </div>
 
@@ -180,7 +181,7 @@
                 </div>
                 <div class="result-kpi-label">Packing Height</div>
                 <div class="result-kpi-value">@calcResult.PackingHeight.ToString("F2")<span class="result-kpi-unit">m</span></div>
-                <div class="result-kpi-sub">Active packing zone</div>
+                <div class="result-kpi-sub">@(calcResult.NumberOfBeds > 1 ? $"{calcResult.NumberOfBeds} beds x {calcResult.BedHeight:F2} m, with redistributors" : "Single bed")</div>
             </div>
         </div>
 

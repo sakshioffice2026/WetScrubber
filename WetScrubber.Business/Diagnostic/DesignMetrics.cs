@@ -33,5 +33,10 @@ namespace WetScrubber.Business.Diagnostics
         public string? PackingSizingMethod { get; init; }
         public bool IsLimestoneSlurry { get; init; }
         public double SolidsLoadingWtPercent { get; init; }
+
+        // Used by the material service-temperature check.
+        public double InletTemperatureC { get; init; }
+        public string? ShellMaterial { get; init; }
+        public string? InternalMaterial { get; init; }
     }
 }
