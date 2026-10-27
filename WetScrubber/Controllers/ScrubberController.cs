@@ -403,6 +403,20 @@ namespace WetScrubber.Controllers
                 return RedirectToAction(nameof(DesignDetail), new { id });
             }
 
+            // Infeasible design: do not save geometry, show the reason.
+            if (!calcResult.IsFeasible)
+            {
+                _logger.LogWarning(
+                    "Infeasible design for DesignId {Id}: {Reason}",
+                    id, calcResult.InfeasibilityReason);
+
+                TempData["Error"] = BuildInfeasibleMessage(calcResult);
+                return RedirectToAction(nameof(DesignDetail), new { id });
+            }
+
+            if (calcResult.Warnings.Count > 0)
+                TempData["Warning"] = string.Join(" | ", calcResult.Warnings);
+
             // Save results to ScrubberGeometry
             var existing = await _dbContext.ScrubberGeometries
                 .FirstOrDefaultAsync(g => g.DesignId == id);
@@ -451,6 +465,20 @@ namespace WetScrubber.Controllers
             return RedirectToAction(nameof(Results), new { id });
         }
 
+        private static string BuildInfeasibleMessage(CalculationResult r)
+        {
+            string msg =
+                r.InfeasibilityReason ?? "Design is infeasible.";
+
+            if (r.MaxAchievableRemovalPercent > 0.0)
+                msg += $" Max achievable removal: {r.MaxAchievableRemovalPercent:F2} %.";
+
+            if (r.MinLGRatio > 0.0)
+                msg += $" Minimum L/G: {r.MinLGRatio:F3}.";
+
+            return msg;
+        }
+
         // ── GET /Scrubber/Results/{id} ────────────────────────────
         [HttpGet]
         public async Task<IActionResult> Results(int id)
@@ -477,12 +505,28 @@ namespace WetScrubber.Controllers
             {
                 var vm = BuildCreateViewModel(design);
                 PollutantUnitConverter.ApplyEngineBasis(vm);
-                calcResult = _engine.RunCalculation(vm);
+
+                try
+                {
+                    calcResult = _engine.RunCalculation(vm);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Re-run failed for DesignId {Id}.", id);
+                    TempData["Error"] = "Calculation failed: " + ex.Message;
+                    return RedirectToAction(nameof(DesignDetail), new { id });
+                }
             }
 
             if (calcResult == null)
             {
                 TempData["Error"] = "No results found. Please run the calculation first.";
+                return RedirectToAction(nameof(DesignDetail), new { id });
+            }
+
+            if (!calcResult.IsFeasible)
+            {
+                TempData["Error"] = BuildInfeasibleMessage(calcResult);
                 return RedirectToAction(nameof(DesignDetail), new { id });
             }
 

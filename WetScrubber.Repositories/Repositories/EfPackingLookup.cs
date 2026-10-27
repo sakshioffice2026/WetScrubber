@@ -25,7 +25,8 @@ namespace WetScrubber.Repositories.Repositories
                 Code = row.Code,
                 SpecificAreaM2M3 = row.SpecificAreaM2M3,
                 NominalSizeM = row.NominalSizeM,
-                CriticalSurfaceTensionNM = row.CriticalSurfaceTensionNM
+                CriticalSurfaceTensionNM = row.CriticalSurfaceTensionNM,
+                VoidageFraction = row.VoidageFraction
             };
         }
     }

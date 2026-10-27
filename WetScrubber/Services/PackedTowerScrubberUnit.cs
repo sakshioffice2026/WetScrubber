@@ -77,6 +77,23 @@ namespace WetScrubber.Services
             var result = _engine.RunCalculation(vm);
             LastResult = result;
 
+            // An infeasible result carries no valid geometry or removal.
+            // Fail the flowsheet pass instead of propagating zeros.
+            if (!result.IsFeasible)
+            {
+                string detail =
+                    result.InfeasibilityReason ?? "Design is infeasible.";
+
+                if (result.MaxAchievableRemovalPercent > 0.0)
+                    detail += $" Max achievable removal: {result.MaxAchievableRemovalPercent:F2} %.";
+
+                if (result.MinLGRatio > 0.0)
+                    detail += $" Minimum L/G: {result.MinLGRatio:F3}.";
+
+                throw new InvalidOperationException(
+                    $"Unit '{Name}': {detail}");
+            }
+
             // Phase 3's per-pollutant rating feeds the outlet loading when
             // it ran; falls back to the NTU/HTU removal-efficiency number
             // otherwise — same hard-fallback contract as the rest of the

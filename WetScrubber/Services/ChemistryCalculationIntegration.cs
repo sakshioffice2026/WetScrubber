@@ -226,6 +226,18 @@ namespace WetScrubber.Business.Services
                 return result;
             }
 
+            if (double.IsNaN(input.TargetRemovalEfficiencyPercent) ||
+                double.IsInfinity(input.TargetRemovalEfficiencyPercent) ||
+                input.TargetRemovalEfficiencyPercent <= 0.0 ||
+                input.TargetRemovalEfficiencyPercent >= 100.0)
+            {
+                result.IsValid = false;
+                findings.Add(
+                    "TARGET REMOVAL INVALID: Must be greater than 0 and less than 100 percent.");
+                result.AllFindings = findings;
+                return result;
+            }
+
             // ════════════════════════════════════════════════════════════════
             // STEP 1b: Establish physical liquid flow basis
             // ════════════════════════════════════════════════════════════════

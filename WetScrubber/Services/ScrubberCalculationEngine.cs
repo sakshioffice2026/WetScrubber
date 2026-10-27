@@ -14,7 +14,7 @@ namespace WetScrubber.Services
     /// </summary>
     public class ScrubberCalculationEngine
     {
-        private const double GasConstant = 8.314;   // J/(mol·K)
+        private const double GasConstant = 8.314462;   // J/(mol·K), CODATA
         private const double GravityAccel = 9.81;    // m/s²
 
         // ── Phase 1 — real-gas density (Peng-Robinson) ──────────────
@@ -80,21 +80,69 @@ namespace WetScrubber.Services
             _packingLookup = packingLookup;
         }
 
-        // ── Packing material defaults (Pall Rings 50mm) ───────────
-        private const double DefaultPackingFactor = 66.0;    // Fp, 1/m
-        private const double DefaultSurfaceArea = 112.0;     // m²/m³
-        private static double DefaultVoidFraction => DesignBasisSettings.DefaultVoidFraction;    // ε
+        // Packing geometry (area, size, voidage, critical surface tension)
+        // comes ONLY from the packing lookup. There are no fallback
+        // defaults: missing or invalid data raises an error
+        // (see RequirePackingData).
         private const double DefaultGasFilmCoeff = 0.03;     // kGa kmol/m³·hr·kPa
         private const double DefaultLiquidFilmCoeff = 0.01;  // kLa m/hr — fallback path only
 
-        // Phase 2 — Onda correlation packing/fluid defaults. Same
-        // "standard textbook value, not independently sourced" caveat
-        // as DefaultPackingFactor/DefaultSurfaceArea above.
-        private const double DefaultNominalPackingSizeM = 0.05;
-        private const double DefaultPackingCriticalSurfaceTensionNM = 0.075;
-        private static double DefaultLiquidSurfaceTensionNM => DesignBasisSettings.DefaultLiquidSurfaceTensionNM;
-        private const double WaterMolarDensityKmolM3 = 55.3;
-        private const double SolventMolecularWeightGMol = 18.02;
+        // Packing height bounds. Above the recommended height a bed needs
+        // redistribution (split into beds); above the hard limit the
+        // result is not a credible single-tower design.
+        private const double RecommendedMaxPackingHeightM = 10.0;
+        private const double HardMaxPackingHeightM = 30.0;
+
+        // Selected packing's data, validated. Throws when the lookup is
+        // missing, the packing is unknown, or any value is not usable.
+        private PackingData RequirePackingData(string? packingCode)
+        {
+            if (_packingLookup == null)
+                throw new InvalidOperationException(
+                    "Packing data requires a packing lookup.");
+
+            var data =
+                _packingLookup.GetByCode(packingCode ?? string.Empty);
+
+            if (data == null)
+                throw new InvalidOperationException(
+                    $"Packing '{packingCode}' was not found in the packing library.");
+
+            if (!IsPositiveFinite(data.SpecificAreaM2M3))
+                throw new InvalidOperationException(
+                    $"Packing '{packingCode}' has no valid specific area.");
+
+            if (!IsPositiveFinite(data.NominalSizeM))
+                throw new InvalidOperationException(
+                    $"Packing '{packingCode}' has no valid nominal size.");
+
+            if (!IsPositiveFinite(data.CriticalSurfaceTensionNM))
+                throw new InvalidOperationException(
+                    $"Packing '{packingCode}' has no valid critical surface tension.");
+
+            if (double.IsNaN(data.VoidageFraction) ||
+                data.VoidageFraction <= 0.0 ||
+                data.VoidageFraction >= 1.0)
+                throw new InvalidOperationException(
+                    $"Packing '{packingCode}' has no valid voidage (must be between 0 and 1).");
+
+            return data;
+        }
+
+        private static void RequireSolventAndCarrier(CreateDesignViewModel vm)
+        {
+            if (!IsPositiveFinite(vm.LiquidMolecularWeightGMol))
+                throw new InvalidOperationException(
+                    "Solvent molecular weight must be positive.");
+
+            if (!IsPositiveFinite(vm.LiquidSurfaceTensionNM))
+                throw new InvalidOperationException(
+                    "Liquid surface tension must be positive.");
+
+            if (!IsPositiveFinite(vm.CarrierGasMolecularWeightGMol))
+                throw new InvalidOperationException(
+                    "Carrier gas molecular weight must be positive.");
+        }
 
         // ════════════════════════════════════════════════════════════
         //  MAIN ENTRY — run full calculation based on scrubber type
@@ -128,6 +176,11 @@ namespace WetScrubber.Services
                 vm.LiquidToGasRatio /
                 1000.0;
 
+            // Selected packing + solvent/carrier inputs. Missing or invalid
+            // data raises an error; there are no fallback defaults.
+            var packing = RequirePackingData(vm.PackingCode);
+            RequireSolventAndCarrier(vm);
+
             // 2. Tower diameter
             result.TowerDiameter = CalculateTowerDiameter(
                 gasFlowRateNm3Hr: vm.NormalFlowRate,
@@ -136,7 +189,7 @@ namespace WetScrubber.Services
                 liquidFlowRateM3Hr: liquidFlowM3Hr,
                 gasDensityKgM3: vm.GasDensity,
                 liquidDensityKgM3: vm.LiquidDensity,
-                packingFactor: DefaultPackingFactor,
+                packingFactor: 0.0, // unused: flooding uses aT and voidage
                 liquidViscosityMPas: vm.LiquidViscosity,
 
                 // Phase 1: real-gas density when this engine instance
@@ -147,12 +200,10 @@ namespace WetScrubber.Services
                 inletConcentrationPpm: pollutant.InletConcentration,
 
                 packingSpecificAreaM2M3:
-                    _packingLookup?
-                        .GetByCode(vm.PackingCode)?
-                        .SpecificAreaM2M3
-                    ?? DefaultSurfaceArea,
+                    packing.SpecificAreaM2M3,
 
-                voidageFraction: DefaultVoidFraction
+                voidageFraction:
+                    packing.VoidageFraction
             );
 
             // 3. NTU / HTU → packing height
@@ -182,10 +233,27 @@ namespace WetScrubber.Services
             // uses a negligible effective H. The PHYSICAL H (henrysTemp)
             // is still used for Onda coefficients and the enhancement factor.
             // Effective target outlet: explicit outlet ppm, else derived from
-            // target removal %, else the 95 % default. A zero/blank target no
-            // longer silently becomes a 0.0001 ppm floor (~99.99 %).
-            double targetOutletPpm =
-                ResolveTargetOutletPpm(pollutant);
+            // target removal %. There is NO silent default target. When the
+            // packing height is fixed (rating mode) the target is optional;
+            // otherwise a missing target is reported as a structured result.
+            bool ratingMode =
+                vm.PackingHeightOverride > 0.0;
+
+            double? resolvedTargetOutletPpm =
+                TryResolveTargetOutletPpm(pollutant);
+
+            if (!ratingMode && resolvedTargetOutletPpm == null)
+            {
+                return BuildInfeasibleResult(
+                    result,
+                    vm,
+                    liquidFlowM3Hr,
+                    "TARGET REQUIRED: enter a target outlet concentration or a " +
+                    "target removal between 0 and 100 percent, or fix the " +
+                    "packing height to rate an existing tower.",
+                    0.0,
+                    0.0);
+            }
 
             var reactiveBasis =
                 GetReactiveEquilibriumBasis(pollutant, vm);
@@ -218,7 +286,8 @@ namespace WetScrubber.Services
                     vm.LiquidToGasRatio,
                     vm.LiquidDensity,
                     vm.InletTemperature,
-                    vm.InletPressure);
+                    vm.InletPressure,
+                    vm.LiquidMolecularWeightGMol);
 
             // Phase 2: Wilke-Chang + Fuller diffusivities feeding
             // the Onda correlation for physically-derived kG/kL/aW.
@@ -235,7 +304,78 @@ namespace WetScrubber.Services
                     vm.PackingCode,
                     actualGasDensity);
 
-            var ntuResult =
+            double targetOutletPpm;
+            double designPackingHeight;
+            double htuM;
+            double absorptionFactor;
+            double achievedRemovalPercent;
+
+            if (ratingMode)
+            {
+                // RATING MODE: the packing height is fixed by the user.
+                // Report the removal this tower actually achieves.
+                htuM =
+                    rateBased.GasMolarVelocityKmolM2S /
+                    rateBased.OverallKGaKmolM3S;
+
+                absorptionFactor =
+                    molarLG / henrysEquilibrium;
+
+                if (!IsPositiveFinite(htuM) ||
+                    !IsPositiveFinite(absorptionFactor))
+                {
+                    return BuildInfeasibleResult(
+                        result,
+                        vm,
+                        liquidFlowM3Hr,
+                        "RATING FAILED: HTU or absorption factor is not a " +
+                        "positive finite number for the supplied inputs.",
+                        0.0,
+                        0.0);
+                }
+
+                designPackingHeight =
+                    vm.PackingHeightOverride;
+
+                achievedRemovalPercent =
+                    PackedTowerEfficiencyCalculator.AtHeight(
+                        designPackingHeight,
+                        htuM,
+                        absorptionFactor);
+
+                targetOutletPpm =
+                    resolvedTargetOutletPpm
+                    ?? pollutant.InletConcentration *
+                       (1.0 - achievedRemovalPercent / 100.0);
+
+                result.IsRatingMode = true;
+
+                if (resolvedTargetOutletPpm != null)
+                {
+                    double achievedOutletPpm =
+                        pollutant.InletConcentration *
+                        (1.0 - achievedRemovalPercent / 100.0);
+
+                    if (achievedOutletPpm >
+                        resolvedTargetOutletPpm.Value * 1.005)
+                    {
+                        result.Warnings.Add(
+                            $"RATING: the fixed packing height of " +
+                            $"{designPackingHeight:F2} m achieves " +
+                            $"{achievedRemovalPercent:F2} % removal " +
+                            $"({achievedOutletPpm:G4} ppm), which does not " +
+                            $"meet the target outlet of " +
+                            $"{resolvedTargetOutletPpm.Value:G4} ppm.");
+                    }
+                }
+            }
+            else
+            {
+                // DESIGN MODE: size the packing height for the target.
+                targetOutletPpm =
+                    resolvedTargetOutletPpm!.Value;
+
+                var ntuResult =
                     CalculateNtuHtuRateBased(
                         inletConcentrationPpm:
                             pollutant.InletConcentration,
@@ -255,15 +395,73 @@ namespace WetScrubber.Services
                         overallKGaKmolM3S:
                             rateBased.OverallKGaKmolM3S);
 
-            if (!ntuResult.IsFeasible)
-                throw new InvalidOperationException(
-                    "INFEASIBLE DESIGN: " + ntuResult.InfeasibilityReason);
+                if (!ntuResult.IsFeasible)
+                {
+                    return BuildInfeasibleResult(
+                        result,
+                        vm,
+                        liquidFlowM3Hr,
+                        "INFEASIBLE DESIGN: " + ntuResult.InfeasibilityReason,
+                        MolarToVolumetricLiquidToGasRatio(
+                            ntuResult.MinimumLiquidToGasMolar,
+                            vm.LiquidDensity,
+                            vm.InletTemperature,
+                            vm.InletPressure,
+                            vm.LiquidMolecularWeightGMol),
+                        ntuResult.MaxAchievableRemovalPercent);
+                }
 
-            double designPackingHeight =
-                vm.PackingHeightOverride > 0
-                    ? vm.PackingHeightOverride
-                    : Math.Ceiling(
+                htuM =
+                    ntuResult.HTU;
+
+                absorptionFactor =
+                    ntuResult.AbsorptionFactor;
+
+                designPackingHeight =
+                    Math.Ceiling(
                         ntuResult.PackingHeight * 100.0) / 100.0;
+
+                achievedRemovalPercent =
+                    PackedTowerEfficiencyCalculator.AtHeight(
+                        designPackingHeight,
+                        htuM,
+                        absorptionFactor);
+            }
+
+            if (double.IsNaN(designPackingHeight) ||
+                double.IsInfinity(designPackingHeight))
+            {
+                return BuildInfeasibleResult(
+                    result,
+                    vm,
+                    liquidFlowM3Hr,
+                    "INFEASIBLE DESIGN: packing height is not finite.",
+                    0.0,
+                    0.0);
+            }
+
+            if (designPackingHeight > HardMaxPackingHeightM)
+            {
+                return BuildInfeasibleResult(
+                    result,
+                    vm,
+                    liquidFlowM3Hr,
+                    $"INFEASIBLE DESIGN: required packing height " +
+                    $"{designPackingHeight:F1} m exceeds the " +
+                    $"{HardMaxPackingHeightM:F0} m limit. Increase L/G, " +
+                    $"use a higher-performance packing, or split into " +
+                    $"multiple towers.",
+                    0.0,
+                    achievedRemovalPercent);
+            }
+
+            if (designPackingHeight > RecommendedMaxPackingHeightM)
+            {
+                result.Warnings.Add(
+                    $"HEIGHT: packing height {designPackingHeight:F2} m " +
+                    $"exceeds the recommended {RecommendedMaxPackingHeightM:F0} m " +
+                    $"per tower; split into beds with liquid redistribution.");
+            }
 
             result.PackingHeight =
                 Math.Round(designPackingHeight, 2);
@@ -271,23 +469,20 @@ namespace WetScrubber.Services
             result.NTU =
                 Math.Round(
                     designPackingHeight /
-                    Math.Max(ntuResult.HTU, 1e-9),
+                    Math.Max(htuM, 1e-9),
                     2);
 
             result.HTU =
-                Math.Round(ntuResult.HTU, 2);
+                Math.Round(htuM, 2);
 
             result.AbsorptionFactor =
                 Math.Round(
-                    ntuResult.AbsorptionFactor,
+                    absorptionFactor,
                     3);
 
             result.RemovalEfficiency =
                 Math.Round(
-                    PackedTowerEfficiencyCalculator.AtHeight(
-                        designPackingHeight,
-                        ntuResult.HTU,
-                        ntuResult.AbsorptionFactor),
+                    achievedRemovalPercent,
                     2);
 
             // 4. Total tower height =
@@ -303,53 +498,18 @@ namespace WetScrubber.Services
                     gasFlowM3S / crossSection,
                     2);
 
-            // 6. Pressure drop — use the ACTUALLY SELECTED packing's
-            // surface area/voidage, not the hardcoded default.
-            var pdPackingData =
-                _packingLookup?
-                    .GetByCode(vm.PackingCode);
-
+            // 6. Hydraulics — the ACTUALLY SELECTED packing's area, size
+            // and voidage. Dry-bed dP (Ergun) and flooding (SSH) come from
+            // one implementation: PressureDropFloodingCorrelation.
             double pdSurfaceArea =
-                pdPackingData?.SpecificAreaM2M3
-                ?? DefaultSurfaceArea;
+                packing.SpecificAreaM2M3;
 
             double pdNominalSizeM =
-                pdPackingData?.NominalSizeM
-                ?? DefaultNominalPackingSizeM;
+                packing.NominalSizeM;
 
             double pdVoidFraction =
-                DefaultVoidFraction;
+                packing.VoidageFraction;
 
-            result.PressureDrop =
-                Math.Round(
-                    CalculatePressureDrop(
-                        gasVelocityMs:
-                            result.GasVelocity,
-
-                        liquidLoadingM3M2Hr:
-                            liquidFlowM3Hr /
-                            crossSection,
-
-                        gasDensityKgM3:
-                            actualGasDensity,
-
-                        liquidDensityKgM3:
-                            vm.LiquidDensity,
-
-                        packingSurfaceAreaM2M3:
-                            pdSurfaceArea,
-
-                        voidFraction:
-                            pdVoidFraction,
-
-                        liquidViscosityPas:
-                            vm.LiquidViscosity /
-                            1000.0
-                    ) *
-                    result.PackingHeight,
-                    2);
-
-            // 6b. Flooding check — Sherwood-Shipley-Holloway.
             var floodResult =
                 PressureDropFloodingCorrelation.Calculate(
                     packingSpecificAreaM2M3:
@@ -379,6 +539,31 @@ namespace WetScrubber.Services
                     liquidViscosityPas:
                         vm.LiquidViscosity /
                         1000.0);
+
+            // INDICATIVE wet-bed dP: Ergun dry dP x holdup wetting factor.
+            // Not Billet-Schultes; see CalculateIndicativeWetFactor.
+            result.PressureDrop =
+                Math.Round(
+                    floodResult.DryBedPressureDropPaM *
+                    CalculateIndicativeWetFactor(
+                        liquidLoadingM3M2Hr:
+                            liquidFlowM3Hr /
+                            crossSection,
+
+                        liquidDensityKgM3:
+                            vm.LiquidDensity,
+
+                        packingSurfaceAreaM2M3:
+                            pdSurfaceArea,
+
+                        voidFraction:
+                            pdVoidFraction,
+
+                        liquidViscosityPas:
+                            vm.LiquidViscosity /
+                            1000.0) *
+                    result.PackingHeight,
+                    2);
 
             result.PercentFlood =
                 Math.Round(
@@ -435,7 +620,8 @@ namespace WetScrubber.Services
                             minMolarLG,
                             vm.LiquidDensity,
                             vm.InletTemperature,
-                            vm.InletPressure),
+                            vm.InletPressure,
+                            vm.LiquidMolecularWeightGMol),
                         3);
 
             result.ActualLGRatio =
@@ -454,12 +640,13 @@ namespace WetScrubber.Services
                 RunLGRatioSensitivity(
                     pollutant.InletConcentration,
                     henrysEquilibrium,
-                    ntuResult.NTU,
-                    ntuResult.HTU,
+                    designPackingHeight / Math.Max(htuM, 1e-9),
+                    htuM,
                     targetOutletPpm,
                     vm.LiquidDensity,
                     vm.InletTemperature,
-                    vm.InletPressure);
+                    vm.InletPressure,
+                    vm.LiquidMolecularWeightGMol);
 
             // ── Phase 4a: Multi-pollutant iterative solver ─────────
             if (vm.Pollutants.Count > 1)
@@ -1112,21 +1299,53 @@ namespace WetScrubber.Services
         // Reagent class and equivalents/L inferred from liquid pH and wt%.
         // pH >= 8 -> NaOH
         // pH <= 6 -> H2SO4
-        // Explicit outlet ppm -> else from target removal % -> else 95 %.
-        private static double ResolveTargetOutletPpm(
+        // Explicit outlet ppm -> else from target removal %. Returns null
+        // when neither is supplied; there is no silent default target.
+        private static double? TryResolveTargetOutletPpm(
             PollutantInputViewModel pollutant)
         {
-            if (pollutant.TargetOutletConcentration > 0.0)
+            if (IsPositiveFinite(pollutant.TargetOutletConcentration))
                 return pollutant.TargetOutletConcentration;
 
-            if (pollutant.TargetRemovalEfficiency > 0.0 &&
+            if (!double.IsNaN(pollutant.TargetRemovalEfficiency) &&
+                pollutant.TargetRemovalEfficiency > 0.0 &&
                 pollutant.TargetRemovalEfficiency < 100.0)
             {
                 return pollutant.InletConcentration *
                        (1.0 - pollutant.TargetRemovalEfficiency / 100.0);
             }
 
-            return pollutant.InletConcentration * 0.05;
+            return null;
+        }
+
+        // Structured infeasible / failed result. Replaces the thrown
+        // InvalidOperationException so callers can show the reason.
+        private static CalculationResult BuildInfeasibleResult(
+            CalculationResult result,
+            CreateDesignViewModel vm,
+            double liquidFlowM3Hr,
+            string reason,
+            double minLiquidToGasVolumetric,
+            double maxAchievableRemovalPercent)
+        {
+            result.IsFeasible = false;
+            result.InfeasibilityReason = reason;
+            result.MaxAchievableRemovalPercent =
+                Math.Round(
+                    Math.Max(0.0, Math.Min(100.0, maxAchievableRemovalPercent)),
+                    2);
+
+            result.MinLGRatio =
+                IsPositiveFinite(minLiquidToGasVolumetric)
+                    ? Math.Round(minLiquidToGasVolumetric, 3)
+                    : 0.0;
+
+            result.ActualLGRatio = vm.LiquidToGasRatio;
+            result.LiquidFlowRateM3Hr = Math.Round(liquidFlowM3Hr, 2);
+            result.ScrubberType = "Packed Tower";
+            result.Warnings.Add(reason);
+
+            return result;
         }
 
         private readonly struct ReactiveEquilibriumBasis
@@ -1168,7 +1387,9 @@ namespace WetScrubber.Services
                 return new ReactiveEquilibriumBasis(false, 0.0);
 
             double y1 = pollutant.InletConcentration / 1_000_000.0;
-            double y2 = ResolveTargetOutletPpm(pollutant) / 1_000_000.0;
+            // No target (rating mode) -> size reagent demand on full y1.
+            double y2 =
+                (TryResolveTargetOutletPpm(pollutant) ?? 0.0) / 1_000_000.0;
 
             double gasKmolPerM3 =
                 vm.InletPressure /
@@ -1927,46 +2148,56 @@ namespace WetScrubber.Services
         }
 
         // ════════════════════════════════════════════════════════════
-        //  3. PRESSURE DROP  (Billet-Schultes 1999)
+        //  3. WET-BED FACTOR  (INDICATIVE — not Billet-Schultes)
         // ════════════════════════════════════════════════════════════
-        public double CalculatePressureDrop(
-            double gasVelocityMs,
+        // Multiplier applied to the Ergun dry-bed dP:
+        //   hL     = (12/g * (muL/rhoL) * uL * aT^2)^(1/3)   [m3/m3]
+        //   factor = (eps / (eps - hL))^3
+        // hL is the Billet-Schultes-type liquid hold-up below loading
+        // point (dimensionally consistent: aT is squared and the
+        // kinematic viscosity is used). The factor is a screening
+        // estimate only; a full Billet-Schultes dP (psi, Re, Cp, K,
+        // packing constants) is not implemented. hL is limited to
+        // 0.5*eps so the factor stays finite.
+        public double CalculateIndicativeWetFactor(
             double liquidLoadingM3M2Hr,
-            double gasDensityKgM3,
             double liquidDensityKgM3,
             double packingSurfaceAreaM2M3,
             double voidFraction,
             double liquidViscosityPas)
         {
+            if (!IsPositiveFinite(liquidDensityKgM3) ||
+                !IsPositiveFinite(packingSurfaceAreaM2M3) ||
+                !IsPositiveFinite(liquidViscosityPas) ||
+                double.IsNaN(voidFraction) ||
+                voidFraction <= 0.0 ||
+                voidFraction >= 1.0 ||
+                double.IsNaN(liquidLoadingM3M2Hr) ||
+                double.IsInfinity(liquidLoadingM3M2Hr) ||
+                liquidLoadingM3M2Hr < 0.0)
+            {
+                throw new ArgumentException(
+                    "Wet-bed factor inputs must be positive, finite and physically valid.");
+            }
+
             double epsilon = voidFraction;
             double ap = packingSurfaceAreaM2M3;
-            double uG = gasVelocityMs;
-
-            // Dry-bed pressure drop per metre, Pa/m:
-            //   0.764 * ap * rho * u^2 / (2 * eps^3)
-            // (the former extra (1 - eps) factor under-predicted dP ~20x)
-            double dryDP =
-                0.764 /
-                Math.Pow(epsilon, 3) *
-                ap *
-                gasDensityKgM3 *
-                Math.Pow(uG, 2) /
-                2.0;
 
             double uL =
                 liquidLoadingM3M2Hr /
                 3600.0;
 
+            double nuL =
+                liquidViscosityPas /
+                liquidDensityKgM3;
+
             double hL =
                 Math.Pow(
-                    12.0 *
-                    liquidViscosityPas *
+                    12.0 /
+                    GravityAccel *
+                    nuL *
                     uL *
-                    ap /
-                    (
-                        liquidDensityKgM3 *
-                        GravityAccel
-                    ),
+                    ap * ap,
                     1.0 / 3.0);
 
             hL =
@@ -1974,18 +2205,11 @@ namespace WetScrubber.Services
                     hL,
                     0.5 * epsilon);
 
-            double epsWet =
-                epsilon - hL;
-
-            double wetFact =
+            return
                 Math.Pow(
                     epsilon /
-                    Math.Max(
-                        epsWet,
-                        0.01),
+                    (epsilon - hL),
                     3.0);
-
-            return dryDP * wetFact;
         }
 
         // ════════════════════════════════════════════════════════════
@@ -2394,103 +2618,6 @@ namespace WetScrubber.Services
             return results;
         }
 
-        private double SizePollutantSimultaneousHeight(
-            List<PollutantInputViewModel> pollutants,
-            CreateDesignViewModel vm)
-        {
-            double packingHeight = 5.0;
-            int layerCount = 20;
-
-            double gasMolarFlux =
-                vm.NormalFlowRate /
-                3600.0 *
-                vm.GasDensity /
-                28.97;
-
-            double liquidMolarFlux =
-                vm.LiquidToGasRatio *
-                gasMolarFlux;
-
-            double tempK =
-                vm.InletTemperature +
-                273.15;
-
-            double y =
-                pollutants[0]
-                    .InletConcentration /
-                1000000.0;
-
-            double T =
-                tempK;
-
-            double dz =
-                packingHeight /
-                layerCount;
-
-            for (int i = 0;
-                 i < layerCount;
-                 i++)
-            {
-                double kGa =
-                    GetEffectiveFilmCoefficients(
-                        pollutants[0],
-                        vm,
-                        1.0,
-                        1.0,
-                        T)
-                    .GasFilmCoeff;
-
-                double H =
-                    GetEffectiveHenrysLawConstant(
-                        pollutants[0],
-                        T - 273.15,
-                        vm.InletPressure / 1000.0);
-
-                double yStar =
-                    H * 0.001;
-
-                double dy =
-                    -(
-                        kGa *
-                        vm.InletPressure /
-                        101.325 *
-                        (y - yStar) /
-                        Math.Max(
-                            gasMolarFlux,
-                            0.001)
-                    ) *
-                    dz;
-
-                y =
-                    Math.Max(
-                        y + dy,
-                        0);
-
-                T =
-                    Math.Min(
-                        T + 0.1,
-                        373.15);
-            }
-
-            return packingHeight;
-        }
-
-        private (
-            double GasFilmCoeff,
-            double LiquidFilmCoeff,
-            bool PhysicallyDerived)
-            GetEffectiveFilmCoefficients(
-                PollutantInputViewModel pollutant,
-                CreateDesignViewModel vm,
-                double gasMassVelocity,
-                double liquidMassVelocity,
-                double temperatureK)
-        {
-            return (
-                0.1,
-                0.01,
-                false);
-        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -2597,6 +2724,18 @@ namespace WetScrubber.Services
             get;
             set;
         }
+
+        // Feasibility / mode. False means no valid design was produced;
+        // the reason and best achievable removal are reported instead.
+        public bool IsFeasible { get; set; } = true;
+        public string? InfeasibilityReason { get; set; }
+        public double MaxAchievableRemovalPercent { get; set; }
+
+        // True when the packing height was fixed by the user and the
+        // result is the removal that tower achieves (rating mode).
+        public bool IsRatingMode { get; set; }
+
+        public List<string> Warnings { get; set; } = new();
     }
 
     public class NtuHtuResult

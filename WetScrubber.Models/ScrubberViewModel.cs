@@ -92,6 +92,22 @@ namespace WetScrubber.Models
         [Display(Name = "Viscosity (mPa·s)")]
         public double LiquidViscosity { get; set; } = 1.0;
 
+        // ── Solvent / carrier properties (engine inputs) ─────────
+        // Previously hard-coded to water and air inside the engine.
+        // Defaults are water at ~25 C and dry air; override for other
+        // solvents, temperatures or carrier gases.
+        [Range(2, 500, ErrorMessage = "Must be between 2 and 500 g/mol")]
+        [Display(Name = "Solvent Molecular Weight (g/mol)")]
+        public double LiquidMolecularWeightGMol { get; set; } = 18.015;
+
+        [Range(0.010, 0.100, ErrorMessage = "Must be between 0.010 and 0.100 N/m")]
+        [Display(Name = "Liquid Surface Tension (N/m)")]
+        public double LiquidSurfaceTensionNM { get; set; } = 0.0728;
+
+        [Range(2, 500, ErrorMessage = "Must be between 2 and 500 g/mol")]
+        [Display(Name = "Carrier Gas Molecular Weight (g/mol)")]
+        public double CarrierGasMolecularWeightGMol { get; set; } = 28.9647;
+
         [Required]
         [Range(0.1, 50)]
         [Display(Name = "L/G Ratio (L/m³ gas)")]
@@ -174,7 +190,11 @@ namespace WetScrubber.Models
                 LiquidTemperature = this.LiquidTemperature,
                 LiquidDensity = this.LiquidDensity,
                 LiquidViscosity = this.LiquidViscosity,
+                LiquidMolecularWeightGMol = this.LiquidMolecularWeightGMol,
+                LiquidSurfaceTensionNM = this.LiquidSurfaceTensionNM,
+                CarrierGasMolecularWeightGMol = this.CarrierGasMolecularWeightGMol,
                 LiquidToGasRatio = this.LiquidToGasRatio,
+                PackingHeightOverride = this.PackingHeightOverride,
                 PackingCode = this.PackingCode,
                 PackingOptions = this.PackingOptions,
                 ShellMaterial = this.ShellMaterial,
