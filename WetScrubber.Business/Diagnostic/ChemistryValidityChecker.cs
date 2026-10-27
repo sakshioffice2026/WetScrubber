@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace WetScrubber.Business.Diagnostic
 {
     /// <summary>
     /// Comprehensive sanity check on all chemistry calculations.
     /// Rejects impossible values instead of silently clamping them.
-    /// 
+    /// NaN and +/-Infinity are rejected explicitly for every numeric input;
+    /// ordinary comparisons are false for NaN and would otherwise let it pass.
+    ///
     /// Section 16 of the chemistry checklist.
     /// </summary>
     public sealed class ChemistryValidityChecker
@@ -27,6 +30,37 @@ namespace WetScrubber.Business.Diagnostic
             public string SummaryStatement { get; set; }
         }
 
+        // ------------------------------------------------------------------
+        // Finite-value guard
+        // ------------------------------------------------------------------
+        private static bool IsFinite(double value) =>
+            !double.IsNaN(value) && !double.IsInfinity(value);
+
+        /// <summary>
+        /// Adds an error issue and returns false when the value is NaN or infinite.
+        /// Returns true (and adds nothing) when the value is finite.
+        /// </summary>
+        private static bool RequireFinite(
+            List<ValidationIssue> issues,
+            string code,
+            string parameter,
+            double value)
+        {
+            if (IsFinite(value))
+                return true;
+
+            issues.Add(new ValidationIssue
+            {
+                Code = code,
+                Message = $"{parameter} must be a finite number (got {value.ToString(CultureInfo.InvariantCulture)})",
+                IsError = true,
+                OffendingValue = value,
+                Parameter = parameter
+            });
+
+            return false;
+        }
+
         /// <summary>
         /// Validate all gas-side thermodynamic values.
         /// </summary>
@@ -41,122 +75,127 @@ namespace WetScrubber.Business.Diagnostic
             var issues = new List<ValidationIssue>();
 
             // ── Mole fraction checks ──
-            if (double.IsNaN(moleFractionPollutant))
+            if (RequireFinite(issues, "NAN_MOLE_FRACTION", "moleFractionPollutant", moleFractionPollutant))
             {
-                issues.Add(new ValidationIssue
+                if (moleFractionPollutant < 0.0)
                 {
-                    Code = "NAN_MOLE_FRACTION",
-                    Message = $"Gas mole fraction is NaN",
-                    IsError = true,
-                    Parameter = "moleFractionPollutant"
-                });
-            }
-            if (moleFractionPollutant < 0.0)
-            {
-                issues.Add(new ValidationIssue
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_MOLE_FRACTION",
+                        Message = $"Gas mole fraction cannot be negative (got {moleFractionPollutant:E6})",
+                        IsError = true,
+                        OffendingValue = moleFractionPollutant,
+                        Parameter = "moleFractionPollutant"
+                    });
+                }
+                if (moleFractionPollutant > 1.0)
                 {
-                    Code = "NEGATIVE_MOLE_FRACTION",
-                    Message = $"Gas mole fraction cannot be negative (got {moleFractionPollutant:E6})",
-                    IsError = true,
-                    OffendingValue = moleFractionPollutant,
-                    Parameter = "moleFractionPollutant"
-                });
-            }
-            if (moleFractionPollutant > 1.0)
-            {
-                issues.Add(new ValidationIssue
-                {
-                    Code = "MOLE_FRACTION_EXCEEDS_UNITY",
-                    Message = $"Gas mole fraction cannot exceed 1.0 (got {moleFractionPollutant:F6})",
-                    IsError = true,
-                    OffendingValue = moleFractionPollutant,
-                    Parameter = "moleFractionPollutant"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "MOLE_FRACTION_EXCEEDS_UNITY",
+                        Message = $"Gas mole fraction cannot exceed 1.0 (got {moleFractionPollutant:F6})",
+                        IsError = true,
+                        OffendingValue = moleFractionPollutant,
+                        Parameter = "moleFractionPollutant"
+                    });
+                }
             }
 
             // ── Molecular weight ──
-            if (gasMolecularWeightKgKmol <= 0.1)
+            if (RequireFinite(issues, "NON_FINITE_MOLECULAR_WEIGHT", "gasMolecularWeightKgKmol", gasMolecularWeightKgKmol))
             {
-                issues.Add(new ValidationIssue
+                if (gasMolecularWeightKgKmol <= 0.1)
                 {
-                    Code = "INVALID_MOLECULAR_WEIGHT",
-                    Message = $"Gas molecular weight implausible (got {gasMolecularWeightKgKmol:F2} kg/kmol)",
-                    IsError = true,
-                    OffendingValue = gasMolecularWeightKgKmol,
-                    Parameter = "gasMolecularWeightKgKmol"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_MOLECULAR_WEIGHT",
+                        Message = $"Gas molecular weight implausible (got {gasMolecularWeightKgKmol:F2} kg/kmol)",
+                        IsError = true,
+                        OffendingValue = gasMolecularWeightKgKmol,
+                        Parameter = "gasMolecularWeightKgKmol"
+                    });
+                }
             }
 
             // ── Density ──
-            if (gasDensityKgM3 <= 0)
+            if (RequireFinite(issues, "NON_FINITE_DENSITY", "gasDensityKgM3", gasDensityKgM3))
             {
-                issues.Add(new ValidationIssue
+                if (gasDensityKgM3 <= 0)
                 {
-                    Code = "NEGATIVE_DENSITY",
-                    Message = $"Gas density must be positive (got {gasDensityKgM3:E6} kg/m³)",
-                    IsError = true,
-                    OffendingValue = gasDensityKgM3,
-                    Parameter = "gasDensityKgM3"
-                });
-            }
-            if (gasDensityKgM3 > 100) // unrealistic for typical gas at moderate P/T
-            {
-                issues.Add(new ValidationIssue
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_DENSITY",
+                        Message = $"Gas density must be positive (got {gasDensityKgM3:E6} kg/m³)",
+                        IsError = true,
+                        OffendingValue = gasDensityKgM3,
+                        Parameter = "gasDensityKgM3"
+                    });
+                }
+                if (gasDensityKgM3 > 100) // unrealistic for typical gas at moderate P/T
                 {
-                    Code = "IMPLAUSIBLE_DENSITY",
-                    Message = $"Gas density seems very high (got {gasDensityKgM3:F2} kg/m³); check P, T",
-                    IsError = false,
-                    OffendingValue = gasDensityKgM3,
-                    Parameter = "gasDensityKgM3"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "IMPLAUSIBLE_DENSITY",
+                        Message = $"Gas density seems very high (got {gasDensityKgM3:F2} kg/m³); check P, T",
+                        IsError = false,
+                        OffendingValue = gasDensityKgM3,
+                        Parameter = "gasDensityKgM3"
+                    });
+                }
             }
 
             // ── Viscosity ──
-            if (gasViscosityPas <= 0)
+            if (RequireFinite(issues, "NON_FINITE_VISCOSITY", "gasViscosityPas", gasViscosityPas))
             {
-                issues.Add(new ValidationIssue
+                if (gasViscosityPas <= 0)
                 {
-                    Code = "NEGATIVE_VISCOSITY",
-                    Message = $"Gas viscosity must be positive (got {gasViscosityPas:E6} Pa·s)",
-                    IsError = true,
-                    OffendingValue = gasViscosityPas,
-                    Parameter = "gasViscosityPas"
-                });
-            }
-            if (gasViscosityPas > 0.001)
-            {
-                issues.Add(new ValidationIssue
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_VISCOSITY",
+                        Message = $"Gas viscosity must be positive (got {gasViscosityPas:E6} Pa·s)",
+                        IsError = true,
+                        OffendingValue = gasViscosityPas,
+                        Parameter = "gasViscosityPas"
+                    });
+                }
+                if (gasViscosityPas > 0.001)
                 {
-                    Code = "IMPLAUSIBLE_VISCOSITY",
-                    Message = $"Gas viscosity unusually high (got {gasViscosityPas * 1e6:F1} µPa·s); check T",
-                    IsError = false,
-                    OffendingValue = gasViscosityPas,
-                    Parameter = "gasViscosityPas"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "IMPLAUSIBLE_VISCOSITY",
+                        Message = $"Gas viscosity unusually high (got {gasViscosityPas * 1e6:F1} µPa·s); check T",
+                        IsError = false,
+                        OffendingValue = gasViscosityPas,
+                        Parameter = "gasViscosityPas"
+                    });
+                }
             }
 
             // ── Diffusivity ──
-            if (gasDiffusivityM2S <= 0)
+            if (RequireFinite(issues, "NON_FINITE_DIFFUSIVITY", "gasDiffusivityM2S", gasDiffusivityM2S))
             {
-                issues.Add(new ValidationIssue
+                if (gasDiffusivityM2S <= 0)
                 {
-                    Code = "NEGATIVE_DIFFUSIVITY",
-                    Message = $"Gas diffusivity must be positive (got {gasDiffusivityM2S:E9} m²/s)",
-                    IsError = true,
-                    OffendingValue = gasDiffusivityM2S,
-                    Parameter = "gasDiffusivityM2S"
-                });
-            }
-            if (gasDiffusivityM2S > 1e-4)
-            {
-                issues.Add(new ValidationIssue
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_DIFFUSIVITY",
+                        Message = $"Gas diffusivity must be positive (got {gasDiffusivityM2S:E9} m²/s)",
+                        IsError = true,
+                        OffendingValue = gasDiffusivityM2S,
+                        Parameter = "gasDiffusivityM2S"
+                    });
+                }
+                if (gasDiffusivityM2S > 1e-4)
                 {
-                    Code = "IMPLAUSIBLE_DIFFUSIVITY",
-                    Message = $"Gas diffusivity seems very high (got {gasDiffusivityM2S:E9} m²/s)",
-                    IsError = false,
-                    OffendingValue = gasDiffusivityM2S,
-                    Parameter = "gasDiffusivityM2S"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "IMPLAUSIBLE_DIFFUSIVITY",
+                        Message = $"Gas diffusivity seems very high (got {gasDiffusivityM2S:E9} m²/s)",
+                        IsError = false,
+                        OffendingValue = gasDiffusivityM2S,
+                        Parameter = "gasDiffusivityM2S"
+                    });
+                }
             }
 
             return BuildResult(issues);
@@ -175,79 +214,94 @@ namespace WetScrubber.Business.Diagnostic
             var issues = new List<ValidationIssue>();
 
             // ── Mole fraction ──
-            if (moleFractionSolute < 0.0 || moleFractionSolute > 1.0)
+            if (RequireFinite(issues, "NON_FINITE_LIQUID_MOLE_FRACTION", "moleFractionSolute", moleFractionSolute))
             {
-                issues.Add(new ValidationIssue
+                if (moleFractionSolute < 0.0 || moleFractionSolute > 1.0)
                 {
-                    Code = "INVALID_LIQUID_MOLE_FRACTION",
-                    Message = $"Liquid mole fraction out of range (got {moleFractionSolute:F6})",
-                    IsError = true,
-                    OffendingValue = moleFractionSolute,
-                    Parameter = "moleFractionSolute"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_LIQUID_MOLE_FRACTION",
+                        Message = $"Liquid mole fraction out of range (got {moleFractionSolute:F6})",
+                        IsError = true,
+                        OffendingValue = moleFractionSolute,
+                        Parameter = "moleFractionSolute"
+                    });
+                }
             }
 
             // ── Density ──
-            if (liquidDensityKgM3 <= 0)
+            if (RequireFinite(issues, "NON_FINITE_LIQUID_DENSITY", "liquidDensityKgM3", liquidDensityKgM3))
             {
-                issues.Add(new ValidationIssue
+                if (liquidDensityKgM3 <= 0)
                 {
-                    Code = "NEGATIVE_LIQUID_DENSITY",
-                    Message = $"Liquid density must be positive (got {liquidDensityKgM3:E6} kg/m³)",
-                    IsError = true,
-                    OffendingValue = liquidDensityKgM3,
-                    Parameter = "liquidDensityKgM3"
-                });
-            }
-            if (liquidDensityKgM3 < 500 || liquidDensityKgM3 > 2000)
-            {
-                issues.Add(new ValidationIssue
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_LIQUID_DENSITY",
+                        Message = $"Liquid density must be positive (got {liquidDensityKgM3:E6} kg/m³)",
+                        IsError = true,
+                        OffendingValue = liquidDensityKgM3,
+                        Parameter = "liquidDensityKgM3"
+                    });
+                }
+                if (liquidDensityKgM3 < 500 || liquidDensityKgM3 > 2000)
                 {
-                    Code = "IMPLAUSIBLE_LIQUID_DENSITY",
-                    Message = $"Liquid density out of typical range (got {liquidDensityKgM3:F0} kg/m³)",
-                    IsError = false,
-                    OffendingValue = liquidDensityKgM3,
-                    Parameter = "liquidDensityKgM3"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "IMPLAUSIBLE_LIQUID_DENSITY",
+                        Message = $"Liquid density out of typical range (got {liquidDensityKgM3:F0} kg/m³)",
+                        IsError = false,
+                        OffendingValue = liquidDensityKgM3,
+                        Parameter = "liquidDensityKgM3"
+                    });
+                }
             }
 
             // ── Viscosity ──
-            if (liquidViscosityPas <= 0)
+            if (RequireFinite(issues, "NON_FINITE_LIQUID_VISCOSITY", "liquidViscosityPas", liquidViscosityPas))
             {
-                issues.Add(new ValidationIssue
+                if (liquidViscosityPas <= 0)
                 {
-                    Code = "NEGATIVE_LIQUID_VISCOSITY",
-                    Message = $"Liquid viscosity must be positive (got {liquidViscosityPas:E6} Pa·s)",
-                    IsError = true,
-                    OffendingValue = liquidViscosityPas,
-                    Parameter = "liquidViscosityPas"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_LIQUID_VISCOSITY",
+                        Message = $"Liquid viscosity must be positive (got {liquidViscosityPas:E6} Pa·s)",
+                        IsError = true,
+                        OffendingValue = liquidViscosityPas,
+                        Parameter = "liquidViscosityPas"
+                    });
+                }
             }
 
             // ── Diffusivity ──
-            if (liquidDiffusivityM2S <= 0)
+            if (RequireFinite(issues, "NON_FINITE_LIQUID_DIFFUSIVITY", "liquidDiffusivityM2S", liquidDiffusivityM2S))
             {
-                issues.Add(new ValidationIssue
+                if (liquidDiffusivityM2S <= 0)
                 {
-                    Code = "NEGATIVE_LIQUID_DIFFUSIVITY",
-                    Message = $"Liquid diffusivity must be positive (got {liquidDiffusivityM2S:E12} m²/s)",
-                    IsError = true,
-                    OffendingValue = liquidDiffusivityM2S,
-                    Parameter = "liquidDiffusivityM2S"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_LIQUID_DIFFUSIVITY",
+                        Message = $"Liquid diffusivity must be positive (got {liquidDiffusivityM2S:E12} m²/s)",
+                        IsError = true,
+                        OffendingValue = liquidDiffusivityM2S,
+                        Parameter = "liquidDiffusivityM2S"
+                    });
+                }
             }
 
-            // ── Surface tension (optional) ──
-            if (surfaceTensionNM > 0 && (surfaceTensionNM < 0.01 || surfaceTensionNM > 1.0))
+            // ── Surface tension (optional; -1 means "not supplied") ──
+            if (RequireFinite(issues, "NON_FINITE_SURFACE_TENSION", "surfaceTensionNM", surfaceTensionNM))
             {
-                issues.Add(new ValidationIssue
+                if (surfaceTensionNM > 0 && (surfaceTensionNM < 0.01 || surfaceTensionNM > 1.0))
                 {
-                    Code = "IMPLAUSIBLE_SURFACE_TENSION",
-                    Message = $"Surface tension out of typical range (got {surfaceTensionNM:F3} N/m)",
-                    IsError = false,
-                    OffendingValue = surfaceTensionNM,
-                    Parameter = "surfaceTensionNM"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "IMPLAUSIBLE_SURFACE_TENSION",
+                        Message = $"Surface tension out of typical range (got {surfaceTensionNM:F3} N/m)",
+                        IsError = false,
+                        OffendingValue = surfaceTensionNM,
+                        Parameter = "surfaceTensionNM"
+                    });
+                }
             }
 
             return BuildResult(issues);
@@ -267,30 +321,22 @@ namespace WetScrubber.Business.Diagnostic
             var issues = new List<ValidationIssue>();
 
             // ── Henry's constant ──
-            if (henrysConstant <= 0)
+            if (RequireFinite(issues, "INVALID_HENRY_CONSTANT", "henrysConstant", henrysConstant))
             {
-                issues.Add(new ValidationIssue
+                if (henrysConstant <= 0)
                 {
-                    Code = "NEGATIVE_HENRY_CONSTANT",
-                    Message = $"Henry's constant must be positive (got {henrysConstant:E6})",
-                    IsError = true,
-                    OffendingValue = henrysConstant,
-                    Parameter = "henrysConstant"
-                });
-            }
-            if (double.IsNaN(henrysConstant) || double.IsInfinity(henrysConstant))
-            {
-                issues.Add(new ValidationIssue
-                {
-                    Code = "INVALID_HENRY_CONSTANT",
-                    Message = $"Henry's constant is invalid ({henrysConstant})",
-                    IsError = true,
-                    OffendingValue = henrysConstant,
-                    Parameter = "henrysConstant"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_HENRY_CONSTANT",
+                        Message = $"Henry's constant must be positive (got {henrysConstant:E6})",
+                        IsError = true,
+                        OffendingValue = henrysConstant,
+                        Parameter = "henrysConstant"
+                    });
+                }
             }
 
-            // ── Convention ──
+            // ── Convention (NaN fails both comparisons below and is rejected) ──
             if (henrysConstantConvention != 1 && henrysConstantConvention != 2)
             {
                 issues.Add(new ValidationIssue
@@ -303,53 +349,62 @@ namespace WetScrubber.Business.Diagnostic
             }
 
             // ── Activity coefficient ──
-            if (activityCoefficientLiquid <= 0)
+            if (RequireFinite(issues, "NON_FINITE_ACTIVITY_COEFFICIENT", "activityCoefficientLiquid", activityCoefficientLiquid))
             {
-                issues.Add(new ValidationIssue
+                if (activityCoefficientLiquid <= 0)
                 {
-                    Code = "NEGATIVE_ACTIVITY_COEFFICIENT",
-                    Message = $"Activity coefficient must be positive (got {activityCoefficientLiquid:F6})",
-                    IsError = true,
-                    OffendingValue = activityCoefficientLiquid,
-                    Parameter = "activityCoefficientLiquid"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_ACTIVITY_COEFFICIENT",
+                        Message = $"Activity coefficient must be positive (got {activityCoefficientLiquid:F6})",
+                        IsError = true,
+                        OffendingValue = activityCoefficientLiquid,
+                        Parameter = "activityCoefficientLiquid"
+                    });
+                }
             }
 
             // ── Mass transfer coefficient ──
-            if (kgaCoeffKmolM3HrKPa <= 0)
+            if (RequireFinite(issues, "NON_FINITE_KGA", "kgaCoeffKmolM3HrKPa", kgaCoeffKmolM3HrKPa))
             {
-                issues.Add(new ValidationIssue
+                if (kgaCoeffKmolM3HrKPa <= 0)
                 {
-                    Code = "NEGATIVE_KGA",
-                    Message = $"KGa must be positive (got {kgaCoeffKmolM3HrKPa:E6} kmol/(m³·hr·kPa))",
-                    IsError = true,
-                    OffendingValue = kgaCoeffKmolM3HrKPa,
-                    Parameter = "kgaCoeffKmolM3HrKPa"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_KGA",
+                        Message = $"KGa must be positive (got {kgaCoeffKmolM3HrKPa:E6} kmol/(m³·hr·kPa))",
+                        IsError = true,
+                        OffendingValue = kgaCoeffKmolM3HrKPa,
+                        Parameter = "kgaCoeffKmolM3HrKPa"
+                    });
+                }
             }
 
             // ── Driving force ──
-            if (drivingForceYminusYstar < -0.001)
+            if (RequireFinite(issues, "NON_FINITE_DRIVING_FORCE", "drivingForceYminusYstar", drivingForceYminusYstar))
             {
-                issues.Add(new ValidationIssue
+                if (drivingForceYminusYstar < -0.001)
                 {
-                    Code = "NEGATIVE_DRIVING_FORCE",
-                    Message = $"Driving force (y - y*) must be non-negative (got {drivingForceYminusYstar:E6})",
-                    IsError = true,
-                    OffendingValue = drivingForceYminusYstar,
-                    Parameter = "drivingForceYminusYstar"
-                });
-            }
-            if (drivingForceYminusYstar < 1e-6 && drivingForceYminusYstar > -1e-6)
-            {
-                issues.Add(new ValidationIssue
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEGATIVE_DRIVING_FORCE",
+                        Message = $"Driving force (y - y*) must be non-negative (got {drivingForceYminusYstar:E6})",
+                        IsError = true,
+                        OffendingValue = drivingForceYminusYstar,
+                        Parameter = "drivingForceYminusYstar"
+                    });
+                }
+                if (drivingForceYminusYstar < 1e-6 && drivingForceYminusYstar > -1e-6)
                 {
-                    Code = "NEAR_ZERO_DRIVING_FORCE",
-                    Message = $"Driving force is near-zero; may indicate pinch condition (got {drivingForceYminusYstar:E9})",
-                    IsError = false,
-                    OffendingValue = drivingForceYminusYstar,
-                    Parameter = "drivingForceYminusYstar"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "NEAR_ZERO_DRIVING_FORCE",
+                        Message = $"Driving force is near-zero; may indicate pinch condition (got {drivingForceYminusYstar:E9})",
+                        IsError = false,
+                        OffendingValue = drivingForceYminusYstar,
+                        Parameter = "drivingForceYminusYstar"
+                    });
+                }
             }
 
             return BuildResult(issues);
@@ -370,33 +425,40 @@ namespace WetScrubber.Business.Diagnostic
             var issues = new List<ValidationIssue>();
 
             // ── Removal fraction ──
-            if (removalEfficiencyFraction < 0.0 || removalEfficiencyFraction > 1.0)
+            if (RequireFinite(issues, "NON_FINITE_REMOVAL_FRACTION", "removalEfficiencyFraction", removalEfficiencyFraction))
             {
-                issues.Add(new ValidationIssue
+                if (removalEfficiencyFraction < 0.0 || removalEfficiencyFraction > 1.0)
                 {
-                    Code = "INVALID_REMOVAL_FRACTION",
-                    Message = $"Removal efficiency must be in [0, 1] (got {removalEfficiencyFraction:F6})",
-                    IsError = true,
-                    OffendingValue = removalEfficiencyFraction,
-                    Parameter = "removalEfficiencyFraction"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_REMOVAL_FRACTION",
+                        Message = $"Removal efficiency must be in [0, 1] (got {removalEfficiencyFraction:F6})",
+                        IsError = true,
+                        OffendingValue = removalEfficiencyFraction,
+                        Parameter = "removalEfficiencyFraction"
+                    });
+                }
             }
 
             // ── Removal percent ──
-            if (removalEfficiencyPercent < 0.0 || removalEfficiencyPercent > 100.0)
+            if (RequireFinite(issues, "NON_FINITE_REMOVAL_PERCENT", "removalEfficiencyPercent", removalEfficiencyPercent))
             {
-                issues.Add(new ValidationIssue
+                if (removalEfficiencyPercent < 0.0 || removalEfficiencyPercent > 100.0)
                 {
-                    Code = "INVALID_REMOVAL_PERCENT",
-                    Message = $"Removal efficiency must be in [0, 100]% (got {removalEfficiencyPercent:F2}%)",
-                    IsError = true,
-                    OffendingValue = removalEfficiencyPercent,
-                    Parameter = "removalEfficiencyPercent"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_REMOVAL_PERCENT",
+                        Message = $"Removal efficiency must be in [0, 100]% (got {removalEfficiencyPercent:F2}%)",
+                        IsError = true,
+                        OffendingValue = removalEfficiencyPercent,
+                        Parameter = "removalEfficiencyPercent"
+                    });
+                }
             }
 
             // ── Flow consistency ──
-            if (inletPollutantKmolPerHr < 0)
+            bool inletFinite = RequireFinite(issues, "NON_FINITE_INLET_POLLUTANT", "inletPollutantKmolPerHr", inletPollutantKmolPerHr);
+            if (inletFinite && inletPollutantKmolPerHr < 0)
             {
                 issues.Add(new ValidationIssue
                 {
@@ -408,7 +470,8 @@ namespace WetScrubber.Business.Diagnostic
                 });
             }
 
-            if (outletGasPollutantKmolPerHr < 0)
+            bool outletFinite = RequireFinite(issues, "NON_FINITE_OUTLET_POLLUTANT", "outletGasPollutantKmolPerHr", outletGasPollutantKmolPerHr);
+            if (outletFinite && outletGasPollutantKmolPerHr < 0)
             {
                 issues.Add(new ValidationIssue
                 {
@@ -420,7 +483,7 @@ namespace WetScrubber.Business.Diagnostic
                 });
             }
 
-            if (outletGasPollutantKmolPerHr > inletPollutantKmolPerHr)
+            if (inletFinite && outletFinite && outletGasPollutantKmolPerHr > inletPollutantKmolPerHr)
             {
                 issues.Add(new ValidationIssue
                 {
@@ -432,40 +495,49 @@ namespace WetScrubber.Business.Diagnostic
             }
 
             // ── Flow rates ──
-            if (gasFlowKmolPerHr <= 0)
+            if (RequireFinite(issues, "NON_FINITE_GAS_FLOW", "gasFlowKmolPerHr", gasFlowKmolPerHr))
             {
-                issues.Add(new ValidationIssue
+                if (gasFlowKmolPerHr <= 0)
                 {
-                    Code = "INVALID_GAS_FLOW",
-                    Message = $"Gas flow must be positive (got {gasFlowKmolPerHr:E6} kmol/hr)",
-                    IsError = true,
-                    OffendingValue = gasFlowKmolPerHr,
-                    Parameter = "gasFlowKmolPerHr"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_GAS_FLOW",
+                        Message = $"Gas flow must be positive (got {gasFlowKmolPerHr:E6} kmol/hr)",
+                        IsError = true,
+                        OffendingValue = gasFlowKmolPerHr,
+                        Parameter = "gasFlowKmolPerHr"
+                    });
+                }
             }
 
-            if (liquidFlowKmolPerHr <= 0)
+            if (RequireFinite(issues, "NON_FINITE_LIQUID_FLOW", "liquidFlowKmolPerHr", liquidFlowKmolPerHr))
             {
-                issues.Add(new ValidationIssue
+                if (liquidFlowKmolPerHr <= 0)
                 {
-                    Code = "INVALID_LIQUID_FLOW",
-                    Message = $"Liquid flow must be positive (got {liquidFlowKmolPerHr:E6} kmol/hr)",
-                    IsError = true,
-                    OffendingValue = liquidFlowKmolPerHr,
-                    Parameter = "liquidFlowKmolPerHr"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_LIQUID_FLOW",
+                        Message = $"Liquid flow must be positive (got {liquidFlowKmolPerHr:E6} kmol/hr)",
+                        IsError = true,
+                        OffendingValue = liquidFlowKmolPerHr,
+                        Parameter = "liquidFlowKmolPerHr"
+                    });
+                }
             }
 
-            if (lGRatio <= 0)
+            if (RequireFinite(issues, "NON_FINITE_LG_RATIO", "lGRatio", lGRatio))
             {
-                issues.Add(new ValidationIssue
+                if (lGRatio <= 0)
                 {
-                    Code = "INVALID_LG_RATIO",
-                    Message = $"L/G ratio must be positive (got {lGRatio:F6})",
-                    IsError = true,
-                    OffendingValue = lGRatio,
-                    Parameter = "lGRatio"
-                });
+                    issues.Add(new ValidationIssue
+                    {
+                        Code = "INVALID_LG_RATIO",
+                        Message = $"L/G ratio must be positive (got {lGRatio:F6})",
+                        IsError = true,
+                        OffendingValue = lGRatio,
+                        Parameter = "lGRatio"
+                    });
+                }
             }
 
             return BuildResult(issues);
