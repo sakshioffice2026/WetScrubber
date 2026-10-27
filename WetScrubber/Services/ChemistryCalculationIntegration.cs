@@ -379,9 +379,76 @@ namespace WetScrubber.Business.Services
                 enhancementFactor =
                     result.Enhancement.Factor;
 
-                if (!result.Enhancement.ModelAvailable)
+                if (!result.Enhancement.ModelAvailable ||
+                    result.Enhancement.IsUpperBound)
                     findings.Add(
                         $"REACTION: {result.Enhancement.Note}");
+
+                if (result.Enhancement.ModelAvailable &&
+                    input.ReagentStoichiometricRatio > 0.0)
+                {
+                    double yOutReactive =
+                        input.InletGasMoleFractionPollutant *
+                        (1.0 - input.TargetRemovalEfficiencyPercent / 100.0);
+
+                    double gasKmolPerM3Reactive =
+                        input.PressureKPa / (8.314462 * gasTemperatureK);
+
+                    double liquidLPerHrReactive =
+                        CalculateLiquidMassFlowKgPerHr(
+                            liquidFlowKmolPerHr,
+                            input.SolventCode) /
+                        input.InletLiquidDensityKgM3 * 1000.0;
+
+                    double gasM3PerHrReactive =
+                        input.InletGasFlowKmolPerHr / gasKmolPerM3Reactive;
+
+                    var sufficiency =
+                        ReagentSufficiencyService.Evaluate(
+                            new ReagentSufficiencyInput
+                            {
+                                Reagent = input.Reagent,
+                                ReagentEquivalentsPerL =
+                                    input.ReagentEquivalentsPerL,
+                                StoichiometricRatio =
+                                    input.ReagentStoichiometricRatio,
+                                InletGasMoleFraction =
+                                    input.InletGasMoleFractionPollutant,
+                                OutletGasMoleFraction = yOutReactive,
+                                GasKmolPerM3 = gasKmolPerM3Reactive,
+                                LiquidToGasLPerM3 =
+                                    liquidLPerHrReactive / gasM3PerHrReactive,
+                                EnhancementTemplate =
+                                    new ReactiveEnhancementInput
+                                    {
+                                        PollutantCode = input.PollutantCode,
+                                        Reagent = input.Reagent,
+                                        ReagentConcentrationEqPerL =
+                                            input.ReagentEquivalentsPerL,
+                                        LiquidFilmCoeffMS =
+                                            physicalCoeffs.LiquidFilmCoeffMS,
+                                        PollutantLiquidDiffusivityM2S =
+                                            input.InletLiquidDiffusivityM2S,
+                                        HenrysDimensionless = hCgCl,
+                                        GasPartialPressureKPa =
+                                            input.InletGasMoleFractionPollutant *
+                                            input.PressureKPa,
+                                        TemperatureK = liquidTemperatureK,
+                                        ReactionRateConstantS_Inv =
+                                            input.ReactionRateConstantS_Inv,
+                                        ReactionOrder = input.ReactionOrder,
+                                        StoichiometricRatio =
+                                            input.ReagentStoichiometricRatio
+                                    }
+                            });
+
+                    findings.AddRange(sufficiency.Notes);
+
+                    enhancementFactor =
+                        Math.Min(
+                            enhancementFactor,
+                            sufficiency.EnhancementDesign);
+                }
             }
 
             result.MassTransfer =

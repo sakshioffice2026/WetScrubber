@@ -213,6 +213,14 @@ namespace WetScrubber.Services
                     ? HenrysConstantUnits.MinimumH
                     : henrysTemp;
 
+            if (reactiveBasis.UseReactiveEquilibrium)
+            {
+                result.Warnings.Add(
+                    "UPPER BOUND: the reagent is treated as instantaneous and irreversible " +
+                    "(effective equilibrium slope at its minimum) because no verified rate " +
+                    "constant is available. Packing height is optimistic.");
+            }
+
             double gasFlowM3S =
                 vm.ActualFlowRate / 3600.0;
 
@@ -245,7 +253,15 @@ namespace WetScrubber.Services
                     liquidMassVelocity,
                     henrysTemp,
                     vm.PackingCode,
-                    actualGasDensity);
+                    actualGasDensity,
+                    henrysEquilibrium);
+
+            if (rateBased.EnhancementIsUpperBound)
+            {
+                result.Warnings.Add(
+                    "UPPER BOUND: the reactive enhancement factor is the instantaneous-reaction " +
+                    "limit without a verified rate constant and is optimistic.");
+            }
 
             double targetOutletPpm;
             double designPackingHeight;
@@ -1265,6 +1281,8 @@ namespace WetScrubber.Services
             public double GasMolarVelocityKmolM2S { get; set; }
 
             public double OverallKGaKmolM3S { get; set; }
+
+            public bool EnhancementIsUpperBound { get; set; }
         }
 
         private double GetHenrysLawTemperatureCorrectionFactor(
@@ -1373,19 +1391,22 @@ namespace WetScrubber.Services
                 vm.InletPressure /
                 (8314.462 * (vm.InletTemperature + 273.15));
 
-            double minLPerM3 =
-                nu *
-                Math.Max(y1 - y2, 0.0) *
-                gasKmolPerM3 /
-                eqPerL *
-                1000.0;
-
-            bool sufficient =
-                vm.LiquidToGasRatio >= minLPerM3;
+            var sufficiency =
+                ReagentSufficiencyService.Evaluate(
+                    new ReagentSufficiencyInput
+                    {
+                        Reagent = kind,
+                        ReagentEquivalentsPerL = eqPerL,
+                        StoichiometricRatio = nu,
+                        InletGasMoleFraction = y1,
+                        OutletGasMoleFraction = y2,
+                        GasKmolPerM3 = gasKmolPerM3,
+                        LiquidToGasLPerM3 = vm.LiquidToGasRatio
+                    });
 
             return new ReactiveEquilibriumBasis(
-                sufficient,
-                minLPerM3);
+                sufficiency.Sufficient,
+                sufficiency.RequiredLiquidToGasLPerM3);
         }
 
         private static double GetReagentEquivalentsPerMolePollutant(
@@ -1446,7 +1467,8 @@ namespace WetScrubber.Services
             double liquidMassVelocity,
             double henrysLawConstant,
             string packingCode,
-            double actualGasDensityKgM3)
+            double actualGasDensityKgM3,
+            double effectiveEquilibriumSlope = double.NaN)
         {
             if (_diffusionLookup == null ||
                 _componentLookup == null ||
@@ -1581,13 +1603,14 @@ namespace WetScrubber.Services
                         liquidTempK,
                         pressureKPa);
 
+                bool enhancementIsUpperBound = false;
+
                 var (
                     reagentKind,
                     reagentEqPerL) =
                     GetReagentSpec(vm);
 
-                var enhancement =
-                    ReactiveEnhancementService.Compute(
+                var enhancementInput =
                         new ReactiveEnhancementInput
                         {
                             PollutantCode =
@@ -1620,10 +1643,49 @@ namespace WetScrubber.Services
                                 GetReagentEquivalentsPerMolePollutant(
                                     pollutantCode,
                                     reagentKind)
-                        });
+                        };
+
+                var enhancement =
+                    ReactiveEnhancementService.Compute(enhancementInput);
+
+                double designEnhancementFactor = enhancement.Factor;
+
+                if (enhancement.ModelAvailable &&
+                    enhancementInput.StoichiometricRatio > 0.0 &&
+                    reagentEqPerL > 0.0)
+                {
+                    double yInReactive =
+                        pollutant.InletConcentration / 1_000_000.0;
+
+                    double yOutReactive =
+                        (TryResolveTargetOutletPpm(pollutant)
+                         ?? pollutant.InletConcentration) / 1_000_000.0;
+
+                    var ends =
+                        ReagentSufficiencyService.Evaluate(
+                            new ReagentSufficiencyInput
+                            {
+                                Reagent = reagentKind,
+                                ReagentEquivalentsPerL = reagentEqPerL,
+                                StoichiometricRatio =
+                                    enhancementInput.StoichiometricRatio,
+                                InletGasMoleFraction = yInReactive,
+                                OutletGasMoleFraction = yOutReactive,
+                                GasKmolPerM3 =
+                                    vm.InletPressure /
+                                    (8314.462 * (vm.InletTemperature + 273.15)),
+                                LiquidToGasLPerM3 = vm.LiquidToGasRatio,
+                                EnhancementTemplate = enhancementInput
+                            });
+
+                    designEnhancementFactor =
+                        Math.Min(enhancement.Factor, ends.EnhancementDesign);
+                }
+
+                enhancementIsUpperBound = enhancement.IsUpperBound;
 
                 kLaX *=
-                    enhancement.Factor;
+                    designEnhancementFactor;
 
                 if (!(kGaY > 0) || double.IsInfinity(kGaY))
                     throw new PropertyOutOfBoundsException(
@@ -1639,12 +1701,17 @@ namespace WetScrubber.Services
                         0.0,
                         double.MaxValue);
 
+                double equilibriumSlopeForResistance =
+                    IsPositiveFinite(effectiveEquilibriumSlope)
+                        ? effectiveEquilibriumSlope
+                        : henrysLawConstant;
+
                 double overallKGa =
                     1.0 /
                     (
                         1.0 / kGaY
                         +
-                        henrysLawConstant / kLaX
+                        equilibriumSlopeForResistance / kLaX
                     );
 
                 double soluteMoleFraction =
@@ -1666,7 +1733,10 @@ namespace WetScrubber.Services
                         mixtureMW,
 
                     OverallKGaKmolM3S =
-                        overallKGa
+                        overallKGa,
+
+                    EnhancementIsUpperBound =
+                        enhancementIsUpperBound
                 };
             }
         }

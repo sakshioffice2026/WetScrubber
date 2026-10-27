@@ -32,6 +32,10 @@ namespace WetScrubber.Business.Thermodynamics
         /// <summary>Verified rate constant, rate = k*C_A*C_B^n, in (m3/kmol)^n/s. Null = unknown.</summary>
         public double? ReactionRateConstantS_Inv { get; set; }
         public int ReactionOrder { get; set; } = 1;
+
+        /// <summary>When true, an enhancement above 1 is returned only if a verified rate
+        /// constant is supplied. Otherwise the result stays physical (E = 1).</summary>
+        public bool RequireVerifiedRateConstant { get; set; }
     }
 
     public sealed class ReactiveEnhancementResult
@@ -43,6 +47,12 @@ namespace WetScrubber.Business.Thermodynamics
         public double InstantaneousFactor { get; set; }
         public bool InstantaneousLimitApplied { get; set; }
         public EnhancementRegime Regime { get; set; } = EnhancementRegime.Physical;
+
+        /// <summary>True when Factor is the instantaneous-reaction limit without a verified
+        /// rate constant. The value is then an optimistic upper bound.</summary>
+        public bool IsUpperBound { get; set; }
+
+        public bool RateConstantVerified { get; set; }
     }
 
     /// <summary>
@@ -158,12 +168,22 @@ namespace WetScrubber.Business.Thermodynamics
             }
             else
             {
+                if (input.RequireVerifiedRateConstant)
+                {
+                    result.Note = "A verified rate constant is required for reactive enhancement; "
+                                  + "physical absorption only.";
+                    return result;
+                }
+
                 factor = instantFactor.Value;
                 result.InstantaneousLimitApplied = true;
+                result.IsUpperBound = true;
                 regime = EnhancementRegime.Instantaneous;
-                result.Note = "Instantaneous-reaction limit (no rate constant supplied; Hatta number not evaluated).";
+                result.Note = "UPPER BOUND: instantaneous-reaction limit without a verified rate constant; "
+                              + "the enhancement is optimistic.";
             }
 
+            result.RateConstantVerified = ha.HasValue;
             result.ModelAvailable = true;
             result.Factor = Math.Max(factor, 1.0);
             result.Regime = regime;
