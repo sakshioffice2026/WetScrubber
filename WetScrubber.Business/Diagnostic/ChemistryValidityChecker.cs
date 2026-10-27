@@ -316,9 +316,23 @@ namespace WetScrubber.Business.Diagnostic
             double activityCoefficientLiquid,
             double kgaCoeffKmolM3HrKPa,
             double drivingForceYminusYstar,
-            string modelName = "")
+            string modelName = "",
+            double? referenceGasMoleFraction = null)
         {
             var issues = new List<ValidationIssue>();
+
+            // Driving-force thresholds are RELATIVE to the reference gas mole
+            // fraction (normally the inlet y) when it is supplied. The absolute
+            // values are kept only as a fallback.
+            bool hasReference = referenceGasMoleFraction.HasValue
+                && referenceGasMoleFraction.Value > 0.0
+                && !double.IsInfinity(referenceGasMoleFraction.Value);
+            double negativeForceLimit = hasReference
+                ? -1e-3 * referenceGasMoleFraction!.Value
+                : -0.001;
+            double nearZeroForceLimit = hasReference
+                ? 1e-4 * referenceGasMoleFraction!.Value
+                : 1e-6;
 
             // ── Henry's constant ──
             if (RequireFinite(issues, "INVALID_HENRY_CONSTANT", "henrysConstant", henrysConstant))
@@ -383,7 +397,7 @@ namespace WetScrubber.Business.Diagnostic
             // ── Driving force ──
             if (RequireFinite(issues, "NON_FINITE_DRIVING_FORCE", "drivingForceYminusYstar", drivingForceYminusYstar))
             {
-                if (drivingForceYminusYstar < -0.001)
+                if (drivingForceYminusYstar < negativeForceLimit)
                 {
                     issues.Add(new ValidationIssue
                     {
@@ -394,7 +408,7 @@ namespace WetScrubber.Business.Diagnostic
                         Parameter = "drivingForceYminusYstar"
                     });
                 }
-                if (drivingForceYminusYstar < 1e-6 && drivingForceYminusYstar > -1e-6)
+                if (drivingForceYminusYstar < nearZeroForceLimit && drivingForceYminusYstar > -nearZeroForceLimit)
                 {
                     issues.Add(new ValidationIssue
                     {

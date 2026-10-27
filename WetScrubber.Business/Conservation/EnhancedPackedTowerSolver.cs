@@ -19,6 +19,24 @@ namespace WetScrubber.Business.Conservation
             public double OutletLiquidTemperatureK { get; set; }
             public IReadOnlyList<LayerProfile> Layers { get; set; }
 
+            /// <summary>|y_out(2N) − y_out(N)| / y_in; NaN when not evaluated.</summary>
+            public double LayerRefinementRelativeDifference { get; set; } = double.NaN;
+
+            /// <summary>
+            /// Absorption from integrating KGa·P·(y − y*) over the height,
+            /// kmol/(m2·hr). Independent of G·(y_in − y_out). NaN when not evaluated.
+            /// </summary>
+            public double ProfileIntegratedAbsorbedFluxKmolM2Hr { get; set; } = double.NaN;
+
+            /// <summary>|integrated − G·(y_in − y_out)| / (G·y_in); NaN when not evaluated.</summary>
+            public double ProfileClosureRelativeError { get; set; } = double.NaN;
+
+            /// <summary>
+            /// |y_out(layer solver) − y_out(analytic Colburn)| / y_in for the isothermal,
+            /// linear-equilibrium case; NaN when the case is not comparable.
+            /// </summary>
+            public double AnalyticCrossCheckRelativeDifference { get; set; } = double.NaN;
+
             public bool PinchPointDetected { get; set; }
             public double? PinchHeightM { get; set; }
             public string PinchDiagnosis { get; set; }
@@ -40,8 +58,23 @@ namespace WetScrubber.Business.Conservation
             public IReadOnlyList<string> Warnings { get; set; }
         }
 
+        /// <param name="convergenceTolerance">
+        /// RELATIVE to the inlet gas mole fraction (outlet y must move by less than
+        /// convergenceTolerance × y_in between iterations).
+        /// </param>
         /// <param name="pinchTolerance">
-        /// RELATIVE tolerance: a layer is "pinched" when |y - y*| &lt; pinchTolerance * y_inlet.
+        /// RELATIVE to the local gas mole fraction: a layer is "pinched" when
+        /// |y − y*| &lt; pinchTolerance × y at that layer, i.e. the gas is at equilibrium
+        /// with the liquid there. Small absolute driving forces at a clean outlet
+        /// (y* ≈ 0) are not flagged.
+        /// </param>
+        /// <param name="temperatureToleranceK">Liquid temperature profile tolerance, K.</param>
+        /// <param name="refinementTolerance">
+        /// Maximum accepted layer-refinement difference (relative to y_in) before a warning.
+        /// </param>
+        /// <param name="crossCheckTolerance">
+        /// Maximum accepted difference (relative to y_in) from the analytic Colburn
+        /// solution in the isothermal linear-equilibrium case before a warning.
         /// </param>
         /// <param name="gasSideResistanceFraction">
         /// Optional gas-side share of total transfer resistance (0..1), from the film-coefficient provider.
@@ -61,10 +94,13 @@ namespace WetScrubber.Business.Conservation
             double totalPressureKPa,
             Func<double, double> localGasFilmCoeff,
             Func<double, double, double> localHenrysConstant,
-            int maxIterations = 25,
+            int maxIterations = 100,
             double convergenceTolerance = 1e-4,
-            double pinchTolerance = 1e-4,
-            double? gasSideResistanceFraction = null)
+            double pinchTolerance = 1e-3,
+            double? gasSideResistanceFraction = null,
+            double temperatureToleranceK = 1e-3,
+            double refinementTolerance = 1e-3,
+            double crossCheckTolerance = 0.02)
         {
             var warnings = new List<string>();
 
@@ -84,7 +120,9 @@ namespace WetScrubber.Business.Conservation
                 localGasFilmCoeff,
                 localHenrysConstant,
                 maxIterations,
-                convergenceTolerance);
+                convergenceTolerance,
+                temperatureToleranceK,
+                true);
 
             var result = new EnhancedTowerSolverResult
             {
@@ -94,10 +132,48 @@ namespace WetScrubber.Business.Conservation
                 OutletLiquidMoleFraction = baseResult.OutletLiquidMoleFraction,
                 OutletLiquidTemperatureK = baseResult.OutletLiquidTemperatureK,
                 Layers = baseResult.Layers,
+                LayerRefinementRelativeDifference = baseResult.LayerRefinementRelativeDifference,
+                ProfileIntegratedAbsorbedFluxKmolM2Hr = baseResult.ProfileIntegratedAbsorbedFluxKmolM2Hr,
+                ProfileClosureRelativeError = baseResult.ProfileClosureRelativeError,
                 Warnings = warnings
             };
 
-            double absTol = Math.Max(pinchTolerance * Math.Abs(inletGasMoleFraction), 1e-15);
+            if (!double.IsNaN(result.LayerRefinementRelativeDifference)
+                && result.LayerRefinementRelativeDifference > refinementTolerance)
+            {
+                warnings.Add(
+                    $"LAYER REFINEMENT: doubling the layer count changes the outlet by " +
+                    $"{result.LayerRefinementRelativeDifference:E2} of y_in " +
+                    $"(limit {refinementTolerance:E1}); increase the layer count.");
+            }
+
+            // Isothermal, linear-equilibrium reference: analytic Colburn solution.
+            bool isothermalCase = !heatOfSolutionKJmol.HasValue || heatOfSolutionKJmol.Value == 0.0;
+            if (isothermalCase)
+            {
+                result.AnalyticCrossCheckRelativeDifference =
+                    ComputeAnalyticCrossCheck(
+                        packingHeightM,
+                        gasMolarFluxKmolM2Hr,
+                        liquidMolarFluxKmolM2Hr,
+                        inletGasMoleFraction,
+                        inletLiquidMoleFraction,
+                        inletLiquidTemperatureK,
+                        totalPressureKPa,
+                        localGasFilmCoeff,
+                        localHenrysConstant,
+                        baseResult.OutletGasMoleFraction,
+                        baseResult.OutletLiquidMoleFraction);
+
+                if (!double.IsNaN(result.AnalyticCrossCheckRelativeDifference)
+                    && result.AnalyticCrossCheckRelativeDifference > crossCheckTolerance)
+                {
+                    warnings.Add(
+                        $"CROSS-CHECK: layer solver differs from the analytic Colburn solution by " +
+                        $"{result.AnalyticCrossCheckRelativeDifference:E2} of y_in " +
+                        $"(limit {crossCheckTolerance:E1}).");
+                }
+            }
 
             double totalDrivingForce = 0.0;
             int pinchCount = 0;
@@ -111,6 +187,10 @@ namespace WetScrubber.Business.Conservation
 
                 double yStar = localHenrysConstant(tLocal, x) * x;
                 double drivingForce = y - yStar;
+
+                // Relative to the local gas fraction: pinch means y ≈ y*, not
+                // merely a small absolute driving force.
+                double absTol = Math.Max(pinchTolerance * Math.Abs(y), 1e-15);
 
                 if (drivingForce < minDrivingForce)
                     minDrivingForce = drivingForce;
@@ -191,6 +271,71 @@ namespace WetScrubber.Business.Conservation
                 warnings.Add("DESIGN NOT FEASIBLE: see specific issues above.");
 
             return result;
+        }
+
+        /// <summary>
+        /// Analytic Colburn outlet for an isothermal tower with constant H and KGa,
+        /// compared with the layer solver. Returns |y_out(solver) − y_out(analytic)| / y_in,
+        /// or NaN when the case is not comparable (H varies with composition by more
+        /// than 1 %, or any input is unusable).
+        /// </summary>
+        private static double ComputeAnalyticCrossCheck(
+            double packingHeightM,
+            double gasMolarFluxKmolM2Hr,
+            double liquidMolarFluxKmolM2Hr,
+            double inletGasMoleFraction,
+            double inletLiquidMoleFraction,
+            double inletLiquidTemperatureK,
+            double totalPressureKPa,
+            Func<double, double> localGasFilmCoeff,
+            Func<double, double, double> localHenrysConstant,
+            double solverOutletGasMoleFraction,
+            double solverOutletLiquidMoleFraction)
+        {
+            try
+            {
+                double h1 = localHenrysConstant(inletLiquidTemperatureK, inletLiquidMoleFraction);
+                double h2 = localHenrysConstant(
+                    inletLiquidTemperatureK,
+                    Math.Max(solverOutletLiquidMoleFraction, inletLiquidMoleFraction));
+                double kGa = localGasFilmCoeff(inletLiquidTemperatureK);
+
+                if (double.IsNaN(h1) || double.IsInfinity(h1) || h1 <= 0.0) return double.NaN;
+                if (double.IsNaN(h2) || double.IsInfinity(h2)) return double.NaN;
+                if (Math.Abs(h2 - h1) / h1 > 0.01) return double.NaN;
+                if (double.IsNaN(kGa) || double.IsInfinity(kGa) || kGa <= 0.0) return double.NaN;
+                if (gasMolarFluxKmolM2Hr <= 0.0 || liquidMolarFluxKmolM2Hr <= 0.0) return double.NaN;
+
+                double m = h1;
+                double ntu = kGa * totalPressureKPa * packingHeightM / gasMolarFluxKmolM2Hr;
+                double absorptionFactor = liquidMolarFluxKmolM2Hr / (m * gasMolarFluxKmolM2Hr);
+                double y1Effective = inletGasMoleFraction - m * inletLiquidMoleFraction;
+
+                if (y1Effective <= 0.0) return double.NaN;
+
+                double y2Effective;
+                if (Math.Abs(absorptionFactor - 1.0) <= 1e-6)
+                {
+                    y2Effective = y1Effective / (1.0 + ntu);
+                }
+                else
+                {
+                    double invA = 1.0 / absorptionFactor;
+                    double a = 1.0 - invA;
+                    y2Effective = y1Effective * a / (Math.Exp(ntu * a) - invA);
+                }
+
+                double yOutAnalytic = y2Effective + m * inletLiquidMoleFraction;
+
+                if (double.IsNaN(yOutAnalytic) || double.IsInfinity(yOutAnalytic)) return double.NaN;
+
+                return Math.Abs(solverOutletGasMoleFraction - yOutAnalytic)
+                       / Math.Max(Math.Abs(inletGasMoleFraction), 1e-300);
+            }
+            catch (Exception)
+            {
+                return double.NaN;
+            }
         }
 
         /// <summary>

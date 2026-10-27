@@ -9,7 +9,8 @@ namespace WetScrubber.Services
     /// <summary>
     /// Core engineering calculation engine for wet scrubber design.
     /// Methods: Tower diameter (Souders-Brown), NTU/HTU (Colburn),
-    /// Pressure drop (Billet-Schultes), Venturi (Calvert),
+    /// Pressure drop (Ergun dry bed + indicative wet-bed factor; not
+    /// Billet-Schultes), Venturi (Calvert),
     /// Spray Tower, Reactive scrubbing (Hatta), Power sizing.
     /// </summary>
     public class ScrubberCalculationEngine
@@ -107,6 +108,14 @@ namespace WetScrubber.Services
             if (!IsPositiveFinite(vm.CarrierGasMolecularWeightGMol))
                 throw new InvalidOperationException(
                     "Carrier gas molecular weight must be positive.");
+
+            if (string.IsNullOrWhiteSpace(vm.LiquidSolventCode))
+                throw new InvalidOperationException(
+                    "Solvent code must be provided.");
+
+            if (string.IsNullOrWhiteSpace(vm.CarrierGasCode))
+                throw new InvalidOperationException(
+                    "Carrier gas code must be provided.");
         }
 
         // ════════════════════════════════════════════════════════════
@@ -158,7 +167,9 @@ namespace WetScrubber.Services
                 packingSpecificAreaM2M3:
                     packing.SpecificAreaM2M3,
                 voidageFraction:
-                    packing.VoidageFraction
+                    packing.VoidageFraction,
+                sshIntercept:
+                    vm.FloodingSshIntercept
             );
 
             // 3. NTU / HTU → packing height
@@ -322,7 +333,10 @@ namespace WetScrubber.Services
                             rateBased.GasMolarVelocityKmolM2S,
 
                         overallKGaKmolM3S:
-                            rateBased.OverallKGaKmolM3S);
+                            rateBased.OverallKGaKmolM3S,
+
+                        inletLiquidMoleFraction:
+                            vm.InletLiquidPollutantMoleFraction);
 
                 if (!ntuResult.IsFeasible)
                 {
@@ -464,7 +478,10 @@ namespace WetScrubber.Services
 
                     liquidViscosityPas:
                         vm.LiquidViscosity /
-                        1000.0);
+                        1000.0,
+
+                    sshIntercept:
+                        vm.FloodingSshIntercept);
 
             result.PressureDrop =
                 Math.Round(
@@ -884,7 +901,10 @@ namespace WetScrubber.Services
             int? pollutantTypeId = null,
             double inletConcentrationPpm = 0,
             double packingSpecificAreaM2M3 = 0,
-            double voidageFraction = 0)
+            double voidageFraction = 0,
+            double sshIntercept =
+                WetScrubber.Business.MassTransfer
+                    .PressureDropFloodingCorrelation.DefaultSshIntercept)
         {
             if (!IsPositiveFinite(packingSpecificAreaM2M3))
                 throw new ArgumentOutOfRangeException(
@@ -948,7 +968,8 @@ namespace WetScrubber.Services
                             liquidDensityKgM3,
                         liquidViscosityPas:
                             liquidViscosityMPas /
-                            1000.0);
+                            1000.0,
+                        sshIntercept: sshIntercept);
 
             double uOp =
                 uFlood *
@@ -1055,8 +1076,17 @@ namespace WetScrubber.Services
             double henrysLawConstant,
             double liquidToGasRatioMolar,
             double gasMolarVelocityKmolM2S,
-            double overallKGaKmolM3S)
+            double overallKGaKmolM3S,
+            double inletLiquidMoleFraction = 0.0)
         {
+            if (double.IsNaN(inletLiquidMoleFraction) ||
+                double.IsInfinity(inletLiquidMoleFraction) ||
+                inletLiquidMoleFraction < 0.0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(inletLiquidMoleFraction),
+                    inletLiquidMoleFraction,
+                    "Inlet liquid mole fraction must be finite and non-negative.");
+
             if (!IsPositiveFinite(inletConcentrationPpm))
                 throw new ArgumentOutOfRangeException(
                     nameof(inletConcentrationPpm),
@@ -1115,13 +1145,53 @@ namespace WetScrubber.Services
                 };
             }
 
-            double minimumA = 1.0 - y2 / y1;
+            // Liquid inlet loading x2: gas in equilibrium with the entering
+            // liquid is y2* = H_yx * x2. Colburn is applied to (y - y2*).
+            double yEquilibriumAtInletLiquid =
+                henrysLawConstant * inletLiquidMoleFraction;
+
+            double y1Effective = y1 - yEquilibriumAtInletLiquid;
+            double y2Effective = y2 - yEquilibriumAtInletLiquid;
+
+            if (y1Effective <= 0.0 || y2Effective <= 0.0)
+            {
+                double maxRemovalPercent =
+                    y1Effective > 0.0
+                        ? (1.0 - yEquilibriumAtInletLiquid / y1) * 100.0
+                        : 0.0;
+
+                return new NtuHtuResult
+                {
+                    NTU = double.PositiveInfinity,
+                    HTU = HTU,
+                    PackingHeight = double.PositiveInfinity,
+                    AbsorptionFactor = A,
+                    RemovalEfficiency = maxRemovalPercent,
+                    IsFeasible = false,
+                    MinimumLiquidToGasMolar = double.PositiveInfinity,
+                    MaxAchievableRemovalPercent = maxRemovalPercent,
+                    InfeasibilityReason =
+                        "Target outlet is at or below the equilibrium with the entering " +
+                        $"liquid (H_yx * x2 = {yEquilibriumAtInletLiquid:G6}); the best " +
+                        $"achievable removal is {maxRemovalPercent:F4}% at any packing height."
+                };
+            }
+
+            double minimumA = 1.0 - y2Effective / y1Effective;
             double minimumLiquidToGas = henrysLawConstant * minimumA;
 
             double invA = 1.0 / A;
-            double ratio = y1 / y2;
+            double ratio = y1Effective / y2Effective;
 
             double logArgument = 1.0 + (ratio - 1.0) * (1.0 - invA);
+
+            // Best achievable removal at infinite height (reduces to
+            // min(A,1)*100 when x2 = 0).
+            double maxAchievablePercent =
+                A >= 1.0
+                    ? (1.0 - yEquilibriumAtInletLiquid / y1) * 100.0
+                    : (1.0 - (yEquilibriumAtInletLiquid
+                              + y1Effective * (1.0 - A)) / y1) * 100.0;
 
             if (A < 1.0 && logArgument <= 0.0)
             {
@@ -1131,13 +1201,13 @@ namespace WetScrubber.Services
                     HTU = HTU,
                     PackingHeight = double.PositiveInfinity,
                     AbsorptionFactor = A,
-                    RemovalEfficiency = A * 100.0,
+                    RemovalEfficiency = maxAchievablePercent,
                     IsFeasible = false,
                     MinimumLiquidToGasMolar = minimumLiquidToGas,
-                    MaxAchievableRemovalPercent = A * 100.0,
+                    MaxAchievableRemovalPercent = maxAchievablePercent,
                     InfeasibilityReason =
                         $"Target removal {(1.0 - y2 / y1) * 100.0:F4}% is not achievable: " +
-                        $"absorption factor A = {A:F6} < 1 limits removal to {A * 100.0:F4}% " +
+                        $"absorption factor A = {A:F6} < 1 limits removal to {maxAchievablePercent:F4}% " +
                         $"at any packing height. Minimum molar L/G for the target = " +
                         $"{minimumLiquidToGas:F6}; supplied = {liquidToGasRatioMolar:F6}."
                 };
@@ -1162,10 +1232,10 @@ namespace WetScrubber.Services
                     HTU = HTU,
                     PackingHeight = double.PositiveInfinity,
                     AbsorptionFactor = A,
-                    RemovalEfficiency = Math.Min(A, 1.0) * 100.0,
+                    RemovalEfficiency = maxAchievablePercent,
                     IsFeasible = false,
                     MinimumLiquidToGasMolar = minimumLiquidToGas,
-                    MaxAchievableRemovalPercent = Math.Min(A, 1.0) * 100.0,
+                    MaxAchievableRemovalPercent = maxAchievablePercent,
                     InfeasibilityReason =
                         "NTU evaluation produced a non-finite or negative value; " +
                         "the target removal is not achievable with the supplied L/G."
@@ -1181,7 +1251,7 @@ namespace WetScrubber.Services
                 RemovalEfficiency = (1.0 - y2 / y1) * 100.0,
                 IsFeasible = true,
                 MinimumLiquidToGasMolar = minimumLiquidToGas,
-                MaxAchievableRemovalPercent = A >= 1.0 ? 100.0 : A * 100.0
+                MaxAchievableRemovalPercent = maxAchievablePercent
             };
         }
 
@@ -1401,7 +1471,7 @@ namespace WetScrubber.Services
 
                 var solventData =
                     _diffusionLookup
-                        .GetByCode("H2O");
+                        .GetByCode(vm.LiquidSolventCode);
 
                 var packingData =
                     _packingLookup
@@ -1413,7 +1483,7 @@ namespace WetScrubber.Services
                         .AssociationFactor == null ||
                     packingData == null)
                 {
-                    throw new InvalidOperationException($"Missing Wilke-Chang/Onda data for {pollutantCode}, H2O or packing {packingCode}.");
+                    throw new InvalidOperationException($"Missing Wilke-Chang/Onda data for {pollutantCode}, solvent {vm.LiquidSolventCode} or packing {packingCode}.");
                 }
 
                 double liquidTempK =
@@ -1451,7 +1521,7 @@ namespace WetScrubber.Services
                         molecularWeightA:
                             pollutant.MolecularWeight,
                         codeB:
-                            "Air",
+                            vm.CarrierGasCode,
                         molecularWeightB:
                             vm.CarrierGasMolecularWeightGMol,
                         temperatureK:

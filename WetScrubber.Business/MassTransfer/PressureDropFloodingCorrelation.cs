@@ -40,7 +40,9 @@ namespace WetScrubber.Business.MassTransfer
         // SSH intercept A. UNVERIFIED against the primary source; the
         // formula above is written with this same symbol so that code and
         // documentation agree. Confirm before final-design use.
-        private const double SshIntercept = 0.022;
+        // Screening default only. Callers may override it per packing via
+        // the sshIntercept parameter once a verified value is available.
+        public const double DefaultSshIntercept = 0.022;
 
         public const string FloodingCorrelationNote =
             "SSH-type flooding correlation (ring/saddle packings): " +
@@ -60,8 +62,14 @@ namespace WetScrubber.Business.MassTransfer
             double flowRatio,
             double gasDensityKgM3,
             double liquidDensityKgM3,
-            double liquidViscosityPas)
+            double liquidViscosityPas,
+            double sshIntercept = DefaultSshIntercept)
         {
+            if (double.IsNaN(sshIntercept) || double.IsInfinity(sshIntercept))
+                throw new ArgumentOutOfRangeException(
+                    nameof(sshIntercept), sshIntercept,
+                    "SSH intercept must be finite.");
+
             RequirePositiveFinite(nameof(packingSpecificAreaM2M3), packingSpecificAreaM2M3);
             RequirePositiveFinite(nameof(flowRatio), flowRatio);
             RequirePositiveFinite(nameof(gasDensityKgM3), gasDensityKgM3);
@@ -77,7 +85,7 @@ namespace WetScrubber.Business.MassTransfer
             double rhoL = liquidDensityKgM3;
             double muLcP = liquidViscosityPas * 1000.0;
 
-            double rhs = SshIntercept
+            double rhs = sshIntercept
                 - 1.75 * Math.Pow(flowRatio, 0.25) * Math.Pow(rhoG / rhoL, 0.125);
 
             double lhsConst = packingSpecificAreaM2M3 * rhoG
@@ -102,7 +110,8 @@ namespace WetScrubber.Business.MassTransfer
             double gasDensityKgM3,
             double liquidDensityKgM3,
             double gasViscosityPas,
-            double liquidViscosityPas)
+            double liquidViscosityPas,
+            double sshIntercept = DefaultSshIntercept)
         {
             if (voidageFraction <= 0 || voidageFraction >= 1)
                 throw new ArgumentException("Voidage fraction must be between 0 and 1.", nameof(voidageFraction));
@@ -137,7 +146,7 @@ namespace WetScrubber.Business.MassTransfer
                 / (Math.Pow(eps, 3) * dp);
             double dryDeltaPPerM = viscousTerm + inertialTerm;
 
-            double uGf = FloodingVelocity(aT, eps, L / G, rhoG, rhoL, muL);
+            double uGf = FloodingVelocity(aT, eps, L / G, rhoG, rhoL, muL, sshIntercept);
 
             double percentFlood = uG / uGf * 100.0;
 

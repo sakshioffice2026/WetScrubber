@@ -11,6 +11,12 @@ namespace WetScrubber.Business.Conservation
         public double LiquidMoleFraction { get; set; }
         public double LiquidTemperatureK { get; set; }
 
+        /// <summary>
+        /// Local absorption rate per unit height, KGa·P·(y − y*), kmol/(m2·hr·m)
+        /// (single-component solver only; NaN otherwise).
+        /// </summary>
+        public double AbsorptionRateKmolM2HrPerM { get; set; } = double.NaN;
+
         /// <summary>Per-species gas mole fractions (multi-component solver only).</summary>
         public IReadOnlyDictionary<string, double> GasMoleFractions { get; set; }
             = new Dictionary<string, double>();
@@ -29,6 +35,24 @@ namespace WetScrubber.Business.Conservation
         public double OutletLiquidTemperatureK { get; set; } // liquid leaving the BOTTOM (hottest)
         public IReadOnlyList<LayerProfile> Layers { get; set; } = Array.Empty<LayerProfile>();
 
+        /// <summary>
+        /// |y_out(2N layers) − y_out(N layers)| / y_in. NaN when the refinement
+        /// check was not run.
+        /// </summary>
+        public double LayerRefinementRelativeDifference { get; set; } = double.NaN;
+
+        /// <summary>
+        /// Absorption obtained by integrating KGa·P·(y − y*) over the packed height
+        /// (trapezoid on the final profile), kmol/(m2·hr). Independent of the
+        /// operating-line balance G·(y_in − y_out). NaN when not computed.
+        /// </summary>
+        public double ProfileIntegratedAbsorbedFluxKmolM2Hr { get; set; } = double.NaN;
+
+        /// <summary>
+        /// |integrated absorption − G·(y_in − y_out)| / (G·y_in). NaN when not computed.
+        /// </summary>
+        public double ProfileClosureRelativeError { get; set; } = double.NaN;
+
         /// <summary>Gas leaving the top, every absorbing species (multi-component solver only).</summary>
         public IReadOnlyDictionary<string, double> OutletGasMoleFractions { get; set; }
             = new Dictionary<string, double>();
@@ -39,31 +63,25 @@ namespace WetScrubber.Business.Conservation
     }
 
     /// <summary>
-    /// Phase 3 discretized solver — the architectural jump from "one-shot
-    /// formula" to "simulator" the roadmap calls out. Slices the tower
-    /// into layers (z=0 at the gas inlet/bottom, z=H at the top) and
-    /// marches an explicit-Euler mass balance up the gas phase, coupled
-    /// to a liquid energy balance (HeatOfAbsorptionModel) that shifts the
-    /// local temperature-dependent Henry's constant layer by layer —
-    /// something the analytical Colburn NTU/HTU calc (constant H,
-    /// isothermal) cannot capture.
+    /// Phase 3 discretized solver. Slices the tower into layers (z=0 at the gas
+    /// inlet/bottom, z=H at the top) and integrates the gas-phase mass balance
+    /// up the tower with a classical fourth-order Runge-Kutta step per layer,
+    /// coupled to a liquid energy balance (HeatOfAbsorptionModel) that shifts the
+    /// local temperature-dependent Henry's constant layer by layer.
     ///
-    /// This is a RATING calculation, not a sizing one: packingHeightM is
-    /// a candidate height (e.g. from the existing NTU*HTU estimate), and
-    /// the solver reports what the tower actually achieves — useful as a
-    /// check on whether the isothermal shortcut over- or under-promises.
+    /// Henry's constant and the film coefficient are re-evaluated at the local
+    /// liquid temperature and local liquid composition at every Runge-Kutta stage.
     ///
-    /// Two things are unknown before marching: the actual outlet gas
-    /// mole fraction (kinetics-dependent) and the liquid temperature
-    /// profile (depends on how much absorption happened, which depends
-    /// on kinetics, which depends on temperature). Both are resolved by
-    /// successive substitution: march with the previous iteration's
-    /// temperature profile, rebuild the operating line and the new
-    /// temperature profile from the result, repeat until the outlet gas
-    /// fraction stops moving.
+    /// Convergence is RELATIVE: the outlet gas fraction must stop moving by less
+    /// than convergenceTolerance × y_in, and the liquid temperature profile by
+    /// less than temperatureToleranceK kelvin.
     ///
-    /// Pure math — no DB/IO. Callers (ScrubberCalculationEngine) inject
-    /// local kinetics via delegates so this class doesn't own EF lookups.
+    /// After solving, the tower is re-solved with twice as many layers
+    /// (layer-refinement check) and the outlet difference is reported.
+    ///
+    /// This is a RATING calculation, not a sizing one.
+    ///
+    /// Pure math — no DB/IO. Callers inject local kinetics via delegates.
     /// </summary>
     public static class PackedTowerLayerSolver
     {
@@ -82,13 +100,72 @@ namespace WetScrubber.Business.Conservation
             double totalPressureKPa,
             Func<double, double> localGasFilmCoeff, // temperatureK -> KGa, kmol/(m3·hr·kPa)
             Func<double, double, double> localHenrysConstant, // (temperatureK, liquidMoleFraction) -> H  (y* = H·x)
-            int maxIterations = 25,
-            double convergenceTolerance = 1e-4)
+            int maxIterations = 100,
+            double convergenceTolerance = 1e-4,
+            double temperatureToleranceK = 1e-3,
+            bool performRefinementCheck = true)
         {
             if (layerCount < 2) throw new ArgumentException("Need at least 2 layers.", nameof(layerCount));
             if (packingHeightM <= 0) throw new ArgumentException("Packing height must be positive.", nameof(packingHeightM));
+            if (localGasFilmCoeff == null) throw new ArgumentNullException(nameof(localGasFilmCoeff));
+            if (localHenrysConstant == null) throw new ArgumentNullException(nameof(localHenrysConstant));
+            if (!(convergenceTolerance > 0)) throw new ArgumentException("Convergence tolerance must be positive.", nameof(convergenceTolerance));
+            if (!(temperatureToleranceK > 0)) throw new ArgumentException("Temperature tolerance must be positive.", nameof(temperatureToleranceK));
 
+            var result = SolveCore(
+                packingHeightM, layerCount,
+                gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr,
+                liquidMassFluxKgM2Hr, liquidSpecificHeatKJKgK,
+                inletGasMoleFraction, inletLiquidMoleFraction,
+                outletGasMoleFractionTarget, inletLiquidTemperatureK,
+                heatOfSolutionKJmol, totalPressureKPa,
+                localGasFilmCoeff, localHenrysConstant,
+                maxIterations, convergenceTolerance, temperatureToleranceK);
+
+            if (performRefinementCheck && layerCount <= 5000)
+            {
+                var fine = SolveCore(
+                    packingHeightM, layerCount * 2,
+                    gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr,
+                    liquidMassFluxKgM2Hr, liquidSpecificHeatKJKgK,
+                    inletGasMoleFraction, inletLiquidMoleFraction,
+                    outletGasMoleFractionTarget, inletLiquidTemperatureK,
+                    heatOfSolutionKJmol, totalPressureKPa,
+                    localGasFilmCoeff, localHenrysConstant,
+                    maxIterations, convergenceTolerance, temperatureToleranceK);
+
+                double yScale = Math.Max(Math.Abs(inletGasMoleFraction), 1e-300);
+                result.LayerRefinementRelativeDifference =
+                    Math.Abs(fine.OutletGasMoleFraction - result.OutletGasMoleFraction) / yScale;
+            }
+
+            return result;
+        }
+
+        private static TowerSolverResult SolveCore(
+            double packingHeightM,
+            int layerCount,
+            double gasMolarFluxKmolM2Hr,
+            double liquidMolarFluxKmolM2Hr,
+            double liquidMassFluxKgM2Hr,
+            double liquidSpecificHeatKJKgK,
+            double inletGasMoleFraction,
+            double inletLiquidMoleFraction,
+            double outletGasMoleFractionTarget,
+            double inletLiquidTemperatureK,
+            double? heatOfSolutionKJmol,
+            double totalPressureKPa,
+            Func<double, double> localGasFilmCoeff,
+            Func<double, double, double> localHenrysConstant,
+            int maxIterations,
+            double convergenceTolerance,
+            double temperatureToleranceK)
+        {
             double dz = packingHeightM / layerCount;
+            double gSafe = Math.Max(gasMolarFluxKmolM2Hr, 1e-9);
+            double yScale = Math.Max(Math.Abs(inletGasMoleFraction), 1e-300);
+            double yTolerance = convergenceTolerance * yScale;
+
             double yOutEstimate = outletGasMoleFractionTarget;
 
             // Isothermal on the first pass — no absorbed-heat history yet.
@@ -104,37 +181,49 @@ namespace WetScrubber.Business.Conservation
                 iterationsUsed = iter;
                 layers.Clear();
 
+                double yOutForLine = yOutEstimate;
+
+                // dy/dz = −KGa·P·(y − y*) / G, with x from the operating line and
+                // H, KGa evaluated at the supplied local liquid temperature.
+                double Rate(double yv, double tK)
+                {
+                    double xv = OperatingLineX(yv, yOutForLine, inletLiquidMoleFraction,
+                        gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr);
+                    double h = localHenrysConstant(tK, xv);
+                    double kGa = localGasFilmCoeff(tK);
+                    return -(kGa * totalPressureKPa * (yv - h * xv)) / gSafe;
+                }
+
                 double y = inletGasMoleFraction;
                 layers.Add(new LayerProfile
                 {
                     HeightM = 0,
                     GasMoleFraction = y,
-                    LiquidMoleFraction = OperatingLineX(y, yOutEstimate, inletLiquidMoleFraction, gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr),
+                    LiquidMoleFraction = OperatingLineX(y, yOutForLine, inletLiquidMoleFraction,
+                        gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr),
                     LiquidTemperatureK = liquidTempByLayer[0]
                 });
 
-                // ── March the gas phase from bottom (z=0) to top (z=H) ──
+                // ── March the gas phase from bottom (z=0) to top (z=H), RK4 per layer ──
                 for (int i = 1; i <= layerCount; i++)
                 {
                     double z = i * dz;
-                    double tLocal = liquidTempByLayer[i - 1]; // previous iteration's profile
-                    double x = OperatingLineX(y, yOutEstimate, inletLiquidMoleFraction,
-                        gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr);
+                    double tLayer = 0.5 * (liquidTempByLayer[i - 1] + liquidTempByLayer[i]);
 
-                    double hLocal = localHenrysConstant(tLocal, x); // real per-layer x, not a ppm proxy
-                    double kGaLocal = localGasFilmCoeff(tLocal);
-                    double yStar = hLocal * x;
+                    double k1 = Rate(y, tLayer);
+                    double k2 = Rate(Math.Max(y + 0.5 * dz * k1, 0.0), tLayer);
+                    double k3 = Rate(Math.Max(y + 0.5 * dz * k2, 0.0), tLayer);
+                    double k4 = Rate(Math.Max(y + dz * k3, 0.0), tLayer);
 
-                    // G·dy/dz = -KGa·P·(y - y*)  (explicit Euler step)
-                    double dy = -(kGaLocal * totalPressureKPa * (y - yStar) / Math.Max(gasMolarFluxKmolM2Hr, 1e-9)) * dz;
-                    y = Math.Max(y + dy, 0.0);
+                    y = Math.Max(y + dz / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4), 0.0);
 
                     layers.Add(new LayerProfile
                     {
                         HeightM = z,
                         GasMoleFraction = y,
-                        LiquidMoleFraction = OperatingLineX(y, yOutEstimate, inletLiquidMoleFraction, gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr),
-                        LiquidTemperatureK = tLocal
+                        LiquidMoleFraction = OperatingLineX(y, yOutForLine, inletLiquidMoleFraction,
+                            gasMolarFluxKmolM2Hr, liquidMolarFluxKmolM2Hr),
+                        LiquidTemperatureK = liquidTempByLayer[i]
                     });
                 }
 
@@ -143,7 +232,7 @@ namespace WetScrubber.Business.Conservation
                 // ── Rebuild liquid temperature profile layer by layer.
                 //    Liquid enters at the top (index layerCount) at the inlet
                 //    temperature and flows down; each layer's heat pickup is
-                //    G·(y(z_i) - y(z_i+1)) and is added to the temperature
+                //    G·(y(z_i) − y(z_i+1)) and is added to the temperature
                 //    leaving the layer above it, not to the fixed inlet T. ──
                 var newLiquidTemp = new double[layerCount + 1];
                 newLiquidTemp[layerCount] = inletLiquidTemperatureK;
@@ -167,12 +256,34 @@ namespace WetScrubber.Business.Conservation
                 liquidTempByLayer = newLiquidTemp;
                 yOutEstimate = yOutComputed;
 
-                if (maxTempShift < convergenceTolerance && yOutShift < convergenceTolerance)
+                if (maxTempShift < temperatureToleranceK && yOutShift < yTolerance)
                 {
                     converged = true;
                     break;
                 }
             }
+
+            // ── Local absorption rate at every layer boundary, then an
+            //    independent integral of the rate over the packed height. ──
+            for (int i = 0; i < layers.Count; i++)
+            {
+                var layer = layers[i];
+                double xL = layer.LiquidMoleFraction;
+                double h = localHenrysConstant(layer.LiquidTemperatureK, xL);
+                double kGa = localGasFilmCoeff(layer.LiquidTemperatureK);
+                layer.AbsorptionRateKmolM2HrPerM =
+                    kGa * totalPressureKPa * (layer.GasMoleFraction - h * xL);
+            }
+
+            double integrated = 0.0;
+            for (int i = 1; i < layers.Count; i++)
+                integrated += 0.5 * (layers[i - 1].AbsorptionRateKmolM2HrPerM
+                                     + layers[i].AbsorptionRateKmolM2HrPerM) * dz;
+
+            double yOutFinal = layers[layers.Count - 1].GasMoleFraction;
+            double gasBalanceAbsorbed = gasMolarFluxKmolM2Hr * (inletGasMoleFraction - yOutFinal);
+            double closure = Math.Abs(integrated - gasBalanceAbsorbed)
+                             / Math.Max(gSafe * yScale, 1e-300);
 
             return new TowerSolverResult
             {
@@ -181,6 +292,8 @@ namespace WetScrubber.Business.Conservation
                 OutletGasMoleFraction = yOutEstimate,
                 OutletLiquidMoleFraction = layers[0].LiquidMoleFraction, // bottom = richest liquid
                 OutletLiquidTemperatureK = liquidTempByLayer[0],
+                ProfileIntegratedAbsorbedFluxKmolM2Hr = integrated,
+                ProfileClosureRelativeError = closure,
                 Layers = layers
             };
         }
@@ -191,7 +304,9 @@ namespace WetScrubber.Business.Conservation
         /// and flows down. Each absorbing species has its own liquid operating line
         /// x_i(z) = x_i,in + (G/L)·(y_i(z) − y_i,out); gas carriers
         /// ("BULK_CARRIER", "Air") are not transferred. All species are reported
-        /// per layer and at the outlet.
+        /// per layer and at the outlet. Each species is integrated with RK4 per
+        /// layer using the local liquid temperature.
+        /// Convergence is relative to each species' inlet mole fraction.
         /// </summary>
         public static TowerSolverResult SolveMultiComponent(
             double packingHeightM,
@@ -207,8 +322,9 @@ namespace WetScrubber.Business.Conservation
             double totalPressureKPa,
             Func<string, double, double> localGasFilmCoeffBySpecies,
             Func<string, double, double, double> localHenrysConstantBySpecies,
-            int maxIterations = 25,
-            double convergenceTolerance = 1e-4)
+            int maxIterations = 100,
+            double convergenceTolerance = 1e-4,
+            double temperatureToleranceK = 1e-3)
         {
             if (layerCount < 2) throw new ArgumentException("Need at least 2 layers.", nameof(layerCount));
             if (packingHeightM <= 0) throw new ArgumentException("Packing height must be positive.", nameof(packingHeightM));
@@ -219,6 +335,8 @@ namespace WetScrubber.Business.Conservation
             if (!(gasMolarFluxKmolM2Hr > 0)) throw new ArgumentException("Gas molar flux must be positive.", nameof(gasMolarFluxKmolM2Hr));
             if (!(liquidMolarFluxKmolM2Hr > 0)) throw new ArgumentException("Liquid molar flux must be positive.", nameof(liquidMolarFluxKmolM2Hr));
             if (!(totalPressureKPa > 0)) throw new ArgumentException("Total pressure must be positive.", nameof(totalPressureKPa));
+            if (!(convergenceTolerance > 0)) throw new ArgumentException("Convergence tolerance must be positive.", nameof(convergenceTolerance));
+            if (!(temperatureToleranceK > 0)) throw new ArgumentException("Temperature tolerance must be positive.", nameof(temperatureToleranceK));
 
             var species = inletGasComposition.MoleFractions.Keys
                 .Where(c => !IsCarrier(c))
@@ -251,29 +369,38 @@ namespace WetScrubber.Business.Conservation
                 iterationsUsed = iter;
                 layers.Clear();
 
-                var y = new Dictionary<string, double>(yIn);
-                layers.Add(BuildLayer(0.0, y, xIn, yOutEstimate, gOverL, liquidTempByLayer[0], species, primary));
+                var yOutForLine = new Dictionary<string, double>(yOutEstimate);
 
-                // ── March the gas phase from bottom (z = 0) to top (z = H) ──
+                double RateFor(string code, double yv, double tK)
+                {
+                    double xv = xIn[code] + gOverL * (yv - yOutForLine[code]);
+                    double h = localHenrysConstantBySpecies(code, tK, xv);
+                    double kGa = localGasFilmCoeffBySpecies(code, tK);
+                    return -(kGa * totalPressureKPa * (yv - h * xv)) / gasMolarFluxKmolM2Hr;
+                }
+
+                var y = new Dictionary<string, double>(yIn);
+                layers.Add(BuildLayer(0.0, y, xIn, yOutForLine, gOverL, liquidTempByLayer[0], species, primary));
+
+                // ── March the gas phase from bottom (z = 0) to top (z = H), RK4 per layer ──
                 for (int i = 1; i <= layerCount; i++)
                 {
-                    double tLocal = liquidTempByLayer[i - 1];
+                    double tLayer = 0.5 * (liquidTempByLayer[i - 1] + liquidTempByLayer[i]);
                     var yNext = new Dictionary<string, double>(y);
 
                     foreach (var code in species)
                     {
-                        double x = xIn[code] + gOverL * (y[code] - yOutEstimate[code]);
-                        double h = localHenrysConstantBySpecies(code, tLocal, x);
-                        double kGa = localGasFilmCoeffBySpecies(code, tLocal);
-                        double yStar = h * x;
+                        double y0 = y[code];
+                        double k1 = RateFor(code, y0, tLayer);
+                        double k2 = RateFor(code, Math.Max(y0 + 0.5 * dz * k1, 0.0), tLayer);
+                        double k3 = RateFor(code, Math.Max(y0 + 0.5 * dz * k2, 0.0), tLayer);
+                        double k4 = RateFor(code, Math.Max(y0 + dz * k3, 0.0), tLayer);
 
-                        // G·dy/dz = -KGa·P·(y - y*)  (explicit Euler step)
-                        double dy = -(kGa * totalPressureKPa * (y[code] - yStar) / gasMolarFluxKmolM2Hr) * dz;
-                        yNext[code] = Math.Max(y[code] + dy, 0.0);
+                        yNext[code] = Math.Max(y0 + dz / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4), 0.0);
                     }
 
                     y = yNext;
-                    layers.Add(BuildLayer(i * dz, y, xIn, yOutEstimate, gOverL, tLocal, species, primary));
+                    layers.Add(BuildLayer(i * dz, y, xIn, yOutForLine, gOverL, liquidTempByLayer[i], species, primary));
                 }
 
                 yTop = new Dictionary<string, double>(y);
@@ -301,14 +428,21 @@ namespace WetScrubber.Business.Conservation
                 for (int i = 0; i <= layerCount; i++)
                     maxTempShift = Math.Max(maxTempShift, Math.Abs(newLiquidTemp[i] - liquidTempByLayer[i]));
 
-                double maxYOutShift = 0.0;
+                bool speciesConverged = true;
                 foreach (var code in species)
-                    maxYOutShift = Math.Max(maxYOutShift, Math.Abs(yTop[code] - yOutEstimate[code]));
+                {
+                    double scale = Math.Max(Math.Abs(yIn[code]), 1e-300);
+                    if (Math.Abs(yTop[code] - yOutEstimate[code]) >= convergenceTolerance * scale)
+                    {
+                        speciesConverged = false;
+                        break;
+                    }
+                }
 
                 liquidTempByLayer = newLiquidTemp;
                 yOutEstimate = new Dictionary<string, double>(yTop);
 
-                if (maxTempShift < convergenceTolerance && maxYOutShift < convergenceTolerance)
+                if (maxTempShift < temperatureToleranceK && speciesConverged)
                 {
                     converged = true;
                     break;

@@ -83,6 +83,13 @@ namespace WetScrubber.Business.MassTransfer
             public double GasDiffusivityM2S { get; set; } = 2e-5;      // used when no Fuller data
             public double LiquidSolventMolecularWeightGMol { get; set; } = 18.02;
             public double LiquidSolventAssociationFactor { get; set; } = 2.6;
+
+            /// <summary>Carrier gas code (must exist in the Fuller volume table).</summary>
+            public string CarrierGasCode { get; set; } = "Air";
+
+            /// <summary>Carrier gas molecular weight, g/mol.</summary>
+            public double CarrierGasMolecularWeightGMol { get; set; } = 28.9647;
+
             public double PressureKPa { get; set; } = 101.3;
 
             /// <summary>Liquid mixture molar mass, kg/kmol. Default is pure water.</summary>
@@ -245,7 +252,9 @@ namespace WetScrubber.Business.MassTransfer
 
             double dG = FullerGasDiffusivity.TryGetDiffusionVolume(poll.Code, out _)
                 ? FullerGasDiffusivity.Calculate(
-                    poll.Code, poll.MolecularWeight, "Air", 28.97, tGasK, input.PressureKPa)
+                    poll.Code, poll.MolecularWeight,
+                    input.CarrierGasCode, input.CarrierGasMolecularWeightGMol,
+                    tGasK, input.PressureKPa)
                 : input.GasDiffusivityM2S;
 
             var onda = OndaMassTransferCorrelation.Calculate(

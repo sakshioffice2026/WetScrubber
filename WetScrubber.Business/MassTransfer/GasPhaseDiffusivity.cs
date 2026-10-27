@@ -32,7 +32,9 @@ namespace WetScrubber.Business.MassTransfer
             DiffusionSpeciesData? solute,
             double soluteMolecularWeight,
             double temperatureK,
-            double pressureKPa)
+            double pressureKPa,
+            double carrierMolecularWeight = 28.9647,
+            double carrierFullerVolumeCm3Mol = AirFullerVolumeCm3Mol)
         {
             if (solute?.FullerDiffusionVolumeCm3Mol is not double sumVA || sumVA <= 0)
                 return null;
@@ -40,12 +42,14 @@ namespace WetScrubber.Business.MassTransfer
             if (soluteMolecularWeight <= 0 || temperatureK <= 0 || pressureKPa <= 0)
                 return null;
 
-            const double airMolecularWeight = 28.97;
-            double mAB = 2.0 / (1.0 / soluteMolecularWeight + 1.0 / airMolecularWeight);
+            if (carrierMolecularWeight <= 0 || carrierFullerVolumeCm3Mol <= 0)
+                return null;
+
+            double mAB = 2.0 / (1.0 / soluteMolecularWeight + 1.0 / carrierMolecularWeight);
 
             double pressureAtm = pressureKPa / 101.325;
 
-            double volTerm = Math.Pow(sumVA, 1.0 / 3.0) + Math.Pow(AirFullerVolumeCm3Mol, 1.0 / 3.0);
+            double volTerm = Math.Pow(sumVA, 1.0 / 3.0) + Math.Pow(carrierFullerVolumeCm3Mol, 1.0 / 3.0);
 
             double dAbCm2S = FullerConstant * Math.Pow(temperatureK, 1.75)
                 / (pressureAtm * Math.Sqrt(mAB) * volTerm * volTerm);

@@ -58,6 +58,13 @@ namespace WetScrubber.Business.Services
 
             // ── Solvent & Reagent ──
             public string SolventCode { get; set; }
+
+            /// <summary>
+            /// Solvent molar mass, kg/kmol. Required for any solvent other
+            /// than water (H2O); optional for water (18.015 is used).
+            /// </summary>
+            public double? SolventMolecularWeightKgPerKmol { get; set; }
+
             public string ReagentCode { get; set; }
             public double ReagentConcentrationMolPerL { get; set; }
 
@@ -459,7 +466,8 @@ namespace WetScrubber.Business.Services
                     // liquid molar flow and the liquid molecular basis.
                     CalculateLiquidMassFlowKgPerHr(
                         liquidFlowKmolPerHr,
-                        input.SolventCode),
+                        input.SolventCode,
+                        input.SolventMolecularWeightKgPerKmol),
 
                     input.LiquidSpecificHeatKJKgK,
 
@@ -509,6 +517,17 @@ namespace WetScrubber.Business.Services
                             ? 1.0 / localHenry.Value
                             : localHenry.Value;
                     });
+
+            // Numerical-quality warnings (layer refinement, analytic cross-check)
+            // are always reported, even when the run is otherwise valid.
+            foreach (var solverWarning in result.TowerSolverResult.Warnings)
+            {
+                if (solverWarning.StartsWith("LAYER REFINEMENT", StringComparison.Ordinal) ||
+                    solverWarning.StartsWith("CROSS-CHECK", StringComparison.Ordinal))
+                {
+                    findings.Add(solverWarning);
+                }
+            }
 
             if (!result.TowerSolverResult.Converged ||
                 result.TowerSolverResult.NegativeDrivingForceDetected)
@@ -572,10 +591,21 @@ namespace WetScrubber.Business.Services
             // Liquid-side pickup is computed independently from the liquid
             // stream (L * (x_out - x_in)), NOT as inlet - outlet, so the
             // closure check can actually fail.
+            //
+            // The pickup is taken from the rate integral KGa·P·(y − y*) over
+            // the packed height (same flux basis the solver was given), which
+            // does not use the operating-line balance. If it is unavailable,
+            // fall back to the liquid-stream difference.
+            double integratedPickupKmolPerHr =
+                result.TowerSolverResult.ProfileIntegratedAbsorbedFluxKmolM2Hr;
+
             double liquidAbsorbedKmolPerHr =
-                liquidFlowKmolPerHr *
-                (result.TowerSolverResult.OutletLiquidMoleFraction -
-                 input.InletLiquidMoleFraction);
+                !double.IsNaN(integratedPickupKmolPerHr) &&
+                !double.IsInfinity(integratedPickupKmolPerHr)
+                    ? integratedPickupKmolPerHr
+                    : liquidFlowKmolPerHr *
+                      (result.TowerSolverResult.OutletLiquidMoleFraction -
+                       input.InletLiquidMoleFraction);
 
             var speciesBalance =
                 MaterialBalanceTracker.CalculateBalance(
@@ -589,7 +619,7 @@ namespace WetScrubber.Business.Services
             result.MaterialBalance =
                 MaterialBalanceTracker.AggregateBalances(
                     new[] { speciesBalance },
-                    0.01);
+                    0.005);
 
             if (!result.MaterialBalance.AllSpeciesBalanced)
             {
@@ -647,7 +677,8 @@ namespace WetScrubber.Business.Services
                     input.ReagentConcentrationMolPerL,
                     input.InletLiquidFlowM3PerHr,
                     liquidFlowKmolPerHr,
-                    input.SolventCode);
+                    input.SolventCode,
+                    input.SolventMolecularWeightKgPerKmol);
 
             double stoichiometricReagentDemandKmolPerHr =
                 absorbedKmolPerHr *
@@ -983,7 +1014,8 @@ namespace WetScrubber.Business.Services
             {
                 double molecularWeightKgPerKmol =
                     GetSolventMolecularWeightKgPerKmol(
-                        input.SolventCode);
+                        input.SolventCode,
+                        input.SolventMolecularWeightKgPerKmol);
 
                 double liquidMassFlowKgPerHr =
                     input.InletLiquidFlowM3PerHr *
@@ -1002,10 +1034,13 @@ namespace WetScrubber.Business.Services
         /// </summary>
         private static double CalculateLiquidMassFlowKgPerHr(
             double liquidFlowKmolPerHr,
-            string solventCode)
+            string solventCode,
+            double? solventMolecularWeightKgPerKmol = null)
         {
             return liquidFlowKmolPerHr *
-                   GetSolventMolecularWeightKgPerKmol(solventCode);
+                   GetSolventMolecularWeightKgPerKmol(
+                       solventCode,
+                       solventMolecularWeightKgPerKmol);
         }
 
         /// <summary>
@@ -1024,7 +1059,8 @@ namespace WetScrubber.Business.Services
             double reagentConcentrationMolPerL,
             double liquidFlowM3PerHr,
             double liquidFlowKmolPerHr,
-            string solventCode)
+            string solventCode,
+            double? solventMolecularWeightKgPerKmol = null)
         {
             if (reagentConcentrationMolPerL <= 0)
                 return 0.0;
@@ -1036,7 +1072,8 @@ namespace WetScrubber.Business.Services
             {
                 double molecularWeightKgPerKmol =
                     GetSolventMolecularWeightKgPerKmol(
-                        solventCode);
+                        solventCode,
+                        solventMolecularWeightKgPerKmol);
 
                 double massFlowKgPerHr =
                     liquidFlowKmolPerHr *
@@ -1064,8 +1101,22 @@ namespace WetScrubber.Business.Services
         /// of approximately 2856 kmol/hr.
         /// </summary>
         private static double GetSolventMolecularWeightKgPerKmol(
-            string solventCode)
+            string solventCode,
+            double? suppliedMolecularWeightKgPerKmol = null)
         {
+            if (suppliedMolecularWeightKgPerKmol.HasValue)
+            {
+                double supplied = suppliedMolecularWeightKgPerKmol.Value;
+
+                if (double.IsNaN(supplied) ||
+                    double.IsInfinity(supplied) ||
+                    supplied <= 0.0)
+                    throw new InvalidOperationException(
+                        "Solvent molecular weight must be positive and finite.");
+
+                return supplied;
+            }
+
             if (string.Equals(
                     solventCode,
                     "H2O",
@@ -1079,7 +1130,7 @@ namespace WetScrubber.Business.Services
             // computed as water.
             throw new InvalidOperationException(
                 $"Molecular weight for solvent '{solventCode}' is not available; " +
-                "only water (H2O) is supported in the chemistry integration.");
+                "supply SolventMolecularWeightKgPerKmol for any solvent other than water (H2O).");
         }
     }
 }

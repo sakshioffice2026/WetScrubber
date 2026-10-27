@@ -20,6 +20,13 @@ namespace WetScrubber.Business.MassTransfer
         private static readonly Dictionary<string, double> DiffusionVolumes = new()
         {
             ["Air"] = 19.7,
+            ["N2"] = 18.5,
+            ["O2"] = 16.3,
+            ["CO2"] = 26.9,
+            ["CO"] = 18.0,
+            ["Ar"] = 16.2,
+            ["He"] = 2.67,
+            ["H2"] = 6.12,
             ["H2O"] = 13.1,
             ["NH3"] = 14.9,
             ["SO2"] = 41.1,

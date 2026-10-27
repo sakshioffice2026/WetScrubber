@@ -100,6 +100,22 @@ namespace WetScrubber.Models
         [Display(Name = "Solvent Molecular Weight (g/mol)")]
         public double LiquidMolecularWeightGMol { get; set; } = 18.015;
 
+        [Range(0.0, 1.0, ErrorMessage = "Must be between 0 and 1 (mole fraction)")]
+        [Display(Name = "Inlet Liquid Pollutant Mole Fraction (kmol/kmol)")]
+        public double InletLiquidPollutantMoleFraction { get; set; } = 0.0;
+
+        [Range(-5.0, 5.0, ErrorMessage = "Must be between -5 and 5 (dimensionless)")]
+        [Display(Name = "Flooding SSH Intercept A (dimensionless, screening default 0.022)")]
+        public double FloodingSshIntercept { get; set; } = 0.022;
+
+        [Required]
+        [Display(Name = "Solvent Code (diffusion database)")]
+        public string LiquidSolventCode { get; set; } = "H2O";
+
+        [Required]
+        [Display(Name = "Carrier Gas Code (Fuller volume table)")]
+        public string CarrierGasCode { get; set; } = "Air";
+
         [Range(0.010, 0.100, ErrorMessage = "Must be between 0.010 and 0.100 N/m")]
         [Display(Name = "Liquid Surface Tension (N/m)")]
         public double LiquidSurfaceTensionNM { get; set; } = 0.0728;
@@ -191,6 +207,10 @@ namespace WetScrubber.Models
                 LiquidDensity = this.LiquidDensity,
                 LiquidViscosity = this.LiquidViscosity,
                 LiquidMolecularWeightGMol = this.LiquidMolecularWeightGMol,
+                InletLiquidPollutantMoleFraction = this.InletLiquidPollutantMoleFraction,
+                FloodingSshIntercept = this.FloodingSshIntercept,
+                LiquidSolventCode = this.LiquidSolventCode,
+                CarrierGasCode = this.CarrierGasCode,
                 LiquidSurfaceTensionNM = this.LiquidSurfaceTensionNM,
                 CarrierGasMolecularWeightGMol = this.CarrierGasMolecularWeightGMol,
                 LiquidToGasRatio = this.LiquidToGasRatio,

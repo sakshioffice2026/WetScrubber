@@ -56,6 +56,12 @@ namespace WetScrubber.Business.MassTransfer
             public double LiquidSolventMolecularWeightGMol { get; set; } = 18.02;
             public double LiquidSolventAssociationFactor { get; set; } = 2.6;
 
+            /// <summary>Carrier gas code (must exist in the Fuller volume table).</summary>
+            public string CarrierGasCode { get; set; } = "Air";
+
+            /// <summary>Carrier gas molecular weight, g/mol.</summary>
+            public double CarrierGasMolecularWeightGMol { get; set; } = 28.9647;
+
             /// <summary>Gas diffusivity at inlet T and P when no Fuller data exists; scaled by T^1.75 / P.</summary>
             public double GasDiffusivityM2S { get; set; } = 2e-5;
 
@@ -193,7 +199,8 @@ namespace WetScrubber.Business.MassTransfer
             Func<string, double, double, double> gasDiffusivity = (code, tg, pKPa) =>
             {
                 if (FullerGasDiffusivity.TryGetDiffusionVolume(code, out _))
-                    return FullerGasDiffusivity.Calculate(code, byCode[code].MolecularWeight, "Air", 28.97, tg, pKPa);
+                    return FullerGasDiffusivity.Calculate(code, byCode[code].MolecularWeight,
+                        input.CarrierGasCode, input.CarrierGasMolecularWeightGMol, tg, pKPa);
 
                 return input.GasDiffusivityM2S * Math.Pow(tg / tGasIn, 1.75) * (pIn / pKPa);
             };
