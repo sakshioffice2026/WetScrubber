@@ -138,11 +138,11 @@ namespace WetScrubber.Business.Thermodynamics
         {
             return code.ToUpperInvariant() switch
             {
-                "SO2" => -1700 * 8.314,         // SO2: exothermic dissolution
-                "NO2" => -2200 * 8.314,         // NO2
-                "HCl" => -1600 * 8.314,         // HCl
-                "NH3" => -1200 * 8.314,         // NH3
-                _ => -1500 * 8.314               // Default fallback
+                "SO2" => -1700 * 8.314462,         // SO2: exothermic dissolution
+                "NO2" => -2200 * 8.314462,         // NO2
+                "HCl" => -1600 * 8.314462,         // HCl
+                "NH3" => -1200 * 8.314462,         // NH3
+                _ => -1500 * 8.314462               // Default fallback
             };
         }
 

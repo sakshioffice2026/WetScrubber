@@ -86,7 +86,7 @@ namespace WetScrubber.Business.Thermodynamics
                 LiquidFilmCoeffMS = onda.LiquidFilmCoeffMS,
                 EnhancementFactor = factor,
                 GasSideKgaKmolM3HrKPa = kGaPerHr,
-                LiquidSideKlaKmolM3HrMolL = kLaPerHr,
+                LiquidSideKlaPerHr = kLaPerHr,
                 OverallKGaKmolM3HrKPa = 1.0 / totalResistance,
                 GasSideResistanceFraction = gasResistance / totalResistance,
                 LiquidSideResistanceFraction = liquidResistance / totalResistance

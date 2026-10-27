@@ -11,7 +11,13 @@ namespace WetScrubber.Business.Thermodynamics
         public double EnhancementFactor { get; set; } = 1.0;
 
         public double GasSideKgaKmolM3HrKPa { get; set; }
-        public double LiquidSideKlaKmolM3HrMolL { get; set; }
+
+        /// <summary>
+        /// Volumetric liquid-film coefficient kL·a (including enhancement
+        /// factor), in 1/hr. Equals kL [m/s] x E x a [m2/m3] x 3600.
+        /// </summary>
+        public double LiquidSideKlaPerHr { get; set; }
+
         public double OverallKGaKmolM3HrKPa { get; set; }
 
         public double GasSideResistanceFraction { get; set; }

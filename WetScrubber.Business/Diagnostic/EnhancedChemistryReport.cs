@@ -63,7 +63,7 @@ namespace WetScrubber.Business.Diagnostic
             public double GasFilmCoefficientKgMS { get; set; }
             public double GasSideKgaKmolM3HrKPa { get; set; }
             public double LiquidFilmCoefficientKlMS { get; set; }
-            public double LiquidSideKlaKmolM3HrMolL { get; set; }
+            public double LiquidSideKlaPerHr { get; set; }
             public double OverallKGaKmolM3HrKPa { get; set; }
             public double GasSideResistanceFraction { get; set; }  // % of total
             public double LiquidSideResistanceFraction { get; set; }
@@ -192,7 +192,7 @@ namespace WetScrubber.Business.Diagnostic
                 sb.AppendLine($"  Gas-side kG:            {MassTransfer.GasFilmCoefficientKgMS:F6} m/s");
                 sb.AppendLine($"  Gas-side KGa:           {MassTransfer.GasSideKgaKmolM3HrKPa:E6} kmol/(m³·hr·kPa)");
                 sb.AppendLine($"  Liquid-side kL:         {MassTransfer.LiquidFilmCoefficientKlMS:E6} m/s");
-                sb.AppendLine($"  Liquid-side KLa:        {MassTransfer.LiquidSideKlaKmolM3HrMolL:E6} kmol/(m³·hr·mol/L)");
+                sb.AppendLine($"  Liquid-side KLa:        {MassTransfer.LiquidSideKlaPerHr:E6} 1/hr");
                 sb.AppendLine($"  Overall KGa:            {MassTransfer.OverallKGaKmolM3HrKPa:E6} kmol/(m³·hr·kPa)");
                 sb.AppendLine($"  Gas-side Resistance:    {MassTransfer.GasSideResistanceFraction:F1}%");
                 sb.AppendLine($"  Liquid-side Resistance: {MassTransfer.LiquidSideResistanceFraction:F1}%");

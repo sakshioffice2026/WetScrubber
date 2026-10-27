@@ -21,7 +21,7 @@ namespace WetScrubber.Business.Thermodynamics
     /// </summary>
     public sealed class PengRobinsonEos : IEquationOfState
     {
-        private const double R = 8.314; // J/(mol*K)
+        private const double R = 8.314462; // J/(mol*K), CODATA
 
         public EosResult Evaluate(
             IReadOnlyList<EosComponentInput> components,

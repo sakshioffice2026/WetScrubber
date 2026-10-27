@@ -226,18 +226,6 @@ namespace WetScrubber.Business.Services
                 return result;
             }
 
-            if (double.IsNaN(input.TargetRemovalEfficiencyPercent) ||
-                double.IsInfinity(input.TargetRemovalEfficiencyPercent) ||
-                input.TargetRemovalEfficiencyPercent <= 0.0 ||
-                input.TargetRemovalEfficiencyPercent >= 100.0)
-            {
-                result.IsValid = false;
-                findings.Add(
-                    "TARGET REMOVAL INVALID: Must be greater than 0 and less than 100 percent.");
-                result.AllFindings = findings;
-                return result;
-            }
-
             // ════════════════════════════════════════════════════════════════
             // STEP 1b: Establish physical liquid flow basis
             // ════════════════════════════════════════════════════════════════
@@ -820,9 +808,9 @@ namespace WetScrubber.Business.Services
                                 result.MassTransfer
                                     .LiquidFilmCoeffMS,
 
-                            LiquidSideKlaKmolM3HrMolL =
+                            LiquidSideKlaPerHr =
                                 result.MassTransfer
-                                    .LiquidSideKlaKmolM3HrMolL,
+                                    .LiquidSideKlaPerHr,
 
                             OverallKGaKmolM3HrKPa =
                                 result.MassTransfer
@@ -1086,10 +1074,12 @@ namespace WetScrubber.Business.Services
                 return 18.015;
             }
 
-            // The current chemistry integration is water-based. Keep an
-            // explicit fallback rather than silently introducing a new
-            // molecular-weight database dependency in this refactor.
-            return 18.015;
+            // No silent water fallback: a non-water solvent without a
+            // supplied molecular weight must fail instead of being
+            // computed as water.
+            throw new InvalidOperationException(
+                $"Molecular weight for solvent '{solventCode}' is not available; " +
+                "only water (H2O) is supported in the chemistry integration.");
         }
     }
 }
