@@ -43,9 +43,8 @@ namespace WetScrubber.Services
         // ── Phase 2 — Onda rate-based film coefficients ─────────────
         // Same optional/fallback contract. Missing lookup, missing
         // DiffusionProperty rows, or any Onda/Wilke-Chang/Fuller
-        // exception falls back to CalculateNtuHtu's fixed
-        // DefaultGasFilmCoeff/DefaultLiquidFilmCoeff — never breaks an
-        // existing design.
+        // exception stops the calculation; there is no fixed-coefficient
+        // fallback.
         private readonly IDiffusionCoefficientLookup? _diffusionLookup;
         private readonly IPackingLookup? _packingLookup;
 
@@ -255,6 +254,10 @@ namespace WetScrubber.Services
 
                         overallKGaKmolM3S:
                             rateBased.OverallKGaKmolM3S);
+
+            if (!ntuResult.IsFeasible)
+                throw new InvalidOperationException(
+                    "INFEASIBLE DESIGN: " + ntuResult.InfeasibilityReason);
 
             double designPackingHeight =
                 vm.PackingHeightOverride > 0
@@ -928,119 +931,6 @@ namespace WetScrubber.Services
         }
 
         // ════════════════════════════════════════════════════════════
-        //  2. NTU / HTU  (Colburn equation)
-        // ════════════════════════════════════════════════════════════
-
-        public NtuHtuResult CalculateNtuHtu(
-            double inletConcentrationPpm,
-            double outletConcentrationPpm,
-            double henrysLawConstant,
-            double liquidToGasRatioMolar,
-            double gasFilmCoeff,
-            double liquidFilmCoeff,
-            double gasMassVelocity,
-            double gasDensityKgM3)
-        {
-            double y1 =
-                Math.Max(
-                    inletConcentrationPpm,
-                    0.001) /
-                1e6;
-
-            double y2 =
-                Math.Max(
-                    outletConcentrationPpm,
-                    0.0001) /
-                1e6;
-
-            double A =
-                liquidToGasRatioMolar /
-                Math.Max(
-                    henrysLawConstant,
-                    HenrysConstantUnits.MinimumH);
-
-            double NTU;
-
-            if (Math.Abs(A - 1.0) < 0.01)
-            {
-                NTU =
-                    (y1 - y2) /
-                    y2;
-            }
-            else
-            {
-                double term =
-                    (y1 / y2) *
-                    (1 - 1.0 / A) +
-                    1.0 / A;
-
-                NTU =
-                    (A / (A - 1)) *
-                    Math.Log(
-                        Math.Max(
-                            term,
-                            0.0001));
-            }
-
-            NTU =
-                Math.Max(
-                    NTU,
-                    0.5);
-
-            double KGa =
-                1.0 /
-                (
-                    1.0 /
-                    Math.Max(
-                        gasFilmCoeff,
-                        0.001)
-                    +
-                    henrysLawConstant /
-                    Math.Max(
-                        liquidFilmCoeff,
-                        0.001)
-                );
-
-            // Keep the existing legacy scale correction for the
-            // fixed-coefficient fallback path. The rate-based Onda
-            // calculation does not use this path.
-            double Kya =
-                KGa * 100;
-
-            double HTU =
-                gasMassVelocity /
-                Math.Max(
-                    Kya *
-                    gasDensityKgM3,
-                    0.001);
-
-            // Keep the existing legacy clamp for compatibility with
-            // the fixed-coefficient fallback calculation.
-            HTU =
-                Math.Min(
-                    Math.Max(
-                        HTU,
-                        0.5),
-                    2.0);
-
-            double packingHeight =
-                NTU * HTU;
-
-            return new NtuHtuResult
-            {
-                NTU = NTU,
-                HTU = HTU,
-                PackingHeight = packingHeight,
-                AbsorptionFactor = A,
-                RemovalEfficiency =
-                    Math.Min(
-                        (1.0 - y2 / y1) *
-                        100.0,
-                        99.99)
-            };
-        }
-
-        // ════════════════════════════════════════════════════════════
         //  PHASE 2 — rate-based NTU/HTU using Onda-derived film
         //  coefficients.
         // ════════════════════════════════════════════════════════════
@@ -1052,74 +942,143 @@ namespace WetScrubber.Services
             double gasMolarVelocityKmolM2S,
             double overallKGaKmolM3S)
         {
-            double y1 =
-                Math.Max(
+            if (!IsPositiveFinite(inletConcentrationPpm))
+                throw new ArgumentOutOfRangeException(
+                    nameof(inletConcentrationPpm),
                     inletConcentrationPpm,
-                    0.001) /
-                1e6;
+                    "Inlet concentration must be positive and finite.");
 
-            double y2 =
-                Math.Max(
+            if (!IsPositiveFinite(outletConcentrationPpm))
+                throw new ArgumentOutOfRangeException(
+                    nameof(outletConcentrationPpm),
                     outletConcentrationPpm,
-                    0.0001) /
-                1e6;
+                    "Outlet concentration must be positive and finite.");
 
-            double A =
-                liquidToGasRatioMolar /
-                Math.Max(
+            if (!IsPositiveFinite(henrysLawConstant))
+                throw new ArgumentOutOfRangeException(
+                    nameof(henrysLawConstant),
                     henrysLawConstant,
-                    0.001);
+                    "Henry's constant (H_yx) must be positive and finite.");
+
+            if (!IsPositiveFinite(liquidToGasRatioMolar))
+                throw new ArgumentOutOfRangeException(
+                    nameof(liquidToGasRatioMolar),
+                    liquidToGasRatioMolar,
+                    "Molar L/G must be positive and finite.");
+
+            if (!IsPositiveFinite(gasMolarVelocityKmolM2S))
+                throw new ArgumentOutOfRangeException(
+                    nameof(gasMolarVelocityKmolM2S),
+                    gasMolarVelocityKmolM2S,
+                    "Gas molar velocity must be positive and finite.");
+
+            if (!IsPositiveFinite(overallKGaKmolM3S))
+                throw new ArgumentOutOfRangeException(
+                    nameof(overallKGaKmolM3S),
+                    overallKGaKmolM3S,
+                    "Overall KGa must be positive and finite.");
+
+            double y1 = inletConcentrationPpm / 1e6;
+            double y2 = outletConcentrationPpm / 1e6;
+
+            double A = liquidToGasRatioMolar / henrysLawConstant;
+
+            double HTU = gasMolarVelocityKmolM2S / overallKGaKmolM3S;
+
+            // No absorption required.
+            if (y2 >= y1)
+            {
+                return new NtuHtuResult
+                {
+                    NTU = 0.0,
+                    HTU = HTU,
+                    PackingHeight = 0.0,
+                    AbsorptionFactor = A,
+                    RemovalEfficiency = 0.0,
+                    IsFeasible = true,
+                    MinimumLiquidToGasMolar = 0.0,
+                    MaxAchievableRemovalPercent = 0.0
+                };
+            }
+
+            // Minimum L/G for the target removal (x2 = 0, linear
+            // equilibrium): A_min = 1 - y2/y1, L/G_min = H * A_min.
+            double minimumA = 1.0 - y2 / y1;
+            double minimumLiquidToGas = henrysLawConstant * minimumA;
+
+            double invA = 1.0 / A;
+            double ratio = y1 / y2;
+
+            // Colburn log argument: (y1/y2)(1 - 1/A) + 1/A
+            double logArgument = 1.0 + (ratio - 1.0) * (1.0 - invA);
+
+            if (A < 1.0 && logArgument <= 0.0)
+            {
+                return new NtuHtuResult
+                {
+                    NTU = double.PositiveInfinity,
+                    HTU = HTU,
+                    PackingHeight = double.PositiveInfinity,
+                    AbsorptionFactor = A,
+                    RemovalEfficiency = A * 100.0,
+                    IsFeasible = false,
+                    MinimumLiquidToGasMolar = minimumLiquidToGas,
+                    MaxAchievableRemovalPercent = A * 100.0,
+                    InfeasibilityReason =
+                        $"Target removal {(1.0 - y2 / y1) * 100.0:F4}% is not achievable: " +
+                        $"absorption factor A = {A:F6} < 1 limits removal to {A * 100.0:F4}% " +
+                        $"at any packing height. Minimum molar L/G for the target = " +
+                        $"{minimumLiquidToGas:F6}; supplied = {liquidToGasRatioMolar:F6}."
+                };
+            }
 
             double NTU;
 
-            if (Math.Abs(A - 1.0) < 0.01)
+            if (Math.Abs(A - 1.0) <= 1e-6)
             {
-                NTU =
-                    (y1 - y2) /
-                    y2;
+                // Limit of the Colburn expression as A -> 1.
+                NTU = ratio - 1.0;
             }
             else
             {
-                double term =
-                    (y1 / y2) *
-                    (1 - 1.0 / A) +
-                    1.0 / A;
-
-                NTU =
-                    (A / (A - 1)) *
-                    Math.Log(
-                        Math.Max(
-                            term,
-                            0.0001));
+                NTU = Math.Log(logArgument) / (1.0 - invA);
             }
 
-            NTU =
-                Math.Max(
-                    NTU,
-                    0.5);
-
-            double HTU =
-                gasMolarVelocityKmolM2S /
-                Math.Max(
-                    overallKGaKmolM3S,
-                    1e-9);
-
-            double packingHeight =
-                NTU * HTU;
+            if (double.IsNaN(NTU) || double.IsInfinity(NTU) || NTU < 0.0)
+            {
+                return new NtuHtuResult
+                {
+                    NTU = double.PositiveInfinity,
+                    HTU = HTU,
+                    PackingHeight = double.PositiveInfinity,
+                    AbsorptionFactor = A,
+                    RemovalEfficiency = Math.Min(A, 1.0) * 100.0,
+                    IsFeasible = false,
+                    MinimumLiquidToGasMolar = minimumLiquidToGas,
+                    MaxAchievableRemovalPercent = Math.Min(A, 1.0) * 100.0,
+                    InfeasibilityReason =
+                        "NTU evaluation produced a non-finite or negative value; " +
+                        "the target removal is not achievable with the supplied L/G."
+                };
+            }
 
             return new NtuHtuResult
             {
                 NTU = NTU,
                 HTU = HTU,
-                PackingHeight = packingHeight,
+                PackingHeight = NTU * HTU,
                 AbsorptionFactor = A,
-                RemovalEfficiency =
-                    Math.Min(
-                        (1.0 - y2 / y1) *
-                        100.0,
-                        99.99)
+                RemovalEfficiency = (1.0 - y2 / y1) * 100.0,
+                IsFeasible = true,
+                MinimumLiquidToGasMolar = minimumLiquidToGas,
+                MaxAchievableRemovalPercent = A >= 1.0 ? 100.0 : A * 100.0
             };
         }
+
+        private static bool IsPositiveFinite(double value) =>
+            !double.IsNaN(value) &&
+            !double.IsInfinity(value) &&
+            value > 0.0;
 
         private sealed class RateBasedFilmResult
         {
@@ -1424,13 +1383,10 @@ namespace WetScrubber.Services
                 // Henry's-law concentration conversion is based on
                 // liquid temperature and actual operating pressure.
                 double hCgCl =
-                    henrysLawConstant *
-                    (
-                        pressureKPa /
-                        (8.314 *
-                         liquidTempK)
-                    ) /
-                    WaterMolarDensityKmolM3;
+                    HenrysConstantUnits.MoleFractionRatioToCgOverCl(
+                        henrysLawConstant,
+                        liquidTempK,
+                        pressureKPa);
 
                 var (
                     reagentKind,
@@ -1860,6 +1816,21 @@ namespace WetScrubber.Services
             double henrysLawConstant,
             double inletLiquidPpm = 0)
         {
+            if (!IsPositiveFinite(inletPpm))
+                throw new ArgumentOutOfRangeException(
+                    nameof(inletPpm), inletPpm,
+                    "Inlet concentration must be positive and finite.");
+
+            if (!IsPositiveFinite(outletPpm))
+                throw new ArgumentOutOfRangeException(
+                    nameof(outletPpm), outletPpm,
+                    "Outlet concentration must be positive and finite.");
+
+            if (!IsPositiveFinite(henrysLawConstant))
+                throw new ArgumentOutOfRangeException(
+                    nameof(henrysLawConstant), henrysLawConstant,
+                    "Henry's constant (H_yx) must be positive and finite.");
+
             double y1 =
                 inletPpm / 1e6;
 
@@ -1869,21 +1840,21 @@ namespace WetScrubber.Services
             double x2 =
                 inletLiquidPpm / 1e6;
 
+            if (y2 >= y1)
+                return 0.0;
+
             double x1star =
-                y1 /
-                Math.Max(
-                    henrysLawConstant,
-                    0.001);
+                y1 / henrysLawConstant;
 
-            double lgMin =
-                (y1 - y2) /
-                Math.Max(
-                    x1star - x2,
-                    1e-9);
+            double capacity =
+                x1star - x2;
 
-            return Math.Max(
-                lgMin,
-                1e-6);
+            if (capacity <= 0.0)
+                throw new InvalidOperationException(
+                    "INFEASIBLE DESIGN: inlet liquid is at or above equilibrium " +
+                    "with the inlet gas; no absorption is possible.");
+
+            return (y1 - y2) / capacity;
         }
 
         // Volumetric L/G (L liquid per m3 actual gas)
@@ -2312,25 +2283,29 @@ namespace WetScrubber.Services
             var results =
                 new List<SensitivityPoint>();
 
-            double h =
-                Math.Max(
-                    henrysConstant,
-                    0.001);
+            if (!IsPositiveFinite(henrysConstant))
+                throw new ArgumentOutOfRangeException(
+                    nameof(henrysConstant), henrysConstant,
+                    "Henry's constant (H_yx) must be positive and finite.");
 
-            double y1 =
-                Math.Max(
-                    baseInletPpm,
-                    0.001);
+            if (!IsPositiveFinite(baseInletPpm))
+                throw new ArgumentOutOfRangeException(
+                    nameof(baseInletPpm), baseInletPpm,
+                    "Inlet concentration must be positive and finite.");
+
+            double h = henrysConstant;
+
+            double y1 = baseInletPpm;
 
             double y2 =
                 targetOutletPpm > 0
                     ? targetOutletPpm
                     : y1 * 0.05;
 
-            double ratio =
-                Math.Max(
-                    y1 / y2,
-                    1.0001);
+            if (y2 >= y1)
+                return results;
+
+            double ratio = y1 / y2;
 
             double lgMinMolar =
                 CalculateMinimumLiquidGasRatio(
@@ -2349,10 +2324,13 @@ namespace WetScrubber.Services
                 double A =
                     lgMolar / h;
 
-                double ntu =
-                    baseNTU;
+                double ntu;
 
-                if (Math.Abs(A - 1.0) >= 0.01)
+                if (Math.Abs(A - 1.0) <= 1e-6)
+                {
+                    ntu = ratio - 1.0;
+                }
+                else
                 {
                     double term =
                         ratio *
@@ -2362,28 +2340,19 @@ namespace WetScrubber.Services
                         ) +
                         1.0 / A;
 
+                    if (term <= 0.0)
+                        continue; // infeasible at this L/G
+
                     ntu =
                         (
                             A /
                             (A - 1.0)
                         ) *
-                        Math.Log(
-                            Math.Max(
-                                term,
-                                0.0001));
+                        Math.Log(term);
+                }
 
-                    ntu =
-                        Math.Max(
-                            ntu,
-                            0.5);
-                }
-                else
-                {
-                    ntu =
-                        Math.Max(
-                            ratio - 1.0,
-                            0.5);
-                }
+                if (double.IsNaN(ntu) || double.IsInfinity(ntu) || ntu < 0.0)
+                    continue;
 
                 double eff =
                     PackedTowerEfficiencyCalculator
@@ -2637,6 +2606,11 @@ namespace WetScrubber.Services
         public double PackingHeight { get; set; }
         public double AbsorptionFactor { get; set; }
         public double RemovalEfficiency { get; set; }
+
+        public bool IsFeasible { get; set; } = true;
+        public string? InfeasibilityReason { get; set; }
+        public double MinimumLiquidToGasMolar { get; set; }
+        public double MaxAchievableRemovalPercent { get; set; }
     }
 
     public class VenturiSizingResult

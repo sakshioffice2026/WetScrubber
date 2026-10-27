@@ -387,29 +387,38 @@ namespace WetScrubber.Business.Services
 
             result.EquilibriumValidation =
                 ChemistryValidityChecker.ValidateEquilibriumAndMassTransfer(
-                    henryResult.Value,
-                    (double)input.HenryConvention,
+                    hYX,
+                    (double)HenrysLawConvention.LiquidReferenced,
                     1.0,
                     result.MassTransfer.GasSideKgaKmolM3HrKPa,
                     input.InletGasMoleFractionPollutant -
-                    henryResult.Value *
+                    hYX *
                     input.InletLiquidMoleFraction);
 
             if (!result.EquilibriumValidation.IsValid)
             {
                 findings.Add(
                     "EQUILIBRIUM VALIDATION FAILED");
+                findings.AddRange(
+                    result.EquilibriumValidation.Issues
+                        .Where(i => i.IsError)
+                        .Select(i => i.Message));
+
+                result.IsValid = false;
+                result.AllFindings = findings;
+                return result;
             }
 
             // ════════════════════════════════════════════════════════════════
             // STEP 3: Solve Tower with Pinch Detection (Sections 9-10)
             // ════════════════════════════════════════════════════════════════
+            // Outlet target is a mole fraction: y_out = y_in * (1 - eta).
             double targetOutletFraction =
-                (100.0 -
-                 input.TargetRemovalEfficiencyPercent) /
-                100.0;
+                input.InletGasMoleFractionPollutant *
+                (1.0 -
+                 input.TargetRemovalEfficiencyPercent / 100.0);
 
-            // Quick pinch check uses the Henry constant evaluated at the
+            // Quick pinch check uses H_yx (y* = H * x) evaluated at the
             // actual LIQUID inlet temperature.
             var (feasible, pinchMessage) =
                 EnhancedPackedTowerSolver.QuickPinchCheck(
@@ -418,13 +427,17 @@ namespace WetScrubber.Business.Services
                     input.InletGasMoleFractionPollutant,
                     targetOutletFraction,
                     input.InletLiquidMoleFraction,
-                    henryResult.Value,
+                    hYX,
                     input.PressureKPa);
 
             if (!feasible)
             {
                 findings.Add(
                     $"PINCH CONDITION: {pinchMessage}");
+
+                result.IsValid = false;
+                result.AllFindings = findings;
+                return result;
             }
 
             // The tower solver's temperature argument represents the initial
@@ -490,8 +503,22 @@ namespace WetScrubber.Business.Services
                                     : null,
                                 input.PollutantCode);
 
-                        return localHenry.Value;
+                        // Solver expects H_yx (y* = H * x).
+                        return input.HenryConvention ==
+                               HenrysLawConvention.GasReferenced
+                            ? 1.0 / localHenry.Value
+                            : localHenry.Value;
                     });
+
+            if (!result.TowerSolverResult.Converged ||
+                result.TowerSolverResult.NegativeDrivingForceDetected)
+            {
+                findings.AddRange(result.TowerSolverResult.Warnings);
+
+                result.IsValid = false;
+                result.AllFindings = findings;
+                return result;
+            }
 
             // ════════════════════════════════════════════════════════════════
             // STEP 4: Validate Removal & Flows (Section 11)
@@ -533,6 +560,10 @@ namespace WetScrubber.Business.Services
                     removalValidation.Issues
                         .Where(i => i.IsError)
                         .Select(i => i.Message));
+
+                result.IsValid = false;
+                result.AllFindings = findings;
+                return result;
             }
 
             // ════════════════════════════════════════════════════════════════
@@ -564,6 +595,10 @@ namespace WetScrubber.Business.Services
             {
                 findings.Add(
                     $"MATERIAL BALANCE: {result.MaterialBalance.ClosureStatement}");
+
+                result.IsValid = false;
+                result.AllFindings = findings;
+                return result;
             }
 
             // ════════════════════════════════════════════════════════════════
@@ -719,11 +754,11 @@ namespace WetScrubber.Business.Services
                         new EnhancedChemistryReport.EquilibriumSummary
                         {
                             EquilibriumConcentrationYstarInlet =
-                                henryResult.Value *
+                                hYX *
                                 input.InletLiquidMoleFraction,
 
                             EquilibriumConcentrationYstarOutlet =
-                                henryResult.Value *
+                                hYX *
                                 result.TowerSolverResult
                                     .OutletLiquidMoleFraction,
 
@@ -737,7 +772,7 @@ namespace WetScrubber.Business.Services
                             DrivingForceInletMolFraction =
                                 input.InletGasMoleFractionPollutant -
                                 (
-                                    henryResult.Value *
+                                    hYX *
                                     input.InletLiquidMoleFraction
                                 ),
 
@@ -745,7 +780,7 @@ namespace WetScrubber.Business.Services
                                 result.TowerSolverResult
                                     .OutletGasMoleFraction -
                                 (
-                                    henryResult.Value *
+                                    hYX *
                                     result.TowerSolverResult
                                         .OutletLiquidMoleFraction
                                 ),
@@ -1045,4 +1080,4 @@ namespace WetScrubber.Business.Services
             return 18.015;
         }
     }
-} 
+}
