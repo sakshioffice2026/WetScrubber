@@ -41,7 +41,40 @@ namespace WetScrubber.Services
                 CheckMaterialTemperature("Internal material", draft.InternalMaterial, draft.InletTemperature, "InternalMaterial", checks);
                 return checks;
             }
+            if (result.ScrubberType == "Impingement Plate")
+            {
+                if (!string.IsNullOrEmpty(result.ModelValidationStatus) &&
+                    result.ModelValidationStatus != "Validated")
+                {
+                    checks.Add(new PhysicalCheck(
+                        "Model validation",
+                        CheckStatus.Warn,
+                        "ScrubberType",
+                        $"Impingement plate model status: {result.ModelValidationStatus}."));
+                }
 
+                checks.Add(new PhysicalCheck(
+                    "Model scope",
+                    CheckStatus.Warn,
+                    "ScrubberType",
+                    "Impingement plate removal efficiency is not independently predicted by this preliminary model."));
+
+                CheckMaterialTemperature(
+                    "Shell material",
+                    draft.ShellMaterial,
+                    draft.InletTemperature,
+                    "ShellMaterial",
+                    checks);
+
+                CheckMaterialTemperature(
+                    "Internal material",
+                    draft.InternalMaterial,
+                    draft.InletTemperature,
+                    "InternalMaterial",
+                    checks);
+
+                return checks;
+            }
             CheckFlooding(result, checks);
             CheckGasVelocity(result, checks);
             CheckPressureDropPerMeter(result, checks);

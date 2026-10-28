@@ -135,6 +135,7 @@ namespace WetScrubber.Controllers
                 UpdatedAt = DateTime.UtcNow
             };
             ApplyCycloneInputs(design, model);
+            ApplyImpingementPlateInputs(design, model);
             _dbContext.ScrubberDesigns.Add(design);
             await _dbContext.SaveChangesAsync();
 
@@ -299,6 +300,7 @@ namespace WetScrubber.Controllers
             design.InternalMaterial = model.InternalMaterial;
             design.PackingCode = model.PackingCode;
             ApplyCycloneInputs(design, model);
+            ApplyImpingementPlateInputs(design, model);
             design.UpdatedAt = DateTime.UtcNow;
 
             // 2. Gas stream
@@ -1149,11 +1151,45 @@ namespace WetScrubber.Controllers
             design.CycloneParticleGeometricStdDev = isCyclone ? model.CycloneParticleGeometricStdDev : null;
             design.CycloneParticleDensityKgM3 = isCyclone ? model.CycloneParticleDensityKgM3 : null;
             design.CycloneInletVelocityMs = isCyclone ? model.CycloneInletVelocityMs : null;
+
             design.CycloneParallelUnits = isCyclone ? model.CycloneParallelUnits : null;
             design.CycloneTargetEfficiencyPercent = isCyclone ? model.CycloneTargetEfficiencyPercent : null;
             design.CycloneMaxPressureDropPa = isCyclone ? model.CycloneMaxPressureDropPa : null;
             design.CycloneInjectionPressureKPa = isCyclone ? model.CycloneInjectionPressureKPa : null;
         }
+
+        private static void ApplyImpingementPlateInputs(
+            ScrubberDesign design,
+            CreateDesignViewModel model)
+        {
+            bool isPlate =
+                model.ScrubberType == ScrubberType.ImpingementPlate;
+
+            design.ImpingementPlateStages =
+                isPlate ? model.ImpingementPlateStages : null;
+
+            design.ImpingementPlateColumnDiameterM =
+                isPlate ? model.ImpingementPlateColumnDiameterM : null;
+
+            design.ImpingementPlateGasFlowM3Hr =
+                isPlate ? model.ImpingementPlateGasFlowM3Hr : null;
+
+            design.ImpingementPlateLiquidFlowM3Hr =
+                isPlate ? model.ImpingementPlateLiquidFlowM3Hr : null;
+
+            design.ImpingementPlateGasDensityKgM3 =
+                isPlate ? model.ImpingementPlateGasDensityKgM3 : null;
+
+            design.ImpingementPlateLiquidDensityKgM3 =
+                isPlate ? model.ImpingementPlateLiquidDensityKgM3 : null;
+
+            design.ImpingementPlateTargetRemovalPercent =
+                isPlate ? model.ImpingementPlateTargetRemovalPercent : null;
+
+            design.ImpingementPlateCutDiameterMicron =
+                isPlate ? model.ImpingementPlateCutDiameterMicron : null;
+        }
+
 
         // Copies wet cyclone calculation outputs onto the persisted geometry row.
         private static void ApplyCycloneResults(ScrubberGeometry geometry, ScrubberDesign design, CalculationResult result)

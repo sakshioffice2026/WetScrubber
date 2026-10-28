@@ -7,7 +7,6 @@ using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Business.Venturi;
 using WetScrubber.Database.Enums;
 using WetScrubber.Models;
-using WetScrubber.Business.Particulate;
 using WetScrubber.Business.Plate;
 
 namespace WetScrubber.Services
@@ -1294,14 +1293,203 @@ namespace WetScrubber.Services
             }
             return result;
         }
+
+
         private CalculationResult RunImpingementPlateCalc(
-        CreateDesignViewModel vm)
+            CreateDesignViewModel vm)
         {
-            // Connect ImpingementPlateModel.Calculate(...) here.
-            // Map the model's validated results into CalculationResult.
-            throw new NotImplementedException(
-                "Impingement plate calculation is not connected yet.");
+            if (vm == null)
+                throw new ArgumentNullException(nameof(vm));
+
+            // Resolve gas and liquid flows in m³/hr.
+            double gasFlowM3Hr =
+                vm.ImpingementPlateGasFlowM3Hr > 0.0
+                    ? vm.ImpingementPlateGasFlowM3Hr
+                    : vm.ActualFlowRate;
+
+            double liquidFlowM3Hr =
+                vm.ImpingementPlateLiquidFlowM3Hr > 0.0
+                    ? vm.ImpingementPlateLiquidFlowM3Hr
+                    : gasFlowM3Hr * vm.LiquidToGasRatio / 1000.0;
+
+            double gasDensity =
+                vm.ImpingementPlateGasDensityKgM3 > 0.0
+                    ? vm.ImpingementPlateGasDensityKgM3
+                    : vm.GasDensity;
+
+            double liquidDensity =
+                vm.ImpingementPlateLiquidDensityKgM3 > 0.0
+                    ? vm.ImpingementPlateLiquidDensityKgM3
+                    : vm.LiquidDensity;
+
+            double columnDiameterM =
+                vm.ImpingementPlateColumnDiameterM;
+
+            int stages = vm.ImpingementPlateStages;
+
+            if (stages <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(vm.ImpingementPlateStages),
+                    "Impingement plate stages must be greater than zero.");
+
+            if (!(gasFlowM3Hr > 0.0) ||
+                double.IsNaN(gasFlowM3Hr) ||
+                double.IsInfinity(gasFlowM3Hr))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(vm.ImpingementPlateGasFlowM3Hr),
+                    "Gas flow must be positive and finite.");
+            }
+
+            if (!(liquidFlowM3Hr >= 0.0) ||
+                double.IsNaN(liquidFlowM3Hr) ||
+                double.IsInfinity(liquidFlowM3Hr))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(vm.ImpingementPlateLiquidFlowM3Hr),
+                    "Liquid flow must be finite and non-negative.");
+            }
+
+            // Convert m³/hr to m³/s for the engineering model.
+            double gasFlowM3S = gasFlowM3Hr / 3600.0;
+            double liquidFlowM3S = liquidFlowM3Hr / 3600.0;
+
+            // Run the repository's plate hydraulic correlation.
+            // Geometry correlation defaults are preliminary screening values.
+            PlateHydraulicsResult hydraulics =
+                ImpingementPlateHydraulics.Evaluate(
+                    new PlateHydraulicsInput
+                    {
+                        GasFlowM3s = gasFlowM3S,
+                        LiquidFlowM3s = liquidFlowM3S,
+                        GasDensityKgM3 = gasDensity,
+                        LiquidDensityKgM3 = liquidDensity,
+                        SurfaceTensionNm = vm.LiquidSurfaceTensionNM,
+                        ColumnDiameterM = columnDiameterM
+                    });
+
+            double totalPressureDropPa =
+                hydraulics.PressureDropPerPlatePa * stages;
+
+            var result = new CalculationResult
+            {
+                ScrubberType = "Impingement Plate",
+
+                // Geometry and plate-bank hydraulics.
+                TowerDiameter = columnDiameterM,
+                PackingHeight = 0.0,
+                NumberOfBeds = 1,
+
+                ImpingementPlateStages = stages,
+                ImpingementPlateActiveAreaM2 =
+                    hydraulics.ActiveAreaM2,
+                ImpingementPlateGasVelocityMPerS =
+                    hydraulics.NetVelocityMs,
+                ImpingementPlateFloodingVelocityMPerS =
+                    hydraulics.FloodingVelocityMs,
+                ImpingementPlatePercentFlood =
+                    hydraulics.PercentFlood,
+                ImpingementPlatePressureDropPa =
+                    totalPressureDropPa,
+
+                // Generic result fields consumed by the existing results view.
+                GasVelocity = Math.Round(hydraulics.NetVelocityMs, 3),
+                PressureDrop = Math.Round(totalPressureDropPa, 2),
+                SystemPressureDrop = Math.Round(totalPressureDropPa, 2),
+                TowerHeight = Math.Round(stages * 0.45, 2),
+
+                LiquidFlowRateM3Hr = Math.Round(liquidFlowM3Hr, 3),
+                ActualLGRatio = gasFlowM3Hr > 0.0
+                    ? liquidFlowM3Hr * 1000.0 / gasFlowM3Hr
+                    : 0.0,
+
+                PercentFlood = Math.Round(hydraulics.PercentFlood, 2),
+                FloodingGasVelocity =
+                    Math.Round(hydraulics.FloodingVelocityMs, 3),
+                ExceedsRecommendedFlood =
+                    hydraulics.ExceedsRecommendedFlood,
+
+                // Packed-bed correlations do not apply to this scrubber.
+                UsesPackingMetrics = false,
+                UsesFloodingMetrics = true,
+                HasMinimumLGRatioEstimate = false,
+                NTU = 0.0,
+                HTU = 0.0,
+                MinLGRatio = 0.0,
+
+                // No plate removal correlation is connected to the supplied
+                // particle-size distribution or gas-absorption inputs here.
+                RemovalEfficiency = 0.0,
+                ImpingementPlateRemovalEfficiencyPercent = 0.0,
+                ImpingementPlateCutDiameterMicron =
+                    vm.ImpingementPlateCutDiameterMicron,
+
+                ModelValidationStatus = "NotYetValidated",
+                GasAbsorptionNotModeled = true,
+
+                IsFeasible =
+                    !hydraulics.IsFlooding &&
+                    !hydraulics.ExcessiveBackup
+            };
+
+            result.Warnings.Add(
+                "PRELIMINARY PLATE MODEL: hydraulic correlations and default " +
+                "geometry parameters require validation against authoritative " +
+                "design data or vendor benchmarks.");
+
+            result.Warnings.Add(
+                "REMOVAL EFFICIENCY: not predicted by this hydraulic calculation. " +
+                "The configured target removal and cut diameter are not calculated " +
+                "performance results.");
+
+            result.Warnings.Add(
+                $"Hydraulic screening: hole velocity = " +
+                $"{hydraulics.HoleVelocityMs:F2} m/s; pressure drop per plate = " +
+                $"{hydraulics.PressureDropPerPlatePa:F1} Pa; total plate-bank " +
+                $"pressure drop = {totalPressureDropPa:F1} Pa.");
+
+            if (hydraulics.IsWeeping)
+            {
+                result.Warnings.Add(
+                    "WEEPING SCREEN: hole F-factor is below the configured " +
+                    "screening limit.");
+            }
+
+            if (hydraulics.ExceedsRecommendedFlood)
+            {
+                // Matches the default recommended flooding threshold used by
+                // the plate hydraulics screening model.
+                const double recommendedFloodPercent = 70.0;
+                result.Warnings.Add(
+                    $"Flooding screen: estimated flooding is " +
+                    $"{hydraulics.PercentFlood:F1}%, above the recommended " +
+                    $"{recommendedFloodPercent:F0}% limit.");
+            }
+
+            if (hydraulics.IsFlooding)
+            {
+                result.IsFeasible = false;
+                result.InfeasibilityReason =
+                    "Estimated plate flooding exceeds 100%.";
+
+                result.Warnings.Add(result.InfeasibilityReason);
+            }
+
+            if (hydraulics.ExcessiveBackup)
+            {
+                result.IsFeasible = false;
+
+                result.InfeasibilityReason =
+                    "Estimated liquid backup exceeds the configured " +
+                    "fraction of plate spacing.";
+
+                result.Warnings.Add(result.InfeasibilityReason);
+            }
+
+            return result;
         }
+
+
 
         // ════════════════════════════════════════════════════════════
         //  1. TOWER DIAMETER  (Souders-Brown / Fair's GPDC)
@@ -2082,110 +2270,6 @@ namespace WetScrubber.Services
                     liquidMolarDensityKmolM3 *
                     onda.WettedAreaM2M3;
 
-                double hCgCl =
-                    HenrysConstantUnits.MoleFractionRatioToCgOverCl(
-                        henrysLawConstant,
-                        liquidTempK,
-                        pressureKPa);
-
-                bool enhancementIsUpperBound = false;
-
-                var (
-                    reagentKind,
-                    reagentEqPerL) =
-                    GetReagentSpec(vm);
-
-                var enhancementInput =
-                        new ReactiveEnhancementInput
-                        {
-                            PollutantCode =
-                                pollutantCode,
-
-                            Reagent =
-                                reagentKind,
-
-                            ReagentConcentrationEqPerL =
-                                reagentEqPerL,
-
-                            LiquidFilmCoeffMS =
-                                onda.LiquidFilmCoeffMS,
-
-                            PollutantLiquidDiffusivityM2S =
-                                dL,
-
-                            HenrysDimensionless =
-                                hCgCl,
-
-                            GasPartialPressureKPa =
-                                pollutant.InletConcentration /
-                                1_000_000.0 *
-                                pressureKPa,
-
-                            TemperatureK =
-                                liquidTempK,
-
-                            StoichiometricRatio =
-                                GetReagentEquivalentsPerMolePollutant(
-                                    pollutantCode,
-                                    reagentKind)
-                        };
-
-                var enhancement =
-                    ReactiveEnhancementService.Compute(enhancementInput);
-
-                double designEnhancementFactor = enhancement.Factor;
-
-                if (enhancement.ModelAvailable &&
-                    enhancementInput.StoichiometricRatio > 0.0 &&
-                    reagentEqPerL > 0.0)
-                {
-                    double yInReactive =
-                        pollutant.InletConcentration / 1_000_000.0;
-
-                    double yOutReactive =
-                        (TryResolveTargetOutletPpm(pollutant)
-                         ?? pollutant.InletConcentration) / 1_000_000.0;
-
-                    var ends =
-                        ReagentSufficiencyService.Evaluate(
-                            new ReagentSufficiencyInput
-                            {
-                                Reagent = reagentKind,
-                                ReagentEquivalentsPerL = reagentEqPerL,
-                                StoichiometricRatio =
-                                    enhancementInput.StoichiometricRatio,
-                                InletGasMoleFraction = yInReactive,
-                                OutletGasMoleFraction = yOutReactive,
-                                GasKmolPerM3 =
-                                    vm.InletPressure /
-                                    (8314.462 * (vm.InletTemperature + 273.15)),
-                                LiquidToGasLPerM3 = vm.LiquidToGasRatio,
-                                EnhancementTemplate = enhancementInput
-                            });
-
-                    designEnhancementFactor =
-                        Math.Min(enhancement.Factor, ends.EnhancementDesign);
-                }
-
-                enhancementIsUpperBound = enhancement.IsUpperBound;
-
-                kLaX *=
-                    designEnhancementFactor;
-
-                if (!(kGaY > 0) || double.IsInfinity(kGaY))
-                    throw new PropertyOutOfBoundsException(
-                        "GasFilmVolumetricCoefficient",
-                        kGaY,
-                        0.0,
-                        double.MaxValue);
-
-                if (!(kLaX > 0) || double.IsInfinity(kLaX))
-                    throw new PropertyOutOfBoundsException(
-                        "LiquidFilmVolumetricCoefficient",
-                        kLaX,
-                        0.0,
-                        double.MaxValue);
-
                 double equilibriumSlopeForResistance =
                     IsPositiveFinite(effectiveEquilibriumSlope)
                         ? effectiveEquilibriumSlope
@@ -2198,6 +2282,12 @@ namespace WetScrubber.Services
                         +
                         equilibriumSlopeForResistance / kLaX
                     );
+
+                // The minimum-H slope is used as an optimistic upper-bound
+                // assumption when reactive equilibrium is treated as
+                // instantaneous and irreversible.
+                bool enhancementIsUpperBound =
+                    effectiveEquilibriumSlope == HenrysConstantUnits.MinimumH;
 
                 double soluteMoleFraction =
                     pollutant.InletConcentration /
@@ -2585,14 +2675,10 @@ namespace WetScrubber.Services
                     nameof(henrysLawConstant), henrysLawConstant,
                     "Henry's constant (H_yx) must be positive and finite.");
 
-            double y1 =
-                inletPpm / 1e6;
+            double y1 = inletPpm / 1e6;
+            double y2 = outletPpm / 1e6;
 
-            double y2 =
-                outletPpm / 1e6;
-
-            double x2 =
-                inletLiquidPpm / 1e6;
+            double x2 = inletLiquidPpm / 1e6;
 
             if (y2 >= y1)
                 return 0.0;
@@ -2633,14 +2719,14 @@ namespace WetScrubber.Services
                 gasTemperatureC +
                 273.15;
 
+            double gasKmolPerM3 =
+                gasPressurePa /
+                (RGas * tempK);
+
             double liquidKmolPerM3Gas =
                 (litersPerM3Gas / 1000.0) *
                 liquidDensityKgM3 /
                 solventMolecularWeightGMol;
-
-            double gasKmolPerM3 =
-                gasPressurePa /
-                (RGas * tempK);
 
             return
                 liquidKmolPerM3Gas /
