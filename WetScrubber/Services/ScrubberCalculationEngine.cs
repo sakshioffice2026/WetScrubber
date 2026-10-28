@@ -1389,6 +1389,76 @@ namespace WetScrubber.Services
             double totalPressureDropPa =
                 hydraulics.PressureDropPerPlatePa * stages;
 
+            // ── Gas absorption screening (Kremser, equilibrium stages) ──
+            // Fraction absorbed = (A^(N+1) - A) / (A^(N+1) - 1), A = (L/G)molar / H.
+            // N = plate count x assumed stage efficiency. The efficiency is an
+            // UNCONFIRMED screening value; replace with vendor/benchmark data.
+            const double plateStageEfficiency = 0.50;
+            double effectiveStages = stages * plateStageEfficiency;
+
+            double inletTotalAbs = 0.0;
+            double removedTotalAbs = 0.0;
+            bool absorptionComputed = false;
+            var absorptionNotes = new List<string>();
+
+            if (vm.Pollutants != null &&
+                IsPositiveFinite(vm.LiquidMolecularWeightGMol))
+            {
+                double molarLG =
+                    CalculateMolarLiquidToGasRatio(
+                        vm.LiquidToGasRatio,
+                        liquidDensity,
+                        vm.InletTemperature,
+                        vm.InletPressure,
+                        vm.LiquidMolecularWeightGMol);
+
+                foreach (var pol in vm.Pollutants)
+                {
+                    if (!(pol.InletConcentration > 0.0))
+                        continue;
+
+                    double henry =
+                        GetEffectiveHenrysLawConstant(
+                            pol,
+                            vm.LiquidTemperature,
+                            vm.InletPressure / 1000.0);
+
+                    if (!IsPositiveFinite(henry) || !IsPositiveFinite(molarLG))
+                        continue;
+
+                    double a = molarLG / henry;
+                    double fraction;
+
+                    if (Math.Abs(a - 1.0) < 1e-9)
+                    {
+                        fraction = effectiveStages / (effectiveStages + 1.0);
+                    }
+                    else
+                    {
+                        double aN1 = Math.Pow(a, effectiveStages + 1.0);
+                        fraction = (aN1 - a) / (aN1 - 1.0);
+                    }
+
+                    if (double.IsNaN(fraction) || double.IsInfinity(fraction))
+                        continue;
+
+                    fraction = Math.Max(0.0, Math.Min(1.0, fraction));
+
+                    inletTotalAbs += pol.InletConcentration;
+                    removedTotalAbs += pol.InletConcentration * fraction;
+                    absorptionComputed = true;
+
+                    absorptionNotes.Add(
+                        $"absorption factor A = {a:F2}, effective stages = " +
+                        $"{effectiveStages:F1}, removal = {fraction * 100.0:F1}%");
+                }
+            }
+
+            double absorptionRemovalPercent =
+                absorptionComputed && inletTotalAbs > 0.0
+                    ? Math.Round(100.0 * removedTotalAbs / inletTotalAbs, 2)
+                    : 0.0;
+
             var result = new CalculationResult
             {
                 ScrubberType = "Impingement Plate",
@@ -1411,7 +1481,7 @@ namespace WetScrubber.Services
                     totalPressureDropPa,
 
                 // Generic result fields consumed by the existing results view.
-                GasVelocity = Math.Round(hydraulics.NetVelocityMs, 3),
+                GasVelocity = Math.Round(hydraulics.HoleVelocityMs, 3),
                 PressureDrop = Math.Round(totalPressureDropPa, 2),
                 SystemPressureDrop = Math.Round(totalPressureDropPa, 2),
                 TowerHeight = Math.Round(stages * 0.45, 2),
@@ -1420,6 +1490,9 @@ namespace WetScrubber.Services
                 ActualLGRatio = gasFlowM3Hr > 0.0
                     ? liquidFlowM3Hr * 1000.0 / gasFlowM3Hr
                     : 0.0,
+
+                FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, totalPressureDropPa), 2),
+                PumpPowerKW = Math.Round(CalculatePumpPower(liquidFlowM3Hr, DesignBasisSettings.SprayTowerPumpHeadM, liquidDensity), 2),
 
                 PercentFlood = Math.Round(hydraulics.PercentFlood, 2),
                 FloodingGasVelocity =
@@ -1437,13 +1510,13 @@ namespace WetScrubber.Services
 
                 // No plate removal correlation is connected to the supplied
                 // particle-size distribution or gas-absorption inputs here.
-                RemovalEfficiency = 0.0,
-                ImpingementPlateRemovalEfficiencyPercent = 0.0,
+                RemovalEfficiency = absorptionRemovalPercent,
+                ImpingementPlateRemovalEfficiencyPercent = absorptionRemovalPercent,
                 ImpingementPlateCutDiameterMicron =
                     vm.ImpingementPlateCutDiameterMicron,
 
                 ModelValidationStatus = "NotYetValidated",
-                GasAbsorptionNotModeled = true,
+                GasAbsorptionNotModeled = !absorptionComputed,
 
                 IsFeasible =
                     !hydraulics.IsFlooding &&
@@ -1455,10 +1528,20 @@ namespace WetScrubber.Services
                 "geometry parameters require validation against authoritative " +
                 "design data or vendor benchmarks.");
 
-            result.Warnings.Add(
-                "REMOVAL EFFICIENCY: not predicted by this hydraulic calculation. " +
-                "The configured target removal and cut diameter are not calculated " +
-                "performance results.");
+            if (absorptionComputed)
+            {
+                result.Warnings.Add(
+                    "GAS ABSORPTION SCREEN: Kremser equilibrium-stage estimate with an " +
+                    $"assumed {plateStageEfficiency * 100.0:F0}% plate stage efficiency " +
+                    "(unconfirmed). Liquid-phase reaction, gas-film resistance and " +
+                    "entrainment are not modeled; " + string.Join("; ", absorptionNotes) + ".");
+            }
+            else
+            {
+                result.Warnings.Add(
+                    "REMOVAL EFFICIENCY: gas absorption could not be computed from the " +
+                    "supplied inputs, so removal is reported as 0 (not calculated).");
+            }
 
             result.Warnings.Add(
                 $"Hydraulic screening: hole velocity = " +

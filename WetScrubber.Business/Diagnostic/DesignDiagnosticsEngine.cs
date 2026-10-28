@@ -28,7 +28,7 @@ namespace WetScrubber.Business.Diagnostics
         // each needs a cited source and range before the validation gate.
         private const double WetCyclonePressureDropCeilingPa = 2500.0;
         private const double ImpingementPlatePressureDropCeilingPa = 3000.0;
-   
+
 
         // Same recommended flooding limit the Results view already displays.
         private const double ImpingementPlateRecommendedFloodPercent = 70.0;
@@ -88,7 +88,7 @@ namespace WetScrubber.Business.Diagnostics
 
         private static bool IsWetCyclone(DesignMetrics m) => TypeContains(m, "Cyclone");
         private static bool IsImpingementPlate(DesignMetrics m) => TypeContains(m, "Impingement");
-  
+
 
         private static bool IsPreviewType(DesignMetrics m) =>
             m.IsPreview || IsWetCyclone(m) || IsImpingementPlate(m);
@@ -290,12 +290,12 @@ namespace WetScrubber.Business.Diagnostics
                 IsWetCyclone(m) ? WetCyclonePressureDropCeilingPa
                 : IsImpingementPlate(m) ? ImpingementPlatePressureDropCeilingPa
                                : m.ScrubberType switch
-                {
-                    "Packed Tower" => PackedTowerPressureDropCeilingPa,
-                    "Venturi Scrubber" => VenturiPressureDropCeilingPa,
-                    "Spray Tower" => SprayTowerPressureDropCeilingPa,
-                    _ => null
-                };
+                               {
+                                   "Packed Tower" => PackedTowerPressureDropCeilingPa,
+                                   "Venturi Scrubber" => VenturiPressureDropCeilingPa,
+                                   "Spray Tower" => SprayTowerPressureDropCeilingPa,
+                                   _ => null
+                               };
 
             if (ceiling.HasValue && m.PressureDrop > ceiling.Value)
             {
@@ -304,7 +304,7 @@ namespace WetScrubber.Business.Diagnostics
                         ? "Consider a larger inlet area (lower inlet velocity) or several cyclones in parallel, then recalculate."
                     : IsImpingementPlate(m)
                         ? "Consider a larger column diameter, larger open area, or fewer plates, then recalculate."
-                  
+
                     : "Consider a larger tower diameter or lower-pressure-drop packing.";
 
                 findings.Add(new DesignFinding

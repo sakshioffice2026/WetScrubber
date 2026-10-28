@@ -221,7 +221,7 @@ namespace WetScrubber.Models
 
         [Range(0.1, 20)]
         [Display(Name = "Column Diameter (m)")]
-        public double ImpingementPlateColumnDiameterM { get; set; } = 1.0;
+        public double ImpingementPlateColumnDiameterM { get; set; } = 1.8;
 
         [Range(0, 10000000)]
         [Display(Name = "Gas Flow Rate (m³/hr)")]

@@ -1323,7 +1323,7 @@ namespace WetScrubber.Controllers
                 CycloneMaxPressureDropPa = d.CycloneMaxPressureDropPa ?? 0.0,
                 CycloneInjectionPressureKPa = d.CycloneInjectionPressureKPa ?? 200.0,
                 ImpingementPlateStages = d.ImpingementPlateStages ?? 3,
-                ImpingementPlateColumnDiameterM = d.ImpingementPlateColumnDiameterM ?? 1.0,
+                ImpingementPlateColumnDiameterM = d.ImpingementPlateColumnDiameterM ?? 1.8,
                 ImpingementPlateGasFlowM3Hr = d.ImpingementPlateGasFlowM3Hr ?? 0.0,
                 ImpingementPlateLiquidFlowM3Hr = d.ImpingementPlateLiquidFlowM3Hr ?? 0.0,
                 ImpingementPlateGasDensityKgM3 = d.ImpingementPlateGasDensityKgM3 ?? 1.2,
