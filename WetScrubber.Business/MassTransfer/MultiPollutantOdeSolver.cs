@@ -360,28 +360,53 @@ namespace WetScrubber.Business.MassTransfer
             if (input.Pollutants == null || input.Pollutants.Count == 0)
                 throw new ArgumentException("At least one pollutant is required.");
 
+            var seenCodes = new HashSet<string>(StringComparer.Ordinal);
+
             foreach (var p in input.Pollutants)
             {
+                if (p == null)
+                    throw new ArgumentException("Pollutant entry must not be null.");
                 if (string.IsNullOrWhiteSpace(p.Code))
                     throw new ArgumentException("Pollutant code is required.");
-                if (!(p.MolecularWeight > 0.0))
+                if (!seenCodes.Add(p.Code))
+                    throw new ArgumentException($"Duplicate pollutant code '{p.Code}'.");
+                if (!IsPositiveFinite(p.MolecularWeight))
                     throw new PropertyOutOfBoundsException("MolecularWeight:" + p.Code, p.MolecularWeight, 0.0, double.MaxValue);
-                if (!(p.HenrysLawConstant > 0.0))
+                if (!IsPositiveFinite(p.HenrysLawConstant))
                     throw new PropertyOutOfBoundsException("HenrysLawConstant:" + p.Code, p.HenrysLawConstant, 0.0, double.MaxValue);
-                if (p.InletPpm < 0.0)
+                if (!(p.InletPpm >= 0.0 && p.InletPpm <= 1e6))
                     throw new PropertyOutOfBoundsException("InletPpm:" + p.Code, p.InletPpm, 0.0, 1e6);
+                if (double.IsNaN(p.MolarVolumeCm3Mol) || double.IsInfinity(p.MolarVolumeCm3Mol) || p.MolarVolumeCm3Mol < 0.0)
+                    throw new PropertyOutOfBoundsException("MolarVolumeCm3Mol:" + p.Code, p.MolarVolumeCm3Mol, 0.0, double.MaxValue);
+                if (double.IsNaN(p.HeatOfAbsorptionKJKmol) || double.IsInfinity(p.HeatOfAbsorptionKJKmol))
+                    throw new PropertyOutOfBoundsException("HeatOfAbsorptionKJKmol:" + p.Code, p.HeatOfAbsorptionKJKmol, double.MinValue, double.MaxValue);
                 if (p.HenrysLawTemperatureCorrectionFn == null)
                     throw new ArgumentException($"HenrysLawTemperatureCorrectionFn missing for '{p.Code}'.");
             }
 
-            if (!(input.PressureKPa > 0.0))
+            if (!IsPositiveFinite(input.GasMassFlowKgS))
+                throw new PropertyOutOfBoundsException(nameof(input.GasMassFlowKgS), input.GasMassFlowKgS, 0.0, double.MaxValue);
+            if (!IsPositiveFinite(input.LiquidMassFlowKgS))
+                throw new PropertyOutOfBoundsException(nameof(input.LiquidMassFlowKgS), input.LiquidMassFlowKgS, 0.0, double.MaxValue);
+            if (!IsFiniteAboveAbsoluteZero(input.GasTemperatureC))
+                throw new PropertyOutOfBoundsException(nameof(input.GasTemperatureC), input.GasTemperatureC, -273.15, double.MaxValue);
+            if (!IsFiniteAboveAbsoluteZero(input.LiquidInletTempC))
+                throw new PropertyOutOfBoundsException(nameof(input.LiquidInletTempC), input.LiquidInletTempC, -273.15, double.MaxValue);
+
+            if (!IsPositiveFinite(input.PressureKPa))
                 throw new PropertyOutOfBoundsException(nameof(input.PressureKPa), input.PressureKPa, 0.0, double.MaxValue);
-            if (!(input.LiquidDensityKgM3 > 0.0) && input.LiquidDensityKgM3Fn == null)
+            if (!IsPositiveFinite(input.LiquidDensityKgM3) && input.LiquidDensityKgM3Fn == null)
                 throw new PropertyOutOfBoundsException(nameof(input.LiquidDensityKgM3), input.LiquidDensityKgM3, 0.0, double.MaxValue);
 
             if (input.DissociationByCode != null && input.DissociationByCode.Count > 0
                 && (double.IsNaN(input.LiquidPH) || input.LiquidPH < 0.0 || input.LiquidPH > 14.0))
                 throw new PropertyOutOfBoundsException(nameof(input.LiquidPH), input.LiquidPH, 0.0, 14.0);
         }
+
+        private static bool IsPositiveFinite(double value)
+            => value > 0.0 && !double.IsInfinity(value);
+
+        private static bool IsFiniteAboveAbsoluteZero(double value)
+            => !double.IsNaN(value) && !double.IsInfinity(value) && value > -273.15;
     }
 }

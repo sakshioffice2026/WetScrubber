@@ -21,6 +21,7 @@ namespace WetScrubber.Business.MassTransfer
 
     /// <summary>
     /// One layer in the tower, with state for all pollutants + liquid.
+    /// Layer 0 is the gas inlet (bottom); liquid enters at the last layer (top).
     /// </summary>
     public sealed class MultiPollutantSegment
     {
@@ -34,16 +35,24 @@ namespace WetScrubber.Business.MassTransfer
 
     /// <summary>
     /// Coupled multi-pollutant packed-tower solver (preliminary-design grade).
+    /// Counter-current: gas enters at layer 0, fresh liquid enters at the top layer.
+    /// Each layer is solved with an equilibrium-aware NTU relation that includes the
+    /// absorption factor (S = H*G/L) and the liquid loading from the layer above, so
+    /// removal can never exceed the equilibrium limit. The liquid solute profile and
+    /// liquid temperature profile are iterated to convergence.
     /// Gas properties are evaluated at the gas temperature, liquid properties and
     /// Henry equilibrium at the local liquid temperature. Incomplete inputs, invalid
     /// properties and non-convergence throw; there are no fallback removal fractions
-    /// and no swallowed exceptions. HenrysLawConstant is the dimensionless y*/x ratio.
+    /// and no swallowed exceptions. HenrysLawConstant is the dimensionless y*/x ratio
+    /// evaluated at the liquid inlet temperature; HenrysLawTemperatureCorrectionFn
+    /// must return the correction RELATIVE to the liquid inlet temperature.
     /// </summary>
     public static class MultiPollutantIterativeSolver
     {
         private const int DefaultSegments = 5;
-        private const int MaxIterations = 50;
+        private const int MaxIterations = 500;
         private const double TemperatureConvergenceTolC = 0.1;
+        private const double LoadingConvergenceTol = 1e-6;
         private const double RKPaKmol = 8.314462; // kPa*m3/(kmol*K)
 
         public sealed class PollutantInput
@@ -95,7 +104,8 @@ namespace WetScrubber.Business.MassTransfer
             /// <summary>Liquid mixture molar mass, kg/kmol. Default is pure water.</summary>
             public double LiquidMolarMassKgKmol { get; set; } = 18.015;
 
-            public double LiquidHeatCapacityKJKgK { get; set; } = 3.5;
+            /// <summary>Liquid heat capacity, kJ/(kg*K). Default is water.</summary>
+            public double LiquidHeatCapacityKJKgK { get; set; } = 4.18;
 
             /// <summary>Reagent class in the scrubbing liquid; None = physical absorption (E = 1).</summary>
             public ReagentKind Reagent { get; set; } = ReagentKind.None;
@@ -124,51 +134,73 @@ namespace WetScrubber.Business.MassTransfer
             double tGasK = input.GasTemperatureC + 273.15;
             double gasMolarMass = input.GasDensityKgM3 * RKPaKmol * tGasK / input.PressureKPa;
             double gasFlowKmolS = input.GasMassFlowKgS / gasMolarMass;
+            double liquidFlowKmolS = input.LiquidMassFlowKgS / input.LiquidMolarMassKgKmol;
+            double gasToLiquidMolarRatio = gasFlowKmolS / liquidFlowKmolS;
 
             var output = new SolverOutput { Segments = new List<MultiPollutantSegment>(numSegments) };
-            double[] liquidTempProfile = new double[numSegments + 1];
-            double[] liquidTempProfileOld = new double[numSegments + 1];
             double segmentHeightM = input.TowerHeightM / numSegments;
 
-            liquidTempProfile[0] = input.LiquidInletTempC;
+            // Boundary index k = 0..N. Gas enters at k = 0 and leaves at k = N.
+            // Liquid enters at k = N and leaves at k = 0.
+            double[] liquidTempProfile = new double[numSegments + 1];
+            double[] liquidTempProfileOld = new double[numSegments + 1];
+            for (int k = 0; k <= numSegments; k++)
+                liquidTempProfile[k] = input.LiquidInletTempC;
 
+            // Liquid solute mole fraction at each boundary; fresh liquid at the top.
+            var loading = new Dictionary<string, double[]>();
             var pollutantInlets = new Dictionary<string, double>();
             foreach (var poll in input.Pollutants)
+            {
                 pollutantInlets[poll.Code] = poll.InletPpm;
+                loading[poll.Code] = new double[numSegments + 1];
+            }
 
             double maxDeltaT = double.MaxValue;
+            double maxDeltaLoading = double.MaxValue;
 
             for (int iter = 0; iter < MaxIterations; iter++)
             {
                 Array.Copy(liquidTempProfile, liquidTempProfileOld, liquidTempProfile.Length);
                 output.Segments.Clear();
 
-                var pollutantOutlets = new Dictionary<string, double>(pollutantInlets);
+                var gasPpm = new Dictionary<string, double>(pollutantInlets);
 
+                // ── Gas sweep, bottom to top, using previous-iteration liquid state ──
                 for (int seg = 0; seg < numSegments; seg++)
                 {
-                    double liquidTempSegmentC = (liquidTempProfile[seg] + liquidTempProfile[seg + 1]) / 2.0;
+                    double liquidTempSegmentC =
+                        (liquidTempProfileOld[seg] + liquidTempProfileOld[seg + 1]) / 2.0;
                     double segmentHeatKW = 0.0;
                     var segment = new MultiPollutantSegment
                     {
                         LayerIndex = seg,
-                        LiquidInletTempC = liquidTempProfile[seg],
                         GasTemperatureC = input.GasTemperatureC,
                         Pollutants = new Dictionary<string, PollutantSegmentState>()
                     };
 
                     foreach (var poll in input.Pollutants)
                     {
-                        double inletPpm = pollutantOutlets[poll.Code];
+                        double inletPpm = gasPpm[poll.Code];
+                        double yIn = inletPpm / 1e6;
+                        double xTop = loading[poll.Code][seg + 1];
+
                         double hCorr = poll.HenrysLawTemperatureCorrectionFn(liquidTempSegmentC);
                         double hLocal = poll.HenrysLawConstant * hCorr;
+                        if (!(hLocal > 0.0) || double.IsInfinity(hLocal))
+                            throw new PropertyOutOfBoundsException(
+                                "HenrysLawLocal:" + poll.Code, hLocal, 0.0, double.MaxValue);
 
-                        double removalFrac = ComputeSegmentRemovalFraction(
+                        double ntuSegment = ComputeSegmentNtu(
                             poll, input, hLocal, liquidTempSegmentC, segmentHeightM, gasMolarMass);
-                        double outletPpm = inletPpm * (1.0 - removalFrac);
 
-                        double pollutantFlowKmolS = (inletPpm / 1e6) * gasFlowKmolS;
-                        double absorbedKmolS = removalFrac * pollutantFlowKmolS;
+                        double yOut = CountercurrentOutletY(
+                            yIn, xTop, hLocal, gasToLiquidMolarRatio, ntuSegment);
+
+                        double outletPpm = yOut * 1e6;
+                        double removalFrac = yIn > 0.0 ? (yIn - yOut) / yIn : 0.0;
+
+                        double absorbedKmolS = gasFlowKmolS * (yIn - yOut);
                         double absorbedKgS = absorbedKmolS * poll.MolecularWeight;
 
                         double heatKW = absorbedKmolS * Math.Abs(poll.HeatOfAbsorptionKJKmol);
@@ -184,26 +216,57 @@ namespace WetScrubber.Business.MassTransfer
                             HeatReleasedKW = heatKW
                         };
 
-                        pollutantOutlets[poll.Code] = outletPpm;
+                        gasPpm[poll.Code] = outletPpm;
                     }
 
-                    double dT = segmentHeatKW / (input.LiquidMassFlowKgS * input.LiquidHeatCapacityKJKgK);
-                    liquidTempProfile[seg + 1] = liquidTempProfile[seg] + dT;
-
-                    segment.LiquidOutletTempC = liquidTempProfile[seg + 1];
                     segment.TotalHeatAbsorbedKW = segmentHeatKW;
-
                     output.Segments.Add(segment);
                 }
 
-                output.LiquidOutletTemperatureC = liquidTempProfile[numSegments];
+                // ── Liquid sweep, top to bottom: temperature and solute loading ──
+                liquidTempProfile[numSegments] = input.LiquidInletTempC;
+                for (int seg = numSegments - 1; seg >= 0; seg--)
+                {
+                    double dT = output.Segments[seg].TotalHeatAbsorbedKW /
+                                (input.LiquidMassFlowKgS * input.LiquidHeatCapacityKJKgK);
+                    liquidTempProfile[seg] = liquidTempProfile[seg + 1] + dT;
+
+                    output.Segments[seg].LiquidInletTempC = liquidTempProfile[seg + 1];
+                    output.Segments[seg].LiquidOutletTempC = liquidTempProfile[seg];
+                }
+
+                maxDeltaLoading = 0.0;
+                foreach (var poll in input.Pollutants)
+                {
+                    double[] x = loading[poll.Code];
+                    double scale = Math.Max(1.0, pollutantInlets[poll.Code]);
+
+                    double xAbove = 0.0; // fresh liquid at the top boundary
+                    for (int seg = numSegments - 1; seg >= 0; seg--)
+                    {
+                        var state = output.Segments[seg].Pollutants[poll.Code];
+                        double yIn = state.GasInletPpm / 1e6;
+                        double yOut = state.GasOutletPpm / 1e6;
+
+                        double xNew = xAbove + gasToLiquidMolarRatio * (yIn - yOut);
+
+                        double delta = Math.Abs(xNew - x[seg]) * 1e6 / scale;
+                        if (delta > maxDeltaLoading) maxDeltaLoading = delta;
+
+                        x[seg] = xNew;
+                        xAbove = xNew;
+                    }
+                    x[numSegments] = 0.0;
+                }
+
+                output.LiquidOutletTemperatureC = liquidTempProfile[0];
                 output.TotalHeatAbsorbedKW = output.Segments.Sum(s => s.TotalHeatAbsorbedKW);
 
                 output.OverallRemovalEfficiency.Clear();
                 foreach (var poll in input.Pollutants)
                 {
                     double inlet = pollutantInlets[poll.Code];
-                    double outlet = pollutantOutlets[poll.Code];
+                    double outlet = gasPpm[poll.Code];
                     output.OverallRemovalEfficiency[poll.Code] =
                         inlet > 0 ? (inlet - outlet) / inlet * 100.0 : 0.0;
                 }
@@ -213,17 +276,49 @@ namespace WetScrubber.Business.MassTransfer
                     .Max();
 
                 output.IterationCount = iter + 1;
-                if (maxDeltaT < TemperatureConvergenceTolC)
+                if (maxDeltaT < TemperatureConvergenceTolC &&
+                    maxDeltaLoading < LoadingConvergenceTol)
                 {
                     output.Converged = true;
                     return output;
                 }
             }
 
-            throw new SolverNonConvergenceException(MaxIterations, maxDeltaT / TemperatureConvergenceTolC);
+            throw new SolverNonConvergenceException(
+                MaxIterations,
+                Math.Max(
+                    maxDeltaT / TemperatureConvergenceTolC,
+                    maxDeltaLoading / LoadingConvergenceTol));
         }
 
-        private static double ComputeSegmentRemovalFraction(
+        /// <summary>
+        /// Counter-current layer with constant H, G and L:
+        /// (y_out - H*x_in) = (1 - S)(y_in - H*x_in) / (exp(NTU(1 - S)) - S), S = H*G/L.
+        /// Valid for S &lt; 1, S = 1 (limit) and S &gt; 1; removal is bounded by equilibrium
+        /// with the entering liquid (y_out -> H*x_in as NTU -> infinity).
+        /// </summary>
+        private static double CountercurrentOutletY(
+            double yIn, double xIn, double hYx, double gasToLiquidMolarRatio, double ntu)
+        {
+            double s = hYx * gasToLiquidMolarRatio;
+            double yEq = hYx * xIn;
+            double driving = yIn - yEq;
+
+            double factor;
+            if (Math.Abs(1.0 - s) < 1e-6)
+            {
+                factor = 1.0 / (1.0 + ntu);
+            }
+            else
+            {
+                double e = Math.Exp(ntu * (1.0 - s));
+                factor = (1.0 - s) / (e - s);
+            }
+
+            return yEq + factor * driving;
+        }
+
+        private static double ComputeSegmentNtu(
             PollutantInput poll, SolverInput input, double hYx,
             double liquidTempC, double segmentHeightM, double gasMolarMassKgKmol)
         {
@@ -292,9 +387,7 @@ namespace WetScrubber.Business.MassTransfer
             double overallKGa = 1.0 / (1.0 / kGaY + hYx / kLaX);
 
             double gasMolarVelocityKmolM2S = input.GasMassFlowKgS / input.TowerAreaM2 / gasMolarMassKgKmol;
-            double ntuSegment = overallKGa * segmentHeightM / gasMolarVelocityKmolM2S;
-
-            return 1.0 - Math.Exp(-ntuSegment);
+            return overallKGa * segmentHeightM / gasMolarVelocityKmolM2S;
         }
 
         private static void Validate(SolverInput input)
@@ -311,6 +404,11 @@ namespace WetScrubber.Business.MassTransfer
             RequirePositive(nameof(input.PressureKPa), input.PressureKPa);
             RequirePositive(nameof(input.LiquidMolarMassKgKmol), input.LiquidMolarMassKgKmol);
             RequirePositive(nameof(input.LiquidHeatCapacityKJKgK), input.LiquidHeatCapacityKJKgK);
+
+            if (double.IsNaN(input.GasTemperatureC) || double.IsInfinity(input.GasTemperatureC))
+                throw new PropertyOutOfBoundsException(nameof(input.GasTemperatureC), input.GasTemperatureC, -273.15, double.MaxValue);
+            if (double.IsNaN(input.LiquidInletTempC) || double.IsInfinity(input.LiquidInletTempC))
+                throw new PropertyOutOfBoundsException(nameof(input.LiquidInletTempC), input.LiquidInletTempC, -273.15, double.MaxValue);
 
             OndaMassTransferCorrelation.RequireComplete(new PackingMassTransferInput
             {
@@ -329,8 +427,10 @@ namespace WetScrubber.Business.MassTransfer
                     throw new ArgumentException("Pollutant code is required.");
                 RequirePositive("MolecularWeight:" + p.Code, p.MolecularWeight);
                 RequirePositive("HenrysLawConstant:" + p.Code, p.HenrysLawConstant);
-                if (p.InletPpm < 0.0)
+                if (!(p.InletPpm >= 0.0) || double.IsInfinity(p.InletPpm))
                     throw new PropertyOutOfBoundsException("InletPpm:" + p.Code, p.InletPpm, 0.0, 1e6);
+                if (double.IsNaN(p.HeatOfAbsorptionKJKmol) || double.IsInfinity(p.HeatOfAbsorptionKJKmol))
+                    throw new PropertyOutOfBoundsException("HeatOfAbsorptionKJKmol:" + p.Code, p.HeatOfAbsorptionKJKmol, 0.0, double.MaxValue);
                 if (p.HenrysLawTemperatureCorrectionFn == null)
                     throw new ArgumentException($"HenrysLawTemperatureCorrectionFn missing for '{p.Code}'.");
             }

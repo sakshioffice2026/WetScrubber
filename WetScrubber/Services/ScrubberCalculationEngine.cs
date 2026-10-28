@@ -10,7 +10,7 @@ namespace WetScrubber.Services
     /// Core engineering calculation engine for wet scrubber design.
     /// Methods: Tower diameter (Souders-Brown), NTU/HTU (Colburn),
     /// Pressure drop (Ergun dry bed + indicative wet-bed factor; not
-    /// Billet-Schultes), Venturi (Calvert),
+    /// Billet-Schultes), Venturi particle-collection screening model,
     /// Spray Tower, Reactive scrubbing (Hatta), Power sizing.
     /// </summary>
     public class ScrubberCalculationEngine
@@ -603,23 +603,145 @@ namespace WetScrubber.Services
                     vm.InletPressure,
                     vm.LiquidMolecularWeightGMol);
 
-            // ── Phase 4a: Multi-pollutant iterative solver ─────────
+            // ── Phase 4: Governing-pollutant sizing and independent target checks ──
             if (vm.Pollutants.Count > 1)
             {
+                var requirements = new List<(string PollutantCode, double InletPpm, double TargetOutletPpm, double RequiredHeightM, double RequiredNtu, double AchievedOutletPpm)>();
+                foreach (var multiPollutant in vm.Pollutants)
+                {
+                    string? code = _componentLookup?.GetByPollutantId(multiPollutant.PollutantType)?.Code;
+                    if (string.IsNullOrWhiteSpace(code))
+                        throw new InvalidOperationException($"No component code found for pollutant type {multiPollutant.PollutantType}.");
+                    double? target = TryResolveTargetOutletPpm(multiPollutant);
+                    if (!ratingMode && !target.HasValue)
+                    {
+                        result.IsFeasible = false;
+                        result.Warnings.Add($"MULTI-POLLUTANT TARGET MISSING for '{code}': provide a target outlet concentration or target removal to include it in governing-pollutant sizing.");
+                        continue;
+                    }
+
+                    double pollutantActualGasDensity = GetActualGasDensity(
+                        vm.GasDensity, vm.InletTemperature + 273.15, vm.InletPressure,
+                        multiPollutant.PollutantType, multiPollutant.InletConcentration);
+                    double pollutantHenry = GetEffectiveHenrysLawConstant(
+                        multiPollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
+                    var pollutantReactiveBasis = GetReactiveEquilibriumBasis(multiPollutant, vm);
+                    double pollutantEquilibrium = pollutantReactiveBasis.UseReactiveEquilibrium
+                        ? HenrysConstantUnits.MinimumH : pollutantHenry;
+                    double pollutantGasMassVelocity = gasFlowM3S * pollutantActualGasDensity / crossSection;
+                    var pollutantRate = ComputeOndaFilmCoefficients(
+                        multiPollutant, vm, pollutantGasMassVelocity, liquidMassVelocity,
+                        pollutantHenry, vm.PackingCode, pollutantActualGasDensity, pollutantEquilibrium);
+                    double pollutantAbsorptionFactor = molarLG / pollutantEquilibrium;
+                    double requiredHeight = result.PackingHeight;
+                    double requiredNtu = result.NTU;
+                    double pollutantHtu = pollutantRate.GasMolarVelocityKmolM2S /
+                                          pollutantRate.OverallKGaKmolM3S;
+                    double designTarget = target ?? multiPollutant.InletConcentration *
+                        (1.0 - PackedTowerEfficiencyCalculator.AtHeight(result.PackingHeight, pollutantHtu, pollutantAbsorptionFactor) / 100.0);
+                    if (!ratingMode && target.HasValue && target.Value >= multiPollutant.InletConcentration)
+                    {
+                        // A target at or above inlet concentration requires no removal.
+                        requiredHeight = 0.0;
+                        requiredNtu = 0.0;
+                    }
+                    else 
+                    if (!ratingMode && target.HasValue)
+                    {
+                        var pollutantNtu = CalculateNtuHtuRateBased(
+                            inletConcentrationPpm: multiPollutant.InletConcentration,
+                            outletConcentrationPpm: target.Value,
+                            henrysLawConstant: pollutantEquilibrium,
+                            liquidToGasRatioMolar: molarLG,
+                            gasMolarVelocityKmolM2S: pollutantRate.GasMolarVelocityKmolM2S,
+                            overallKGaKmolM3S: pollutantRate.OverallKGaKmolM3S,
+                            inletLiquidMoleFraction: vm.InletLiquidPollutantMoleFraction);
+                        if (pollutantNtu.IsFeasible)
+                        {
+                            requiredHeight = Math.Ceiling(pollutantNtu.PackingHeight * 100.0) / 100.0;
+                            requiredNtu = pollutantNtu.NTU;
+                            pollutantHtu = pollutantNtu.HTU;
+                            pollutantAbsorptionFactor = pollutantNtu.AbsorptionFactor;
+                        }
+                        else
+                        {
+                            requiredHeight = double.PositiveInfinity;
+                            result.IsFeasible = false;
+                            result.Warnings.Add($"MULTI-POLLUTANT SIZING FAILED for '{code}': {pollutantNtu.InfeasibilityReason}");
+                        }
+                    }
+                    double achievedOutlet = multiPollutant.InletConcentration *
+                        (1.0 - PackedTowerEfficiencyCalculator.AtHeight(result.PackingHeight, pollutantHtu, pollutantAbsorptionFactor) / 100.0);
+                    requirements.Add((
+                        code,
+                        Math.Max(0.0, multiPollutant.InletConcentration),
+                        target ?? designTarget,
+                        requiredHeight,
+                        requiredNtu,
+                        Math.Max(0.0, achievedOutlet)));
+                }
+
+                if (requirements.Count > 0 && !ratingMode)
+                {
+                    var governing = requirements.OrderByDescending(x => x.RequiredHeightM).First();
+                    if (!double.IsFinite(governing.RequiredHeightM) || governing.RequiredHeightM > HardMaxPackingHeightM)
+                    {
+                        result.IsFeasible = false;
+                        result.InfeasibilityReason = $"Governing pollutant '{governing.PollutantCode}' requires {governing.RequiredHeightM:G4} m packing, exceeding the {HardMaxPackingHeightM:G4} m design limit.";
+                        result.Warnings.Add(result.InfeasibilityReason);
+                    }
+                    else
+                    {
+                        result.PackingHeight = Math.Max(result.PackingHeight, governing.RequiredHeightM);
+                        result.TowerHeight = Math.Round(result.PackingHeight * (1.0 + DesignBasisSettings.FreeboardFactor) + DesignBasisSettings.SumpAndTopAllowanceM, 2);
+                        result.NTU = Math.Round(requirements.Max(x => x.RequiredNtu), 2);
+                    }
+                }
+
+                foreach (var requirement in requirements)
+                {
+                    var sourcePollutant = vm.Pollutants.First(x =>
+                        string.Equals(_componentLookup?.GetByPollutantId(x.PollutantType)?.Code, requirement.PollutantCode, StringComparison.OrdinalIgnoreCase));
+                    double? target = TryResolveTargetOutletPpm(sourcePollutant);
+                    double h = requirements.First(x => x.PollutantCode == requirement.PollutantCode).RequiredHeightM;
+                    if (target.HasValue && result.PackingHeight + 1e-9 < h)
+                    {
+                        result.IsFeasible = false;
+                        result.Warnings.Add($"POLLUTANT TARGET NOT MET for '{requirement.PollutantCode}': required packing height {h:G4} m exceeds selected height {result.PackingHeight:G4} m.");
+                    }
+                    else if (ratingMode && target.HasValue && requirement.AchievedOutletPpm > target.Value * 1.005 + 1e-12)
+                    {
+                        result.IsFeasible = false;
+                        result.Warnings.Add($"POLLUTANT TARGET NOT MET for '{requirement.PollutantCode}': predicted outlet {requirement.AchievedOutletPpm:G4} ppm exceeds target {target.Value:G4} ppm at the fixed packing height.");
+                    }
+                }
+
+                result.PackingHeight = Math.Round(result.PackingHeight, 2);
+                result.TowerHeight = Math.Round(result.PackingHeight * (1.0 + DesignBasisSettings.FreeboardFactor) + DesignBasisSettings.SumpAndTopAllowanceM, 2);
+                result.PumpPowerKW = Math.Round(CalculatePumpPower(liquidFlowM3Hr, result.TowerHeight + DesignBasisSettings.PackedPumpHeadOffsetM, vm.LiquidDensity), 2);
+                result.PressureDrop = Math.Round(floodResult.DryBedPressureDropPaM * CalculateIndicativeWetFactor(
+                    liquidLoadingM3M2Hr: liquidFlowM3Hr / crossSection,
+                    liquidDensityKgM3: vm.LiquidDensity,
+                    packingSurfaceAreaM2M3: pdSurfaceArea,
+                    voidFraction: pdVoidFraction,
+                    liquidViscosityPas: vm.LiquidViscosity / 1000.0) * result.PackingHeight, 2);
+                result.SystemPressureDrop = result.PressureDrop + FanSizingSettings.AuxiliaryPressureDropPa;
+                result.FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, result.SystemPressureDrop), 2);
+
                 var odeResult =
                     TryComputeMultiPollutantOdeSolution(
                         vm,
                         henrysTemp,
-                        result.TowerHeight,
+                        result.PackingHeight,
                         crossSection);
 
                 if (odeResult?.Converged == true)
                 {
                     double totalRemovalOde =
-                        odeResult
-                            .OverallRemovalEfficiency
-                            .Values
-                            .Average();
+                        ComputeMoleWeightedRemoval(
+                            vm,
+                            odeResult
+                                .OverallRemovalEfficiency);
 
                     result.RemovalEfficiency =
                         Math.Round(
@@ -643,16 +765,16 @@ namespace WetScrubber.Services
                     TryComputeMultiPollutantIterativeSolution(
                         vm,
                         henrysTemp,
-                        result.TowerHeight,
+                        result.PackingHeight,
                         crossSection);
 
                 if (multiResult?.Converged == true)
                 {
                     double totalRemoval =
-                        multiResult
-                            .OverallRemovalEfficiency
-                            .Values
-                            .Average();
+                        ComputeMoleWeightedRemoval(
+                            vm,
+                            multiResult
+                                .OverallRemovalEfficiency);
 
                     result.RemovalEfficiency =
                         Math.Round(
@@ -749,11 +871,17 @@ namespace WetScrubber.Services
                     venturi.ThroatVelocity,
                     1);
 
+            result.AuxiliaryPressureDropPa =
+                FanSizingSettings.AuxiliaryPressureDropPa;
+
+            result.SystemPressureDrop =
+                result.PressureDrop + result.AuxiliaryPressureDropPa;
+
             result.FanPowerKW =
                 Math.Round(
                     CalculateFanPower(
                         gasFlowM3S,
-                        result.PressureDrop),
+                        result.SystemPressureDrop),
                     2);
 
             result.PumpPowerKW =
@@ -778,6 +906,26 @@ namespace WetScrubber.Services
 
             result.ScrubberType =
                 "Venturi Scrubber";
+            result.UsesPackingMetrics = false;
+            result.UsesFloodingMetrics = false;
+            result.HasMinimumLGRatioEstimate = false;
+
+            result.Warnings.Add(
+                "SCREENING MODEL ONLY: collection efficiency uses a single-droplet impaction estimate " +
+                "with an assumed 500 micron droplet diameter and a simplified encounter model. This is not " +
+                "a validated Johnstone/Calvert correlation; verify against published/vendor data before design.");
+
+            result.Warnings.Add(
+                "VENTURI SCOPE: this particle-collection estimate does not predict absorption/removal of " +
+                "gaseous pollutants. Pressure drop is a momentum-based estimate, not a validated Calvert form.");
+
+            if (venturi.ThroatVelocity < 60.0 || venturi.ThroatVelocity > 120.0)
+            {
+                result.IsFeasible = false;
+                result.InfeasibilityReason =
+                    "Venturi throat velocity is outside the indicative 60-120 m/s range.";
+                result.Warnings.Add(result.InfeasibilityReason);
+            }
 
             result.NTU = 0;
             result.HTU = 0;
@@ -802,102 +950,171 @@ namespace WetScrubber.Services
             RequirePositiveInput(nameof(vm.LiquidToGasRatio), vm.LiquidToGasRatio);
             RequirePositiveInput(nameof(vm.GasDensity), vm.GasDensity);
             RequirePositiveInput(nameof(vm.LiquidDensity), vm.LiquidDensity);
+            RequirePositiveInput(nameof(vm.GasViscosity), vm.GasViscosity);
 
-            var result =
-                new CalculationResult();
-
+            var result = new CalculationResult();
+            double gasFlowM3S = vm.ActualFlowRate / 3600.0;
             double designVelocity = DesignBasisSettings.SprayTowerDesignVelocityMs;
+            RequirePositiveInput(nameof(designVelocity), designVelocity);
+            // Size to the design velocity, then calculate performance using the
+            // actual area of the rounded-up installed vessel.
+            double sizingAreaM2 = gasFlowM3S / designVelocity;
+            double sizingDiameterM = Math.Sqrt(4.0 * sizingAreaM2 / Math.PI);
+            double installedDiameterM = RoundUpDiameter(sizingDiameterM);
+            double areaM2 = Math.PI * installedDiameterM * installedDiameterM / 4.0;
+            double actualGasVelocity = gasFlowM3S / areaM2;
+            double liquidFlowM3S = vm.LiquidToGasRatio * gasFlowM3S / 1000.0;
+            double liquidFlux = liquidFlowM3S / areaM2;
+            double legacyHeight = gasFlowM3S * DesignBasisSettings.SprayTowerHeightPerM3S +
+                                  DesignBasisSettings.SprayTowerBaseHeightM;
+            const double dropletDiameterM = 0.001;
+            const double relativeVelocityMS = 2.0;
+            const double towerHeightCapM = 15.0;
+            const double lossCoefficient = 1.5;
 
-            double gasFlowM3S =
-                vm.ActualFlowRate / 3600.0;
+            var pollutantInputs = vm.Pollutants;
+            var densityBasisPollutant = pollutantInputs.FirstOrDefault();
+            double actualGasDensity = GetActualGasDensity(
+                vm.GasDensity,
+                vm.InletTemperature + 273.15,
+                vm.InletPressure,
+                densityBasisPollutant?.PollutantType,
+                densityBasisPollutant?.InletConcentration ?? 0.0);
+            var transferResults = new List<(PollutantInputViewModel Pollutant, SprayTowerTransferResult Transfer, double? TargetPpm)>();
+            foreach (var pollutant in pollutantInputs)
+            {
+                string? code = _componentLookup?.GetByPollutantId(pollutant.PollutantType)?.Code;
+                if (string.IsNullOrWhiteSpace(code))
+                    throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
-            double crossSection =
-                gasFlowM3S / designVelocity;
+                double diffusivity = FullerGasDiffusivity.Calculate(
+                    codeA: code,
+                    molecularWeightA: pollutant.MolecularWeight,
+                    codeB: vm.CarrierGasCode,
+                    molecularWeightB: vm.CarrierGasMolecularWeightGMol,
+                    temperatureK: vm.InletTemperature + 273.15,
+                    pressureKPa: vm.InletPressure / 1000.0);
+                double effectiveHenry = GetEffectiveHenrysLawConstant(
+                    pollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
+                double molarLG = CalculateMolarLiquidToGasRatio(
+                    vm.LiquidToGasRatio, vm.LiquidDensity, vm.InletTemperature,
+                    vm.InletPressure, vm.LiquidMolecularWeightGMol);
+                double absorptionFactor = molarLG / effectiveHenry;
+                if (!IsPositiveFinite(absorptionFactor))
+                    throw new InvalidOperationException($"Invalid spray-tower absorption factor for '{code}'.");
 
-            double diameter =
-                Math.Sqrt(
-                    4.0 *
-                    crossSection /
-                    Math.PI);
+                double? targetPpm = TryResolveTargetOutletPpm(pollutant);
+                double targetFraction = targetPpm.HasValue && pollutant.InletConcentration > 0.0
+                    ? targetPpm.Value / pollutant.InletConcentration
+                    : 0.05;
+                targetFraction = Math.Clamp(targetFraction, 1e-6, 0.999999);
 
-            var pollutant =
-                vm.Pollutants.FirstOrDefault()
-                ?? new PollutantInputViewModel();
+                var transfer = SprayTowerDropletTransfer.Calculate(
+                    dropletDiameterM: dropletDiameterM,
+                    dropletVsGasRelativeVelocityMs: relativeVelocityMS,
+                    gasVelocityMs: actualGasVelocity,
+                    liquidVolumetricFluxM3M2S: liquidFlux,
+                    gasDensityKgM3: actualGasDensity,
+                    liquidDensityKgM3: vm.LiquidDensity,
+                    gasViscosityPas: vm.GasViscosity,
+                    gasDiffusivityM2S: diffusivity,
+                    absorptionFactor: absorptionFactor,
+                    targetOutletFraction: targetFraction,
+                    towerHeightCapM: towerHeightCapM);
+                transferResults.Add((pollutant, transfer, targetPpm));
+            }
 
-            result.TowerDiameter =
-                Math.Round(
-                    RoundUpDiameter(diameter),
-                    2);
+            double achievedMaxNtu = 0.0;
+            double governingHeight = transferResults.Count > 0
+                ? transferResults.Max(x => x.Transfer.RequiredHeightM)
+                : legacyHeight;
+            if (!double.IsFinite(governingHeight) || governingHeight <= 0.0)
+                governingHeight = towerHeightCapM;
+            double installedHeight = Math.Min(towerHeightCapM, Math.Max(legacyHeight, governingHeight));
 
-            result.TowerHeight =
-                Math.Round(
-                    gasFlowM3S * DesignBasisSettings.SprayTowerHeightPerM3S + DesignBasisSettings.SprayTowerBaseHeightM,
-                    2);
+            if (transferResults.Count > 0)
+            {
+                double inletTotal = transferResults.Sum(x => Math.Max(0.0, x.Pollutant.InletConcentration));
+                double removedTotal = 0.0;
+                foreach (var item in transferResults)
+                {
+                    string code = _componentLookup!.GetByPollutantId(item.Pollutant.PollutantType)!.Code!;
+                    double diffusivity = FullerGasDiffusivity.Calculate(
+                        codeA: code,
+                        molecularWeightA: item.Pollutant.MolecularWeight,
+                        codeB: vm.CarrierGasCode,
+                        molecularWeightB: vm.CarrierGasMolecularWeightGMol,
+                        temperatureK: vm.InletTemperature + 273.15,
+                        pressureKPa: vm.InletPressure / 1000.0);
+                    double effectiveHenry = GetEffectiveHenrysLawConstant(item.Pollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
+                    double molarLG = CalculateMolarLiquidToGasRatio(vm.LiquidToGasRatio, vm.LiquidDensity, vm.InletTemperature, vm.InletPressure, vm.LiquidMolecularWeightGMol);
+                    double absorptionFactor = molarLG / effectiveHenry;
+                    var achieved = SprayTowerDropletTransfer.Calculate(
+                        dropletDiameterM, relativeVelocityMS, actualGasVelocity, liquidFlux,
+                        actualGasDensity, vm.LiquidDensity, vm.GasViscosity, diffusivity,
+                        absorptionFactor, 1e-6, installedHeight,
+                        evaluateAtTowerHeight: true);
+                    achievedMaxNtu = Math.Max(achievedMaxNtu, achieved.NTU);
+                    double outletPpm = item.Pollutant.InletConcentration * achieved.OutletFraction;
+                    removedTotal += Math.Max(0.0, item.Pollutant.InletConcentration) *
+                                    (1.0 - achieved.OutletFraction);
+                    if (item.TargetPpm.HasValue && outletPpm > item.TargetPpm.Value * 1.005)
+                    {
+                        result.IsFeasible = false;
+                        result.Warnings.Add($"SPRAY TOWER TARGET NOT MET for '{code}': predicted outlet {outletPpm:G4} ppm exceeds target {item.TargetPpm.Value:G4} ppm.");
+                    }
+                    if (!item.Transfer.IsFeasible)
+                    {
+                        result.IsFeasible = false;
+                        result.Warnings.Add($"SPRAY TOWER HEIGHT LIMIT for '{code}': {item.Transfer.InfeasibilityReason}");
+                    }
+                }
+                if (inletTotal > 0.0)
+                    result.RemovalEfficiency = Math.Round(100.0 * removedTotal / inletTotal, 2);
+            }
+            else
+            {
+                result.RemovalEfficiency = Math.Round((1.0 - Math.Exp(-DesignBasisSettings.SprayTowerRemovalCoefficient * vm.LiquidToGasRatio)) * 100.0, 2);
+                result.Warnings.Add("No pollutant input was supplied; removal is only the legacy empirical estimate.");
+            }
 
-            result.PackingHeight = 0;
-
-            result.GasVelocity =
-                Math.Round(
-                    designVelocity,
-                    2);
-
-            result.RemovalEfficiency =
-                Math.Round(
-                    (1 -
-                     Math.Exp(
-                         -DesignBasisSettings.SprayTowerRemovalCoefficient *
-                         vm.LiquidToGasRatio)) *
-                    100,
-                    2);
-
-            const double SprayTowerLossCoefficient = 1.5;
-
-            double dynamicPressurePa =
-                vm.GasDensity *
-                Math.Pow(
-                    designVelocity,
-                    2) /
-                2.0;
-
-            result.PressureDrop =
-                Math.Round(
-                    dynamicPressurePa *
-                    SprayTowerLossCoefficient,
-                    0);
-
-            result.FanPowerKW =
-                Math.Round(
-                    CalculateFanPower(
-                        gasFlowM3S,
-                        result.PressureDrop + DesignBasisSettings.SprayTowerAuxiliaryPressureDropPa),
-                    2);
-
-            result.PumpPowerKW =
-                Math.Round(
-                    CalculatePumpPower(
-                        vm.ActualFlowRate *
-                        vm.LiquidToGasRatio /
-                        1000.0,
-                        DesignBasisSettings.SprayTowerPumpHeadM,
-                        vm.LiquidDensity),
-                    2);
-
-            result.LiquidFlowRateM3Hr =
-                Math.Round(
-                    vm.ActualFlowRate *
-                    vm.LiquidToGasRatio /
-                    1000.0,
-                    2);
-
-            result.ActualLGRatio =
-                vm.LiquidToGasRatio;
-
-            result.ScrubberType =
-                "Spray Tower";
-
-            result.NTU = 0;
-            result.HTU = 0;
-
+            result.TowerDiameter = Math.Round(installedDiameterM, 2);
+            result.TowerHeight = Math.Round(installedHeight, 2);
+            result.PackingHeight = 0.0;
+            result.GasVelocity = Math.Round(actualGasVelocity, 2);
+            // These are droplet-transfer diagnostics, not packed-bed Colburn
+            // NTU/HTU. Keep the legacy packed-bed fields empty for this type.
+            result.NTU = 0.0;
+            result.HTU = 0.0;
+            result.SprayTowerNTU = transferResults.Count > 0 ? Math.Round(achievedMaxNtu, 3) : 0.0;
+            result.SprayTowerHTU = transferResults.Count > 0 && result.SprayTowerNTU > 0.0
+                ? Math.Round(installedHeight / result.SprayTowerNTU, 3)
+                : 0.0;
+            result.PressureDrop = Math.Round(0.5 * actualGasDensity * actualGasVelocity * actualGasVelocity * lossCoefficient, 2);
+            result.AuxiliaryPressureDropPa = DesignBasisSettings.SprayTowerAuxiliaryPressureDropPa;
+            result.SystemPressureDrop = result.PressureDrop + result.AuxiliaryPressureDropPa;
+            result.FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, result.SystemPressureDrop), 2);
+            result.LiquidFlowRateM3Hr = Math.Round(vm.ActualFlowRate * vm.LiquidToGasRatio / 1000.0, 2);
+            result.ActualLGRatio = vm.LiquidToGasRatio;
+            // Packed-bed flooding and minimum-L/G correlations do not apply to
+            // this spray-tower screening model; zero means not calculated.
+            result.MinLGRatio = 0.0;
+            result.PercentFlood = 0.0;
+            result.FloodingGasVelocity = 0.0;
+            result.ExceedsRecommendedFlood = false;
+            result.UsesPackingMetrics = false;
+            result.UsesFloodingMetrics = false;
+            result.HasMinimumLGRatioEstimate = false;
+            result.PumpPowerKW = Math.Round(CalculatePumpPower(result.LiquidFlowRateM3Hr, DesignBasisSettings.SprayTowerPumpHeadM, vm.LiquidDensity), 2);
+            result.ScrubberType = "Spray Tower";
+            result.Warnings.Add("SPRAY TOWER SCREENING MODEL: gas-film-controlled droplet absorption uses an assumed 1 mm droplet diameter and 2 m/s gas-droplet relative velocity. Liquid-film resistance, reaction enhancement, droplet-size distribution, coalescence, and entrainment are not modeled; validate inputs and correlations before design.");
+            result.Warnings.Add("SPRAY TOWER PRESSURE DROP: uses K=1.5 dynamic pressure plus the configured auxiliary allowance; this is preliminary, not a validated wet-tower correlation.");
+            if (installedHeight >= towerHeightCapM)
+            {
+                result.IsFeasible = false;
+                result.InfeasibilityReason = "Required spray-tower height reaches or exceeds the 15 m screening cap.";
+                result.Warnings.Add(result.InfeasibilityReason);
+            }
             return result;
         }
 
@@ -1304,6 +1521,89 @@ namespace WetScrubber.Services
                             temperatureC,
                         fallbackTempCoeffK:
                             0.0);
+        }
+
+        /// <summary>
+        /// Henry correction relative to the reference temperature at which the
+        /// supplied Henry constant was already evaluated (liquid inlet).
+        /// Avoids applying the 25 C based correction on top of an already
+        /// temperature-corrected constant.
+        /// </summary>
+        private double GetHenrysLawRelativeCorrectionFactor(
+            string pollutantCode,
+            double temperatureC,
+            double referenceTemperatureC)
+        {
+            double atT =
+                GetHenrysLawTemperatureCorrectionFactor(
+                    pollutantCode,
+                    temperatureC);
+
+            double atRef =
+                GetHenrysLawTemperatureCorrectionFactor(
+                    pollutantCode,
+                    referenceTemperatureC);
+
+            if (!(atRef > 0.0) ||
+                double.IsInfinity(atRef) ||
+                double.IsNaN(atT))
+            {
+                throw new InvalidOperationException(
+                    $"Invalid Henry temperature correction for '{pollutantCode}'.");
+            }
+
+            return atT / atRef;
+        }
+
+        /// <summary>
+        /// Mole-weighted overall removal (percent) from per-pollutant removal
+        /// percentages keyed by component code. Inlet ppm is the weight.
+        /// </summary>
+        private double ComputeMoleWeightedRemoval(
+            CreateDesignViewModel vm,
+            IReadOnlyDictionary<string, double> removalPercentByCode)
+        {
+            double totalInlet = 0.0;
+            double totalRemoved = 0.0;
+
+            foreach (var pollutant in vm.Pollutants)
+            {
+                string? code =
+                    _componentLookup?
+                        .GetByPollutantId(
+                            pollutant.PollutantType)
+                        ?.Code;
+
+                if (code == null ||
+                    !removalPercentByCode.TryGetValue(
+                        code,
+                        out double removalPercent))
+                {
+                    throw new InvalidOperationException(
+                        $"No removal result for pollutant type {pollutant.PollutantType}.");
+                }
+
+                double inlet = pollutant.InletConcentration;
+
+                if (double.IsNaN(inlet) ||
+                    double.IsInfinity(inlet) ||
+                    inlet < 0.0)
+                {
+                    throw new InvalidOperationException(
+                        $"Invalid inlet concentration for pollutant type {pollutant.PollutantType}.");
+                }
+
+                totalInlet += inlet;
+                totalRemoved += inlet * removalPercent / 100.0;
+            }
+
+            if (!(totalInlet > 0.0))
+            {
+                throw new InvalidOperationException(
+                    "Total inlet concentration must be positive.");
+            }
+
+            return totalRemoved / totalInlet * 100.0;
         }
 
         private static double? TryResolveTargetOutletPpm(
@@ -1812,9 +2112,10 @@ namespace WetScrubber.Services
 
                             HenrysLawTemperatureCorrectionFn =
                                 t =>
-                                    GetHenrysLawTemperatureCorrectionFactor(
+                                    GetHenrysLawRelativeCorrectionFactor(
                                         pollutantCode,
-                                        t)
+                                        t,
+                                        vm.LiquidTemperature)
                         });
                 }
 
@@ -1825,9 +2126,17 @@ namespace WetScrubber.Services
                     vm.ActualFlowRate /
                     3600.0;
 
+                var densityBasisPollutant = vm.Pollutants[0];
+                double actualGasDensity = GetActualGasDensity(
+                    vm.GasDensity,
+                    vm.InletTemperature + 273.15,
+                    vm.InletPressure,
+                    densityBasisPollutant.PollutantType,
+                    densityBasisPollutant.InletConcentration);
+
                 double gasMassFlowKgS =
                     gasFlowM3S *
-                    vm.GasDensity;
+                    actualGasDensity;
 
                 double liquidFlowM3S =
                     vm.LiquidToGasRatio *
@@ -1870,7 +2179,7 @@ namespace WetScrubber.Services
                             vm.LiquidDensity,
 
                         GasDensityKgM3 =
-                            vm.GasDensity,
+                            actualGasDensity,
 
                         TowerHeightM =
                             towerHeightM,
@@ -1981,9 +2290,10 @@ namespace WetScrubber.Services
 
                             HenrysLawTemperatureCorrectionFn =
                                 t =>
-                                    GetHenrysLawTemperatureCorrectionFactor(
+                                    GetHenrysLawRelativeCorrectionFactor(
                                         pollutantCode,
-                                        t)
+                                        t,
+                                        vm.LiquidTemperature)
                         });
                 }
 
@@ -1994,9 +2304,17 @@ namespace WetScrubber.Services
                     vm.ActualFlowRate /
                     3600.0;
 
+                var densityBasisPollutant = vm.Pollutants[0];
+                double actualGasDensity = GetActualGasDensity(
+                    vm.GasDensity,
+                    vm.InletTemperature + 273.15,
+                    vm.InletPressure,
+                    densityBasisPollutant.PollutantType,
+                    densityBasisPollutant.InletConcentration);
+
                 double gasMassFlowKgS =
                     gasFlowM3S *
-                    vm.GasDensity;
+                    actualGasDensity;
 
                 double liquidFlowM3S =
                     vm.LiquidToGasRatio *
@@ -2039,7 +2357,7 @@ namespace WetScrubber.Services
                             vm.LiquidDensity,
 
                         GasDensityKgM3 =
-                            vm.GasDensity,
+                            actualGasDensity,
 
                         TowerHeightM =
                             towerHeightM,
@@ -2242,7 +2560,7 @@ namespace WetScrubber.Services
         }
 
         // ════════════════════════════════════════════════════════════
-        //  4. VENTURI SIZING  (Calvert correlation)
+        //  4. VENTURI SIZING  (screening estimate; not a Calvert correlation)
         // ════════════════════════════════════════════════════════════
         public VenturiSizingResult CalculateVenturiSizing(
             double gasFlowRateM3S,
@@ -2252,7 +2570,8 @@ namespace WetScrubber.Services
             double particleDensityKgM3,
             double particleDiameterMicron,
             double liquidDensityKgM3 = 1000,
-            double gasViscosityPas = 1.81e-5)
+            double gasViscosityPas = 1.81e-5,
+            double dropletDiameterMicron = 500)
         {
             RequirePositiveInput(nameof(gasFlowRateM3S), gasFlowRateM3S);
             RequirePositiveInput(nameof(throatVelocityMs), throatVelocityMs);
@@ -2262,91 +2581,53 @@ namespace WetScrubber.Services
             RequirePositiveInput(nameof(particleDiameterMicron), particleDiameterMicron);
             RequirePositiveInput(nameof(liquidDensityKgM3), liquidDensityKgM3);
             RequirePositiveInput(nameof(gasViscosityPas), gasViscosityPas);
+            RequirePositiveInput(nameof(dropletDiameterMicron), dropletDiameterMicron);
 
-            double throatArea =
-                gasFlowRateM3S /
-                throatVelocityMs;
+            double throatArea = gasFlowRateM3S / throatVelocityMs;
+            double throatDiam = Math.Sqrt(4.0 * throatArea / Math.PI);
 
-            double throatDiam =
-                Math.Sqrt(
-                    4.0 *
-                    throatArea /
-                    Math.PI);
+            // Momentum-based screening estimate only; this is not the published Calvert form.
+            double dynamicPressurePa =
+                0.5 * gasDensityKgM3 * throatVelocityMs * throatVelocityMs;
+            double liquidToGasMassRatio =
+                (liquidToGasRatioLM3 / 1000.0) * liquidDensityKgM3 / gasDensityKgM3;
+            double pressureDrop = dynamicPressurePa * (1.0 + liquidToGasMassRatio);
 
-            double dp =
-                gasDensityKgM3 *
-                Math.Pow(
-                    throatVelocityMs,
-                    2) /
-                2.0;
+            // Single-droplet inertial impaction screening estimate. Particle slip is
+            // corrected with the Cunningham factor; droplet size is an assumed input,
+            // not a Nukiyama-Tanasawa prediction.
+            const double MeanFreePathM = 6.6e-8;
+            double particleDiameterM = particleDiameterMicron * 1e-6;
+            double dropletDiameterM = dropletDiameterMicron * 1e-6;
+            double slipCorrection = 1.0 +
+                (2.0 * MeanFreePathM / particleDiameterM) *
+                (1.257 + 0.4 * Math.Exp(-1.1 * particleDiameterM / (2.0 * MeanFreePathM)));
 
-            double pressureDrop =
-                dp *
-                (
-                    1 +
-                    (
-                        liquidToGasRatioLM3 /
-                        1000.0
-                    ) *
-                    (
-                        liquidDensityKgM3 /
-                        gasDensityKgM3
-                    )
-                );
+            double stokesNumber =
+                particleDensityKgM3 * particleDiameterM * particleDiameterM *
+                throatVelocityMs * slipCorrection /
+                (18.0 * gasViscosityPas * dropletDiameterM);
 
-            double gasVisc =
-                gasViscosityPas;
+            double singleDropletEfficiency = stokesNumber / (stokesNumber + 0.35);
+            // Convert mass L/G back to an effective encounter parameter. The
+            // density ratio cancels, leaving liquid volume per gas volume.
+            double encounterNumber = liquidToGasMassRatio * gasDensityKgM3 / liquidDensityKgM3;
+            double collectionEfficiency =
+                (1.0 - Math.Exp(-singleDropletEfficiency * encounterNumber)) * 100.0;
 
-            double dpMeters =
-                particleDiameterMicron *
-                1e-6;
-
-            double Stk =
-                (
-                    particleDensityKgM3 *
-                    Math.Pow(
-                        dpMeters,
-                        2) *
-                    throatVelocityMs
-                ) /
-                (
-                    18.0 *
-                    gasVisc *
-                    throatDiam
-                );
-
-            double collEff =
-                (
-                    1.0 -
-                    Math.Exp(
-                        -0.7 *
-                        Stk *
-                        liquidToGasRatioLM3)
-                ) *
-                100.0;
+            if (!double.IsFinite(collectionEfficiency) || collectionEfficiency < 0.0 || collectionEfficiency > 100.0)
+                throw new InvalidOperationException("Venturi screening model produced an invalid collection efficiency.");
 
             return new VenturiSizingResult
             {
-                ThroatDiameter =
-                    throatDiam,
-
-                ThroatArea =
-                    throatArea,
-
-                ThroatVelocity =
-                    throatVelocityMs,
-
-                PressureDrop =
-                    pressureDrop,
-
-                CollectionEfficiency =
-                    Math.Min(
-                        collEff,
-                        99.9)
+                ThroatDiameter = throatDiam,
+                ThroatArea = throatArea,
+                ThroatVelocity = throatVelocityMs,
+                PressureDrop = pressureDrop,
+                CollectionEfficiency = collectionEfficiency
             };
         }
 
-        // ════════════════════════════════════════════════════════════
         //  5. HENRY'S LAW  (temperature corrected)
         // ════════════════════════════════════════════════════════════
         public double GetHenrysLawConstant(
@@ -2659,6 +2940,12 @@ namespace WetScrubber.Services
         public string ScrubberType { get; set; } =
             string.Empty;
 
+        // Applicability flags let the results UI hide correlations that do not
+        // belong to the selected scrubber type instead of displaying zeros as data.
+        public bool UsesPackingMetrics { get; set; } = true;
+        public bool UsesFloodingMetrics { get; set; } = true;
+        public bool HasMinimumLGRatioEstimate { get; set; } = true;
+
         // Geometry
         public double TowerDiameter { get; set; }
         public double TowerHeight { get; set; }
@@ -2696,6 +2983,10 @@ namespace WetScrubber.Services
         public double NTU { get; set; }
         public double HTU { get; set; }
         public double AbsorptionFactor { get; set; }
+
+        // Spray-tower droplet-transfer diagnostics; distinct from packed-bed NTU/HTU.
+        public double SprayTowerNTU { get; set; }
+        public double SprayTowerHTU { get; set; }
 
         // Liquid
         public double MinLGRatio { get; set; }
@@ -2797,5 +3088,215 @@ namespace WetScrubber.Services
         public double PackingHeight { get; set; }
         public string Label { get; set; } =
             string.Empty;
+    }
+}
+
+namespace WetScrubber.Business.MassTransfer
+{
+    public sealed class SprayTowerTransferResult
+    {
+        public double DropletDiameterM { get; set; }
+        public double TerminalVelocityMS { get; set; }
+        public double SpecificInterfacialAreaM2M3 { get; set; }
+        public double GasFilmCoeffMS { get; set; }
+        public double RequiredHeightM { get; set; }
+        public double InstalledHeightM { get; set; }
+        public double NTU { get; set; }
+        public double RemovalEfficiencyPercent { get; set; }
+        public double OutletFraction { get; set; }
+        public bool IsFeasible { get; set; }
+        public string? InfeasibilityReason { get; set; }
+    }
+
+    /// <summary>
+    /// Gas-film-controlled spray-tower screening model.
+    /// Uses Schiller-Naumann drag and Ranz-Marshall gas-film mass transfer.
+    /// The counter-current absorption relation is absorption-factor aware.
+    /// Liquid-film resistance, reaction enhancement, droplet-size distribution,
+    /// coalescence, and entrainment are not represented.
+    /// </summary>
+    public static class SprayTowerDropletTransfer
+    {
+        private const double GravityAccel = 9.80665;
+        private const double MinimumPositive = 1e-12;
+
+        public static SprayTowerTransferResult Calculate(
+            double dropletDiameterM,
+            double dropletVsGasRelativeVelocityMs,
+            double gasVelocityMs,
+            double liquidVolumetricFluxM3M2S,
+            double gasDensityKgM3,
+            double liquidDensityKgM3,
+            double gasViscosityPas,
+            double gasDiffusivityM2S,
+            double absorptionFactor,
+            double targetOutletFraction,
+            double towerHeightCapM = 15.0,
+            bool evaluateAtTowerHeight = false)
+        {
+            RequirePositiveFinite(dropletDiameterM, nameof(dropletDiameterM));
+            RequirePositiveFinite(dropletVsGasRelativeVelocityMs, nameof(dropletVsGasRelativeVelocityMs));
+            RequirePositiveFinite(gasVelocityMs, nameof(gasVelocityMs));
+            RequirePositiveFinite(liquidVolumetricFluxM3M2S, nameof(liquidVolumetricFluxM3M2S));
+            RequirePositiveFinite(gasDensityKgM3, nameof(gasDensityKgM3));
+            RequirePositiveFinite(liquidDensityKgM3, nameof(liquidDensityKgM3));
+            RequirePositiveFinite(gasViscosityPas, nameof(gasViscosityPas));
+            RequirePositiveFinite(gasDiffusivityM2S, nameof(gasDiffusivityM2S));
+            RequirePositiveFinite(absorptionFactor, nameof(absorptionFactor));
+            RequirePositiveFinite(towerHeightCapM, nameof(towerHeightCapM));
+
+            if (liquidDensityKgM3 <= gasDensityKgM3)
+                throw new ArgumentOutOfRangeException(nameof(liquidDensityKgM3),
+                    "Liquid density must exceed gas density for a falling liquid droplet.");
+
+            if (!double.IsFinite(targetOutletFraction) ||
+                targetOutletFraction <= 0.0 || targetOutletFraction >= 1.0)
+                throw new ArgumentOutOfRangeException(nameof(targetOutletFraction),
+                    "Target outlet fraction must be strictly between 0 and 1.");
+
+            double dp = dropletDiameterM;
+            double vt = TerminalVelocity(dp, liquidDensityKgM3, gasDensityKgM3, gasViscosityPas);
+            double vRel = dropletVsGasRelativeVelocityMs;
+            double holdup = liquidVolumetricFluxM3M2S / vRel;
+
+            if (!double.IsFinite(holdup) || holdup <= 0.0 || holdup >= 0.10)
+                throw new ArgumentOutOfRangeException(nameof(liquidVolumetricFluxM3M2S),
+                    "Calculated spray holdup must be greater than zero and below 0.10; revise the spray design inputs.");
+
+            double specificArea = 6.0 * holdup / dp;
+            double dropletRe = gasDensityKgM3 * vRel * dp / gasViscosityPas;
+            double sc = gasViscosityPas / (gasDensityKgM3 * gasDiffusivityM2S);
+            double sh = 2.0 + 0.6 * Math.Sqrt(dropletRe) * Math.Pow(sc, 1.0 / 3.0);
+            double kG = sh * gasDiffusivityM2S / dp;
+            double htu = gasVelocityMs / (kG * specificArea);
+
+            if (!double.IsFinite(htu) || htu <= 0.0)
+                throw new InvalidOperationException("Calculated HTU is not positive and finite.");
+
+            double minOutletFraction = Math.Max(0.0, 1.0 - absorptionFactor);
+            if (targetOutletFraction <= minOutletFraction + 1e-12)
+            {
+                return new SprayTowerTransferResult
+                {
+                    DropletDiameterM = dp,
+                    TerminalVelocityMS = vt,
+                    SpecificInterfacialAreaM2M3 = specificArea,
+                    GasFilmCoeffMS = kG,
+                    RequiredHeightM = double.PositiveInfinity,
+                    InstalledHeightM = towerHeightCapM,
+                    NTU = towerHeightCapM / htu,
+                    OutletFraction = OutletFractionAtNtu(towerHeightCapM / htu, absorptionFactor),
+                    RemovalEfficiencyPercent = 100.0 * (1.0 - OutletFractionAtNtu(towerHeightCapM / htu, absorptionFactor)),
+                    IsFeasible = false,
+                    InfeasibilityReason = "The requested outlet fraction is at or below the equilibrium limit for the supplied absorption factor."
+                };
+            }
+
+            double requiredNtu = RequiredNtu(targetOutletFraction, absorptionFactor);
+            if (!double.IsFinite(requiredNtu) || requiredNtu < 0.0)
+                throw new InvalidOperationException("Required NTU could not be calculated from the supplied absorption factor and target.");
+
+            double requiredHeight = requiredNtu * htu;
+            double installedHeight = evaluateAtTowerHeight
+                ? towerHeightCapM
+                : Math.Min(requiredHeight, towerHeightCapM);
+            double achievedNtu = installedHeight / htu;
+            double outletFraction = OutletFractionAtNtu(achievedNtu, absorptionFactor);
+            bool heightFeasible = requiredHeight <= towerHeightCapM;
+
+            return new SprayTowerTransferResult
+            {
+                DropletDiameterM = dp,
+                TerminalVelocityMS = vt,
+                SpecificInterfacialAreaM2M3 = specificArea,
+                GasFilmCoeffMS = kG,
+                RequiredHeightM = requiredHeight,
+                InstalledHeightM = installedHeight,
+                NTU = achievedNtu,
+                OutletFraction = outletFraction,
+                RemovalEfficiencyPercent = 100.0 * (1.0 - outletFraction),
+                IsFeasible = heightFeasible,
+                InfeasibilityReason = heightFeasible ? null :
+                    $"Required height {requiredHeight:F3} m exceeds the configured cap {towerHeightCapM:F3} m."
+            };
+        }
+
+        public static double RequiredNtu(double targetOutletFraction, double absorptionFactor)
+        {
+            RequirePositiveFinite(absorptionFactor, nameof(absorptionFactor));
+            if (!double.IsFinite(targetOutletFraction) || targetOutletFraction <= 0.0 || targetOutletFraction >= 1.0)
+                throw new ArgumentOutOfRangeException(nameof(targetOutletFraction));
+
+            if (Math.Abs(absorptionFactor - 1.0) < 1e-7)
+                return (1.0 / targetOutletFraction) - 1.0;
+
+            double equilibriumLimit = Math.Max(0.0, 1.0 - absorptionFactor);
+            if (targetOutletFraction <= equilibriumLimit)
+                return double.PositiveInfinity;
+
+            double numerator = 1.0 - (1.0 / absorptionFactor);
+            double denominator = targetOutletFraction;
+            double logArgument = (numerator / denominator) + (1.0 / absorptionFactor);
+            if (!double.IsFinite(logArgument) || logArgument <= 0.0)
+                return double.PositiveInfinity;
+
+            double ntu = Math.Log(logArgument) / numerator;
+            return ntu >= 0.0 && double.IsFinite(ntu) ? ntu : double.PositiveInfinity;
+        }
+
+        public static double OutletFractionAtNtu(double ntu, double absorptionFactor)
+        {
+            RequirePositiveFinite(absorptionFactor, nameof(absorptionFactor));
+            if (!double.IsFinite(ntu) || ntu < 0.0)
+                throw new ArgumentOutOfRangeException(nameof(ntu));
+
+            if (Math.Abs(absorptionFactor - 1.0) < 1e-7)
+                return 1.0 / (1.0 + ntu);
+
+            double exponent = ntu * (1.0 - (1.0 / absorptionFactor));
+            double denominator = (Math.Exp(exponent) - 1.0) + 1.0 - (1.0 / absorptionFactor);
+            double numerator = 1.0 - (1.0 / absorptionFactor);
+            double outlet = numerator / denominator;
+
+            if (!double.IsFinite(outlet))
+                return Math.Max(0.0, 1.0 - absorptionFactor);
+
+            return Math.Clamp(outlet, Math.Max(0.0, 1.0 - absorptionFactor), 1.0);
+        }
+
+        private static double TerminalVelocity(double dp, double rhoL, double rhoG, double muG)
+        {
+            double vt = GravityAccel * dp * dp * (rhoL - rhoG) / (18.0 * muG);
+            vt = Math.Max(vt, MinimumPositive);
+
+            for (int i = 0; i < 100; i++)
+            {
+                double re = rhoG * vt * dp / muG;
+                double cd = DragCoefficient(re);
+                double vtNew = Math.Sqrt(4.0 * GravityAccel * dp * (rhoL - rhoG) / (3.0 * cd * rhoG));
+                if (!double.IsFinite(vtNew) || vtNew <= 0.0)
+                    throw new InvalidOperationException("Droplet terminal-velocity iteration did not produce a valid value.");
+                if (Math.Abs(vtNew - vt) / Math.Max(vt, MinimumPositive) < 1e-7)
+                    return vtNew;
+                vt = vtNew;
+            }
+
+            throw new InvalidOperationException("Droplet terminal-velocity iteration did not converge.");
+        }
+
+        private static double DragCoefficient(double reynolds)
+        {
+            if (!double.IsFinite(reynolds) || reynolds <= 0.0)
+                throw new ArgumentOutOfRangeException(nameof(reynolds));
+            if (reynolds < 1000.0)
+                return (24.0 / reynolds) * (1.0 + 0.15 * Math.Pow(reynolds, 0.687));
+            return 0.44;
+        }
+
+        private static void RequirePositiveFinite(double value, string name)
+        {
+            if (!double.IsFinite(value) || value <= 0.0)
+                throw new ArgumentOutOfRangeException(name, value, "Value must be positive and finite.");
+        }
     }
 }

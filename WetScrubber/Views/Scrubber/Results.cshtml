@@ -1,9 +1,12 @@
 @{
     ViewData["Title"] = "Calculation Results";
     ViewData["ActivePage"] = "NewDesign";
-
     var design = ViewBag.Design as WetScrubber.Models.DesignDetailViewModel;
     var calcResult = ViewBag.CalcResult as WetScrubber.Services.CalculationResult;
+    var scrubberType = calcResult?.ScrubberType ?? design?.ScrubberType ?? "Scrubber";
+    var isPackedTower = scrubberType.Contains("Packed", StringComparison.OrdinalIgnoreCase);
+    var isSprayTower = scrubberType.Contains("Spray", StringComparison.OrdinalIgnoreCase);
+    var isVenturi = scrubberType.Contains("Venturi", StringComparison.OrdinalIgnoreCase);
 }
 
 @section Styles {
@@ -14,15 +17,9 @@
 }
 
 @section TopbarActions {
-    <a asp-controller="Scrubber" asp-action="DesignDetail"
-       asp-route-id="@design!.DesignId"
-       class="btn-cancel"
-       style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">
-        ← Back to Design
-    </a>
+    <a asp-controller="Scrubber" asp-action="DesignDetail" asp-route-id="@design!.DesignId" class="btn-cancel" style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">← Back to Design</a>
 }
 
-<!-- Breadcrumb -->
 <div class="breadcrumb">
     <a asp-controller="Project" asp-action="Index">Projects</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
@@ -33,477 +30,171 @@
     <span>Results</span>
 </div>
 
-<!-- ── Messages ──────────────────────────────────────────────── -->
-@if (TempData["Success"] != null)
-{
-    <div style="background:#e8f5e9; border-left:4px solid #00d28c; padding:12px; margin-bottom:16px; border-radius:4px;">
-        <span style="color:#2e7d32; font-size:13px;">✓ @TempData["Success"]</span>
-    </div>
-}
-@if (TempData["Error"] != null)
-{
-    <div style="background:#ffebee; border-left:4px solid #ff6b6b; padding:12px; margin-bottom:16px; border-radius:4px;">
-        <span style="color:#c62828; font-size:13px;">✗ @TempData["Error"]</span>
-    </div>
-}
+@if (TempData["Success"] != null) { <div style="background:#e8f5e9;border-left:4px solid #00d28c;padding:12px;margin-bottom:16px;border-radius:4px;">✓ @TempData["Success"]</div> }
+@if (TempData["Error"] != null) { <div style="background:#ffebee;border-left:4px solid #ff6b6b;padding:12px;margin-bottom:16px;border-radius:4px;">✗ @TempData["Error"]</div> }
 
-<!-- ── Results header ─────────────────────────────────────────── -->
 <div class="results-header-card">
     <div class="results-header-left">
-        <div class="results-badge-type">@calcResult!.ScrubberType</div>
+        <div class="results-badge-type">@scrubberType</div>
         <div class="results-title">@design!.DesignName — Calculation Results</div>
-        <div class="results-subtitle">
-            @design.ProjectNumber · @design.ProjectName ·
-            Calculated @DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") UTC
-        </div>
+        <div class="results-subtitle">@design.ProjectNumber · @design.ProjectName · Calculated @DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") UTC</div>
     </div>
     <div class="results-header-actions">
-        <form asp-controller="Scrubber" asp-action="RunCalculation"
-              asp-route-id="@design.DesignId" method="post" style="margin:0;">
+        <form asp-controller="Scrubber" asp-action="RunCalculation" asp-route-id="@design.DesignId" method="post" style="margin:0;">
             @Html.AntiForgeryToken()
-            <button type="submit" class="btn-recalc">
-                <svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg>
-                Re-run
-            </button>
+            <button type="submit" class="btn-recalc"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg> Re-run</button>
         </form>
     </div>
 </div>
-
-<!-- ── Report / Redesign / Compare — single action bar ──────────── -->
 <partial name="_DesignActionBar" model="design" />
 
-<!-- ── ROW 1: Operating & process performance (5 cards) ───────── -->
 <section class="kpi-section">
     <div class="kpi-section-title">Process &amp; Operating Performance</div>
-<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-5 g-3 results-kpi-row">
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-emerald">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z" /></svg>
-            </div>
-            <div class="result-kpi-label">Removal Efficiency</div>
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 results-kpi-row">
+        <div class="col"><div class="result-kpi h-100 kpi-emerald">
+            <div class="result-kpi-label">@(isVenturi ? "Particle Collection Estimate" : "Removal Efficiency")</div>
             <div class="result-kpi-value">@calcResult!.RemovalEfficiency.ToString("F2")<span class="result-kpi-unit">%</span></div>
             @{ var targetEff = design.Pollutants.FirstOrDefault()?.TargetRemovalEfficiency ?? 0.0; }
-            <div class="result-kpi-sub">@(calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
-        </div>
-        </div>
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-indigo">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 2C5 2 3 4 3 8s2 6 5 6 5-2 5-6-2-6-5-6zm0 2a4 4 0 110 8A4 4 0 018 4z" /></svg>
-            </div>
-            <div class="result-kpi-label">Pressure Drop</div>
+            <div class="result-kpi-sub">@(isVenturi ? "Particle-impaction screening estimate; not gas absorption" : calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
+        </div></div>
+        <div class="col"><div class="result-kpi h-100 kpi-indigo">
+            <div class="result-kpi-label">@(isPackedTower ? "Pressure Drop Across Packing" : isSprayTower ? "Spray Tower Pressure Drop" : isVenturi ? "Venturi Pressure Drop" : "Pressure Drop")</div>
             <div class="result-kpi-value">@calcResult.PressureDrop.ToString("N0")<span class="result-kpi-unit">Pa</span></div>
-            <div class="result-kpi-sub">Total across packing</div>
-        </div>
-        </div>
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-sky">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm1 4H7v4l3.5 2.1.7-1.2L8 8.5V5z" /></svg>
-            </div>
-            <div class="result-kpi-label">Gas Velocity</div>
+            <div class="result-kpi-sub">@(isPackedTower ? "Packing-bed pressure loss" : isSprayTower ? "Preliminary tower loss estimate" : isVenturi ? "Momentum-based throat estimate" : "Calculated pressure loss")</div>
+        </div></div>
+        <div class="col"><div class="result-kpi h-100 kpi-sky">
+            <div class="result-kpi-label">@(isVenturi ? "Throat Gas Velocity" : "Gas Velocity")</div>
             <div class="result-kpi-value">@calcResult.GasVelocity.ToString("F2")<span class="result-kpi-unit">m/s</span></div>
-            <div class="result-kpi-sub">Operating velocity</div>
-        </div>
-        </div>
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-amber@(calcResult.ExceedsRecommendedFlood ? " kpi-warn" : "")">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
-            </div>
-            <div class="result-kpi-label">Flooding</div>
-            <div class="result-kpi-value">@calcResult.PercentFlood.ToString("F1")<span class="result-kpi-unit">%</span></div>
-            <div class="result-kpi-sub">
-                @if (calcResult.ExceedsRecommendedFlood)
-                {
-                    <text>Above recommended 70% limit</text>
-                }
-                else
-                {
-                    <text>Flood velocity: @calcResult.FloodingGasVelocity.ToString("F2") m/s</text>
-                }
-            </div>
-        </div>
-        </div>
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-purple">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M2 12h12M4 8h1v4H4zm3-3h1v7H7zm3-2h1v9h-1zm3-3h1v12h-1z" /></svg>
-            </div>
+            <div class="result-kpi-sub">@(isVenturi ? "At the venturi throat" : "Based on installed geometry")</div>
+        </div></div>
+        @if (calcResult.UsesFloodingMetrics && isPackedTower)
+        {
+            <div class="col"><div class="result-kpi h-100 kpi-amber@(calcResult.ExceedsRecommendedFlood ? " kpi-warn" : "")">
+                <div class="result-kpi-label">Flooding</div>
+                <div class="result-kpi-value">@calcResult.PercentFlood.ToString("F1")<span class="result-kpi-unit">%</span></div>
+                <div class="result-kpi-sub">@(calcResult.ExceedsRecommendedFlood ? "Above recommended 70% limit" : $"Flood velocity: {calcResult.FloodingGasVelocity:F2} m/s")</div>
+            </div></div>
+        }
+        <div class="col"><div class="result-kpi h-100 kpi-purple">
             <div class="result-kpi-label">Total Power</div>
             <div class="result-kpi-value">@calcResult.TotalPowerKW.ToString("F2")<span class="result-kpi-unit">kW</span></div>
-            <div class="result-kpi-sub">Fan @calcResult.FanPowerKW.ToString("F1") + Pump @calcResult.PumpPowerKW.ToString("F1") kW</div>
-            @if (calcResult.SystemPressureDrop > 0)
-            {
-                <div class="result-kpi-sub">Fan basis: @calcResult.SystemPressureDrop.ToString("N0") Pa (packing + @calcResult.AuxiliaryPressureDropPa.ToString("N0") Pa system)</div>
-            }
-        </div>
-        </div>
-
-</div>
+            <div class="result-kpi-sub">Fan @calcResult.FanPowerKW.ToString("F2") + Pump @calcResult.PumpPowerKW.ToString("F2") kW</div>
+            @if (calcResult.SystemPressureDrop > 0) { <div class="result-kpi-sub">Fan basis: @calcResult.SystemPressureDrop.ToString("N0") Pa total (@calcResult.PressureDrop.ToString("N0") Pa equipment + @calcResult.AuxiliaryPressureDropPa.ToString("N0") Pa auxiliary)</div> }
+        </div></div>
+    </div>
 </section>
 
-<!-- ── ROW 2: Tower & packing sizing ──────────────────────────── -->
 <section class="kpi-section">
-    <div class="kpi-section-title">Tower &amp; Packing Geometry</div>
-<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 results-kpi-row">
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-blue">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1v14M5 3h6M5 7h6M5 11h6" /></svg>
-            </div>
-            <div class="result-kpi-label">Tower Diameter</div>
-            <div class="result-kpi-value">@calcResult.TowerDiameter.ToString("F3")<span class="result-kpi-unit">m</span></div>
-            <div class="result-kpi-sub">Standard vessel size</div>
-        </div>
-        </div>
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-blue">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1v14M4 4h8M4 12h8" /></svg>
-            </div>
-            <div class="result-kpi-label">Tower Height</div>
-            <div class="result-kpi-value">@calcResult.TowerHeight.ToString("F2")<span class="result-kpi-unit">m</span></div>
-            <div class="result-kpi-sub">Including freeboard@(calcResult.NumberOfBeds > 1 ? " and redistributors" : "")</div>
-        </div>
-        </div>
-
-        @if (calcResult.PackingHeight > 0)
+    <div class="kpi-section-title">@(isPackedTower ? "Tower & Packing Geometry" : "Scrubber Geometry")</div>
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 results-kpi-row">
+        <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">@(isVenturi ? "Body Diameter (estimated)" : "Tower Diameter")</div><div class="result-kpi-value">@calcResult.TowerDiameter.ToString("F3")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">Installed / selected diameter</div></div></div>
+        <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">@(isVenturi ? "Body Height (estimated)" : "Tower Height")</div><div class="result-kpi-value">@calcResult.TowerHeight.ToString("F2")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">@(isPackedTower ? "Including freeboard and bed allowances" : isSprayTower ? "Screening height estimate" : "Estimated scrubber body height")</div></div></div>
+        @if (isPackedTower && calcResult.UsesPackingMetrics && calcResult.PackingHeight > 0)
         {
-        <div class="col">
-            <div class="result-kpi h-100 kpi-blue">
-                <div class="result-kpi-icon">
-                    <svg viewBox="0 0 16 16"><path d="M2 10h12v2H2zm2-4h8v2H4zm2-4h4v2H6z" /></svg>
-                </div>
-                <div class="result-kpi-label">Packing Height</div>
-                <div class="result-kpi-value">@calcResult.PackingHeight.ToString("F2")<span class="result-kpi-unit">m</span></div>
-                <div class="result-kpi-sub">@(calcResult.NumberOfBeds > 1 ? $"{calcResult.NumberOfBeds} beds x {calcResult.BedHeight:F2} m, with redistributors" : "Single bed")</div>
-            </div>
-        </div>
-
+            <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">Packing Height</div><div class="result-kpi-value">@calcResult.PackingHeight.ToString("F2")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">@(calcResult.NumberOfBeds > 1 ? $"{calcResult.NumberOfBeds} beds × {calcResult.BedHeight:F2} m" : "Packed-bed height")</div></div></div>
         }
-
-        <div class="col">
-        <div class="result-kpi h-100 kpi-teal">
-            <div class="result-kpi-icon">
-                <svg viewBox="0 0 16 16"><path d="M8 1C5 1 3 4 3 7c0 3.5 2.5 7 5 8 2.5-1 5-4.5 5-8 0-3-2-6-5-6z" /></svg>
-            </div>
-            <div class="result-kpi-label">Liquid Flow</div>
-            <div class="result-kpi-value">@calcResult.LiquidFlowRateM3Hr.ToString("F2")<span class="result-kpi-unit">m³/hr</span></div>
-            <div class="result-kpi-sub">L/G = @calcResult.ActualLGRatio L/m³</div>
-        </div>
-        </div>
-
-</div>
+        <div class="col"><div class="result-kpi h-100 kpi-teal"><div class="result-kpi-label">Liquid Flow</div><div class="result-kpi-value">@calcResult.LiquidFlowRateM3Hr.ToString("F2")<span class="result-kpi-unit">m³/hr</span></div><div class="result-kpi-sub">L/G = @calcResult.ActualLGRatio.ToString("F2") L/m³</div></div></div>
+    </div>
 </section>
 
-<!-- ── Transfer unit data + L/G analysis row ─────────────────── -->
-@if (calcResult.NTU > 0)
+@if (isPackedTower && calcResult.UsesPackingMetrics && calcResult.NTU > 0)
 {
     var lgMargin = calcResult.ActualLGRatio - calcResult.MinLGRatio;
     <div class="results-two-col">
-
-        <!-- NTU/HTU card -->
-        <div class="results-data-card">
-            <div class="results-data-header">
-                <div class="results-data-title">Transfer Unit Analysis</div>
-                <div class="results-data-sub">Colburn equation results</div>
-            </div>
-            <div class="results-data-body">
-                <div class="data-row">
-                    <span class="data-label">Number of Transfer Units (NTU)</span>
-                    <span class="data-value">@calcResult.NTU.ToString("F2")</span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Height of Transfer Unit (HTU)</span>
-                    <span class="data-value">@calcResult.HTU.ToString("F3")<span class="data-unit">m</span></span>
-                </div>
-            </div>
-        </div>
-
-        <!-- L/G ratio + performance sensitivity -->
-        <div class="results-data-card">
-            <div class="results-data-header">
-                <div class="results-data-title">L/G Ratio Analysis</div>
-                <div class="results-data-sub">Design operating conditions</div>
-            </div>
-            <div class="results-data-body">
-                <div class="data-row">
-                    <span class="data-label">Current L/G Ratio</span>
-                    <span class="data-value">@calcResult.ActualLGRatio.ToString("F2")<span class="data-unit">L/m³</span></span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Minimum L/G Ratio</span>
-                    <span class="data-value">@calcResult.MinLGRatio.ToString("F2")<span class="data-unit">L/m³</span></span>
-                </div>
-                <div class="data-row">
-                    <span class="data-label">Operating margin above minimum</span>
-                    <span class="data-value @(lgMargin < 0 ? "value-negative" : "value-positive")">@(lgMargin >= 0 ? "+" : "")@(lgMargin.ToString("F2"))<span class="data-unit">L/m³</span></span>
-                </div>
-            </div>
-        </div>
-
+        <div class="results-data-card"><div class="results-data-header"><div class="results-data-title">Packed-Bed Transfer Unit Analysis</div><div class="results-data-sub">Packed-bed calculation</div></div><div class="results-data-body">
+            <div class="data-row"><span class="data-label">Number of Transfer Units (NTU)</span><span class="data-value">@calcResult.NTU.ToString("F2")</span></div>
+            <div class="data-row"><span class="data-label">Height of Transfer Unit (HTU)</span><span class="data-value">@calcResult.HTU.ToString("F3")<span class="data-unit">m</span></span></div>
+            <div class="data-row"><span class="data-label">Minimum L/G estimate</span><span class="data-value">@calcResult.MinLGRatio.ToString("F3")<span class="data-unit">L/m³</span></span></div>
+            <div class="data-row"><span class="data-label">Margin above minimum</span><span class="data-value @(lgMargin < 0 ? "value-negative" : "value-positive")">@(lgMargin >= 0 ? "+" : "")@lgMargin.ToString("F3")<span class="data-unit">L/m³</span></span></div>
+        </div></div>
+        @if (calcResult.SensitivityPoints?.Any() == true)
+        {
+            <div class="results-data-card"><div class="results-data-header"><div class="results-data-title">Sensitivity Analysis</div><div class="results-data-sub">Removal efficiency and packing height vs. L/G ratio</div></div><div class="results-data-body" style="height:300px;"><canvas id="sensitivityChart" style="max-width:100%;"></canvas></div></div>
+        }
     </div>
 }
-
-<!-- ── Sensitivity chart (if data present) ─────────────────────────────── -->
-@if (calcResult.SensitivityPoints?.Any() == true)
+else if (isSprayTower && calcResult.SprayTowerNTU > 0)
 {
-    <div class="results-data-card" style="margin-bottom:20px;">
-        <div class="results-data-header">
-            <div class="results-data-title">Sensitivity Analysis</div>
-            <div class="results-data-sub">Removal efficiency and packing height vs. liquid-to-gas ratio</div>
-        </div>
-        <div class="results-data-body" style="position:relative;height:320px;">
-            <canvas id="sensitivityChart" style="max-width:100%;"></canvas>
-        </div>
-    </div>
+    <div class="results-data-card" style="margin-bottom:20px;"><div class="results-data-header"><div class="results-data-title">Spray Droplet Transfer Diagnostics</div><div class="results-data-sub">Separate from packed-bed NTU/HTU and flooding correlations</div></div><div class="results-data-body">
+        <div class="data-row"><span class="data-label">Achieved spray-transfer NTU</span><span class="data-value">@calcResult.SprayTowerNTU.ToString("F3")</span></div>
+        <div class="data-row"><span class="data-label">Indicative height per transfer unit</span><span class="data-value">@calcResult.SprayTowerHTU.ToString("F3")<span class="data-unit">m</span></span></div>
+    </div></div>
 }
 
-<!-- ── Design Summary Card ────────────────────────────────────────────────── -->
+@if (calcResult.Warnings?.Any() == true)
+{
+    <div class="results-data-card" style="margin-bottom:20px;"><div class="results-data-header"><div class="results-data-title">Calculation Notes &amp; Limitations</div></div><div class="results-data-body">
+        @foreach (var warning in calcResult.Warnings) { <p style="margin:0 0 8px;color:#7c4a03;font-size:13px;">• @warning</p> }
+    </div></div>
+}
+@if (!calcResult.IsFeasible)
+{
+    <div class="results-data-card" style="margin-bottom:20px;border-left:4px solid #dc3545;"><div class="results-data-header"><div class="results-data-title">Design Feasibility Warning</div></div><div class="results-data-body"><p style="margin:0;color:#842029;">@(calcResult.InfeasibilityReason ?? "One or more design checks failed. Review the calculation notes above.")</p></div></div>
+}
+
 <div class="results-data-card" style="margin-bottom:20px;">
-    <div class="results-data-header">
-        <div class="results-data-title">Design Summary</div>
-        <div class="results-data-sub">All user inputs and generated parameters</div>
-    </div>
+    <div class="results-data-header"><div class="results-data-title">Design Summary</div><div class="results-data-sub">Inputs and selected design parameters</div></div>
     <div class="results-data-body">
-        <div class="data-row">
-            <span class="data-label">Scrubber type</span>
-            <span class="data-value">@design.ScrubberType</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Gas flow (normal / actual)</span>
-            <span class="data-value">@design.NormalFlowRate.ToString("N0") Nm³/hr / @design.ActualFlowRate.ToString("N0") m³/hr</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Inlet temperature / pressure</span>
-            <span class="data-value">@design.InletTemperature °C / @design.InletPressure.ToString("N0") Pa</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Scrubbing liquid / L/G ratio</span>
-            <span class="data-value">@design.LiquidType / @design.LiquidToGasRatio L/m³ (pH @design.LiquidPH)</span>
-        </div>
-        <div class="data-row">
-            <span class="data-label">Shell / internal material</span>
-            <span class="data-value">@design.ShellMaterial / @design.InternalMaterial</span>
-        </div>
+        <div class="data-row"><span class="data-label">Scrubber type</span><span class="data-value">@design.ScrubberType</span></div>
+        <div class="data-row"><span class="data-label">Gas flow (normal / actual)</span><span class="data-value">@design.NormalFlowRate.ToString("N0") Nm³/hr / @design.ActualFlowRate.ToString("N0") m³/hr</span></div>
+        <div class="data-row"><span class="data-label">Inlet temperature / pressure</span><span class="data-value">@design.InletTemperature.ToString("F1") °C / @design.InletPressure.ToString("N0") Pa</span></div>
+        <div class="data-row"><span class="data-label">Scrubbing liquid / L/G ratio</span><span class="data-value">@design.LiquidType / @design.LiquidToGasRatio.ToString("F2") L/m³ (pH @design.LiquidPH)</span></div>
+        <div class="data-row"><span class="data-label">Shell / internal material</span><span class="data-value">@design.ShellMaterial / @design.InternalMaterial</span></div>
     </div>
 </div>
 
-<!-- ── Record Field Outcome (feeds the self-learning design model) ── -->
-<div class="results-data-card" id="recordOutcomeSection" style="margin-bottom:16px;">
-    <div class="results-data-header">
-        <div class="results-data-title">Record Field Outcome</div>
-        <div class="results-data-sub">Log measured performance to train the design calibration model (needs 8+ records)</div>
-    </div>
+
+<div class="results-data-card" id="recordOutcomeSection" style="margin-bottom:20px;">
+    <div class="results-data-header"><div class="results-data-title">Record Field Outcome</div><div class="results-data-sub">Log measured performance for future model calibration</div></div>
     <div class="results-data-body" style="padding:20px;">
-        <!-- Form to record new outcome -->
-        <div style="margin-bottom:20px; padding-bottom:20px; border-bottom:1px solid #e0e0e0;">
-            <h4 style="margin:0 0 12px 0; font-size:13px; color:#333;">Add New Record</h4>
-            <form id="recordOutcomeForm" method="post" action="/Scrubber/RecordDesignOutcome">
-                <input type="hidden" name="designId" value="@design.DesignId" />
-
-                <div class="data-row">
-                    <span class="data-label">Measured Removal Efficiency (%)</span>
-                    <input type="number" step="0.01" id="measuredRemovalEfficiency" name="measuredRemovalEfficiency" required
-                           value="@calcResult!.RemovalEfficiency.ToString("F2")" style="width:160px;padding:6px;" />
-                </div>
-                
-                <div class="data-row">
-                    <span class="data-label">Measured Pressure Drop (Pa)</span>
-                    <input type="number" step="0.01" id="measuredPressureDrop" name="measuredPressureDrop"
-                           value="@calcResult.PressureDrop.ToString("F2")" style="width:160px;padding:6px;" />
-                </div>
-                
-                <div class="data-row">
-                    <span class="data-label">Measured Gas Flow Rate (m³/hr)</span>
-                    <input type="number" step="0.01" id="measuredGasFlowRate" name="measuredGasFlowRate"
-                           value="@design.ActualFlowRate.ToString("F2")" style="width:160px;padding:6px;" />
-                </div>
-                
-                <div class="data-row">
-                    <span class="data-label">Measured Liquid-to-Gas Ratio</span>
-                    <input type="number" step="0.01" id="measuredLiquidToGasRatio" name="measuredLiquidToGasRatio"
-                           value="@calcResult.ActualLGRatio.ToString("F2")" style="width:160px;padding:6px;" />
-                </div>
-                
-                <div class="data-row">
-                    <span class="data-label">Field Notes</span>
-                    <textarea id="fieldNotes" name="fieldNotes" style="width:100%;min-height:60px;padding:6px;"></textarea>
-                </div>
-
-                <div style="margin-top:12px;">
-                    <button type="submit" class="btn-save-outcome">Save Outcome</button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Display recorded outcomes -->
+        <form id="recordOutcomeForm" method="post" action="/Scrubber/RecordDesignOutcome">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="designId" value="@design.DesignId" />
+            <div class="data-row"><span class="data-label">Measured Removal Efficiency (%)</span><input type="number" step="0.01" id="measuredRemovalEfficiency" name="measuredRemovalEfficiency" required value="@calcResult.RemovalEfficiency.ToString("F2")" style="width:160px;padding:6px;" /></div>
+            <div class="data-row"><span class="data-label">Measured Pressure Drop (Pa)</span><input type="number" step="0.01" id="measuredPressureDrop" name="measuredPressureDrop" value="@calcResult.PressureDrop.ToString("F2")" style="width:160px;padding:6px;" /></div>
+            <div class="data-row"><span class="data-label">Measured Gas Flow Rate (m³/hr)</span><input type="number" step="0.01" id="measuredGasFlowRate" name="measuredGasFlowRate" value="@design.ActualFlowRate.ToString("F2")" style="width:160px;padding:6px;" /></div>
+            <div class="data-row"><span class="data-label">Measured Liquid-to-Gas Ratio</span><input type="number" step="0.01" id="measuredLiquidToGasRatio" name="measuredLiquidToGasRatio" value="@calcResult.ActualLGRatio.ToString("F2")" style="width:160px;padding:6px;" /></div>
+            <div class="data-row"><span class="data-label">Field Notes</span><textarea id="fieldNotes" name="fieldNotes" style="width:100%;min-height:60px;padding:6px;"></textarea></div>
+            <div style="margin-top:12px;"><button type="submit" class="btn-save-outcome">Save Outcome</button></div>
+        </form>
         @{
             var outcomes = ViewBag.Outcomes as List<WetScrubber.Database.DesignOutcome>;
             var outcomeCount = ViewBag.OutcomeCount as int? ?? 0;
         }
-        
-        <div>
-            <h4 style="margin:0 0 12px 0; font-size:13px; color:#0f172a;">Recorded Outcomes (<span class="results-count">@outcomeCount</span> records)</h4>
-            @if (outcomes?.Count > 0)
+        <h4 style="margin:20px 0 12px;font-size:13px;color:#0f172a;">Recorded Outcomes (@outcomeCount records)</h4>
+        @if (outcomes?.Count > 0)
+        {
+            <div class="results-table-wrap"><table class="results-table"><thead><tr><th>Date</th><th class="num">Predicted %</th><th class="num">Measured %</th><th class="num">Δ %</th><th class="num">Pressure (Pa)</th><th class="num">Flow (m³/h)</th><th class="num">L/G</th></tr></thead><tbody>
+            @foreach (var outcome in outcomes)
             {
-                <div class="results-table-wrap">
-                <table class="results-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th class="num">Predicted %</th>
-                            <th class="num">Measured %</th>
-                            <th class="num">Δ %</th>
-                            <th class="num">Pressure (Pa)</th>
-                            <th class="num">Flow (m³/h)</th>
-                            <th class="num">L/G</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var outcome in outcomes)
-                        {
-                            var delta = outcome.MeasuredRemovalEfficiency - outcome.PredictedRemovalEfficiency;
-                            <tr>
-                                <td>@outcome.CreatedAt.ToString("dd MMM HH:mm")</td>
-                                <td class="num">@outcome.PredictedRemovalEfficiency.ToString("F2")</td>
-                                <td class="num">@outcome.MeasuredRemovalEfficiency.ToString("F2")</td>
-                                <td class="num"><span class="delta-pill @(delta >= 0 ? "delta-pos" : "delta-neg")">@(delta >= 0 ? "+" : "")@delta.ToString("F2")</span></td>
-                                <td class="num">@(outcome.MeasuredPressureDrop?.ToString("F0") ?? "—")</td>
-                                <td class="num">@(outcome.MeasuredGasFlowRate?.ToString("F1") ?? "—")</td>
-                                <td class="num">@(outcome.MeasuredLiquidToGasRatio?.ToString("F2") ?? "—")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                </div>
+                var delta = outcome.MeasuredRemovalEfficiency - outcome.PredictedRemovalEfficiency;
+                <tr><td>@outcome.CreatedAt.ToString("dd MMM HH:mm")</td><td class="num">@outcome.PredictedRemovalEfficiency.ToString("F2")</td><td class="num">@outcome.MeasuredRemovalEfficiency.ToString("F2")</td><td class="num"><span class="delta-pill @(delta >= 0 ? "delta-pos" : "delta-neg")">@(delta >= 0 ? "+" : "")@delta.ToString("F2")</span></td><td class="num">@(outcome.MeasuredPressureDrop?.ToString("F0") ?? "—")</td><td class="num">@(outcome.MeasuredGasFlowRate?.ToString("F1") ?? "—")</td><td class="num">@(outcome.MeasuredLiquidToGasRatio?.ToString("F2") ?? "—")</td></tr>
             }
-            else
-            {
-                <p style="color:#999; font-size:12px; margin:0;">No outcomes recorded yet. Record your first field measurement above.</p>
-            }
-        </div>
+            </tbody></table></div>
+        }
+        else { <p style="color:#999;font-size:12px;margin:0;">No outcomes recorded yet. Record your first field measurement above.</p> }
     </div>
 </div>
 
 @section Scripts {
-    @if (calcResult.SensitivityPoints?.Any() == true)
+    @if (isPackedTower && calcResult.SensitivityPoints?.Any() == true)
     {
-        var labelsJson = System.Text.Json.JsonSerializer.Serialize(
-                            calcResult.SensitivityPoints.Select(s => s.Label));
-        var effJson = System.Text.Json.JsonSerializer.Serialize(
-                            calcResult.SensitivityPoints.Select(s => Math.Round(s.RemovalEfficiency, 1)));
-        var htJson = System.Text.Json.JsonSerializer.Serialize(
-                            calcResult.SensitivityPoints.Select(s => Math.Round(s.PackingHeight, 2)));
-
-        <script id="chartData"
-                data-labels="@labelsJson"
-                data-eff="@effJson"
-                data-ht="@htJson">
+        var labelsJson = System.Text.Json.JsonSerializer.Serialize(calcResult.SensitivityPoints.Select(s => s.Label));
+        var effJson = System.Text.Json.JsonSerializer.Serialize(calcResult.SensitivityPoints.Select(s => Math.Round(s.RemovalEfficiency, 1)));
+        var htJson = System.Text.Json.JsonSerializer.Serialize(calcResult.SensitivityPoints.Select(s => Math.Round(s.PackingHeight, 2)));
+        <script id="chartData" data-labels="@labelsJson" data-eff="@effJson" data-ht="@htJson"></script>
+        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+        <script>
+            $(function () {
+                var ctx = document.getElementById('sensitivityChart');
+                var dataEl = document.getElementById('chartData');
+                if (!ctx || !dataEl) return;
+                new Chart(ctx, { type: 'line', data: { labels: JSON.parse(dataEl.dataset.labels), datasets: [
+                    { label: 'Removal Efficiency (%)', data: JSON.parse(dataEl.dataset.eff), yAxisID: 'y', tension: 0.25 },
+                    { label: 'Packing Height (m)', data: JSON.parse(dataEl.dataset.ht), yAxisID: 'y1', tension: 0.25 }
+                ] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { type: 'linear', position: 'left', title: { display: true, text: 'Removal Efficiency (%)' } }, y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Packing Height (m)' } } } } });
+            });
         </script>
     }
-
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-    <script>
-        $(document).ready(function () {
-
-            // ── Sensitivity chart ─────────────────────────────────
-            var ctx      = document.getElementById('sensitivityChart');
-            var chartEl  = document.getElementById('chartData');
-            if (!ctx || !chartEl) return;
-
-            var labels  = JSON.parse(chartEl.getAttribute('data-labels'));
-            var effData = JSON.parse(chartEl.getAttribute('data-eff'));
-            var htData  = JSON.parse(chartEl.getAttribute('data-ht'));
-
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Removal Efficiency (%)',
-                            data: effData,
-                            borderColor: '#00b176',
-                            backgroundColor: 'rgba(0,177,118,0.08)',
-                            tension: 0.4,
-                            fill: true,
-                            pointBackgroundColor: '#00b176',
-                            pointRadius: 4,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: 'Packing Height (m)',
-                            data: htData,
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59,130,246,0.06)',
-                            tension: 0.4,
-                            fill: false,
-                            pointBackgroundColor: '#3b82f6',
-                            pointRadius: 4,
-                            borderDash: [5, 3],
-                            yAxisID: 'y1'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: {
-                            labels: { font: { size: 12 }, padding: 16 }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function (ctx) {
-                                    var v = ctx.parsed.y;
-                                    return ctx.dataset.label + ': ' +
-                                        (ctx.datasetIndex === 0
-                                            ? v.toFixed(1) + '%'
-                                            : v.toFixed(2) + ' m');
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            type: 'linear',
-                            position: 'left',
-                            title: { display: true, text: 'Removal Efficiency (%)', font: { size: 11 } },
-                            min: 80,
-                            max: 100,
-                            grid: { color: 'rgba(0,0,0,0.04)' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            position: 'right',
-                            title: { display: true, text: 'Packing Height (m)', font: { size: 11 } },
-                            grid: { drawOnChartArea: false }
-                        },
-                        x: {
-                            grid: { color: 'rgba(0,0,0,0.04)' },
-                            ticks: { font: { size: 11 } }
-                        }
-                    }
-                }
-            });
-
-            // ── Re-run loading state ──────────────────────────────
-            $('form').has('.btn-recalc').on('submit', function () {
-                $(this).find('.btn-recalc')
-                       .prop('disabled', true)
-                       .html('<span>Calculating…</span>');
-            });
-        });
-    </script>
 }
