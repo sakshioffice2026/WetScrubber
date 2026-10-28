@@ -38,6 +38,19 @@ namespace WetScrubber.Database
         public double SolidsLoadingWtPercent { get; set; }
         public double SlurryApparentViscosityMPas { get; set; }
 
+        // ── Wet cyclone results (null for other scrubber types) ──
+        // Body diameter -> TowerDiameter, total height -> TowerHeight,
+        // inlet velocity -> GasVelocity, L/G -> ActualLGRatio,
+        // overall efficiency -> RemovalEfficiency, pressure drop -> PressureDrop.
+        public double? CycloneCutDiameterMicron { get; set; }
+        public int? CycloneParallelUnits { get; set; }
+        public double? CycloneInletAreaM2 { get; set; }
+        public double? CycloneGasOutletDiameterM { get; set; }
+        public double? CycloneEffectiveTurns { get; set; }
+        public double? CycloneFanPowerKw { get; set; }
+        public double? CyclonePumpPowerKw { get; set; }
+        public double? CycloneWaterRateLMin { get; set; }
+
         // ── Navigation ───────────────────────────────────────────
         public ScrubberDesign Design { get; set; } = null!;
     }

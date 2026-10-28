@@ -181,6 +181,39 @@ namespace WetScrubber.Models
         [Display(Name = "Design Throat Velocity (m/s)")]
         public double VenturiThroatVelocityMs { get; set; } = 80.0;
 
+        // ── Wet cyclone design inputs (particulate only) ──────────
+        [Range(0.5, 500, ErrorMessage = "Must be between 0.5 and 500 microns")]
+        [Display(Name = "Mass Median Particle Diameter (micron)")]
+        public double CycloneParticleMmdMicron { get; set; } = 20.0;
+
+        [Range(1.0, 5.0, ErrorMessage = "Must be between 1.0 and 5.0")]
+        [Display(Name = "Geometric Std. Deviation (-)")]
+        public double CycloneParticleGeometricStdDev { get; set; } = 2.0;
+
+        [Range(500, 10000, ErrorMessage = "Must be between 500 and 10,000 kg/m3")]
+        [Display(Name = "Particle Density (kg/m³)")]
+        public double CycloneParticleDensityKgM3 { get; set; } = 2000.0;
+
+        [Range(5, 40, ErrorMessage = "Must be between 5 and 40 m/s")]
+        [Display(Name = "Inlet Velocity (m/s)")]
+        public double CycloneInletVelocityMs { get; set; } = 20.0;
+
+        [Range(1, 100, ErrorMessage = "Must be between 1 and 100 units")]
+        [Display(Name = "Cyclones in Parallel")]
+        public int CycloneParallelUnits { get; set; } = 1;
+
+        [Range(0, 100, ErrorMessage = "Must be between 0 and 100 %")]
+        [Display(Name = "Target Overall Efficiency (%)")]
+        public double CycloneTargetEfficiencyPercent { get; set; } = 0.0;   // 0 = no target
+
+        [Range(0, 100000, ErrorMessage = "Must be between 0 and 100,000 Pa")]
+        [Display(Name = "Max Pressure Drop (Pa)")]
+        public double CycloneMaxPressureDropPa { get; set; } = 0.0;         // 0 = no ceiling
+
+        [Range(0, 2000, ErrorMessage = "Must be between 0 and 2,000 kPa")]
+        [Display(Name = "Liquid Injection Pressure (kPa)")]
+        public double CycloneInjectionPressureKPa { get; set; } = 200.0;
+
         public CreateDesignViewModel Clone()
         {
             return new CreateDesignViewModel
@@ -225,7 +258,15 @@ namespace WetScrubber.Models
                 LimestoneParticleDiameterMicron = this.LimestoneParticleDiameterMicron,
                 VenturiParticleDiameterMicron = this.VenturiParticleDiameterMicron,
                 VenturiParticleDensityKgM3 = this.VenturiParticleDensityKgM3,
-                VenturiThroatVelocityMs = this.VenturiThroatVelocityMs
+                VenturiThroatVelocityMs = this.VenturiThroatVelocityMs,
+                CycloneParticleMmdMicron = this.CycloneParticleMmdMicron,
+                CycloneParticleGeometricStdDev = this.CycloneParticleGeometricStdDev,
+                CycloneParticleDensityKgM3 = this.CycloneParticleDensityKgM3,
+                CycloneInletVelocityMs = this.CycloneInletVelocityMs,
+                CycloneParallelUnits = this.CycloneParallelUnits,
+                CycloneTargetEfficiencyPercent = this.CycloneTargetEfficiencyPercent,
+                CycloneMaxPressureDropPa = this.CycloneMaxPressureDropPa,
+                CycloneInjectionPressureKPa = this.CycloneInjectionPressureKPa
             };
         }
     }

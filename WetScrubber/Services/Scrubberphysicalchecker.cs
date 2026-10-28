@@ -34,6 +34,14 @@ namespace WetScrubber.Services
         {
             var checks = new List<PhysicalCheck>();
 
+            if (result.ScrubberType == "Wet Cyclone")
+            {
+                CheckCyclone(result, checks);
+                CheckMaterialTemperature("Shell material", draft.ShellMaterial, draft.InletTemperature, "ShellMaterial", checks);
+                CheckMaterialTemperature("Internal material", draft.InternalMaterial, draft.InletTemperature, "InternalMaterial", checks);
+                return checks;
+            }
+
             CheckFlooding(result, checks);
             CheckGasVelocity(result, checks);
             CheckPressureDropPerMeter(result, checks);
@@ -44,6 +52,55 @@ namespace WetScrubber.Services
             CheckMaterialTemperature("Internal material", draft.InternalMaterial, draft.InletTemperature, "InternalMaterial", checks);
 
             return checks;
+        }
+
+        private static void CheckCyclone(CalculationResult r, List<PhysicalCheck> checks)
+        {
+            double v = r.GasVelocity;
+            if (v > 0)
+            {
+                if (v < DesignBasisSettings.CycloneVelocityHardMinMs || v > DesignBasisSettings.CycloneVelocityHardMaxMs)
+                {
+                    checks.Add(new PhysicalCheck("Cyclone inlet velocity", CheckStatus.Fail, "CycloneInletVelocityMs",
+                        $"Inlet velocity {v:F1} m/s is outside {DesignBasisSettings.CycloneVelocityHardMinMs:F0}-{DesignBasisSettings.CycloneVelocityHardMaxMs:F0} m/s."));
+                }
+                else if (v < DesignBasisSettings.CycloneVelocityWarnMinMs || v > DesignBasisSettings.CycloneVelocityWarnMaxMs)
+                {
+                    checks.Add(new PhysicalCheck("Cyclone inlet velocity", CheckStatus.Warn, "CycloneInletVelocityMs",
+                        $"Inlet velocity {v:F1} m/s is outside the usual {DesignBasisSettings.CycloneVelocityWarnMinMs:F0}-{DesignBasisSettings.CycloneVelocityWarnMaxMs:F0} m/s band."));
+                }
+                else
+                {
+                    checks.Add(new PhysicalCheck("Cyclone inlet velocity", CheckStatus.Pass, "CycloneInletVelocityMs",
+                        $"Inlet velocity {v:F1} m/s is within the usual band."));
+                }
+            }
+
+            if (r.PressureDrop > 0)
+            {
+                if (r.PressureDrop > DesignBasisSettings.CyclonePressureDropCeilingPa)
+                {
+                    checks.Add(new PhysicalCheck("Cyclone pressure drop", CheckStatus.Fail, "CycloneInletVelocityMs / CycloneParallelUnits",
+                        $"Pressure drop {r.PressureDrop:F0} Pa exceeds the {DesignBasisSettings.CyclonePressureDropCeilingPa:F0} Pa ceiling."));
+                }
+                else
+                {
+                    checks.Add(new PhysicalCheck("Cyclone pressure drop", CheckStatus.Pass, "CycloneInletVelocityMs",
+                        $"Pressure drop {r.PressureDrop:F0} Pa is within the {DesignBasisSettings.CyclonePressureDropCeilingPa:F0} Pa ceiling."));
+                }
+            }
+
+            if (r.GasAbsorptionNotModeled)
+            {
+                checks.Add(new PhysicalCheck("Model scope", CheckStatus.Warn, "ScrubberType",
+                    "Wet cyclone model covers particulate collection only; gas absorption is not modeled."));
+            }
+
+            if (!string.IsNullOrEmpty(r.ModelValidationStatus) && r.ModelValidationStatus != "Validated")
+            {
+                checks.Add(new PhysicalCheck("Model validation", CheckStatus.Warn, "ScrubberType",
+                    $"Wet cyclone model status: {r.ModelValidationStatus}."));
+            }
         }
 
         private static void CheckFlooding(CalculationResult r, List<PhysicalCheck> checks)

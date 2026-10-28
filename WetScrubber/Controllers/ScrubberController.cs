@@ -134,6 +134,7 @@ namespace WetScrubber.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
+            ApplyCycloneInputs(design, model);
             _dbContext.ScrubberDesigns.Add(design);
             await _dbContext.SaveChangesAsync();
 
@@ -239,6 +240,14 @@ namespace WetScrubber.Controllers
                 LiquidViscosity = b.LiquidViscosity,
                 LiquidToGasRatio = b.LiquidToGasRatio,
                 Pollutants = b.Pollutants,
+                CycloneParticleMmdMicron = b.CycloneParticleMmdMicron,
+                CycloneParticleGeometricStdDev = b.CycloneParticleGeometricStdDev,
+                CycloneParticleDensityKgM3 = b.CycloneParticleDensityKgM3,
+                CycloneInletVelocityMs = b.CycloneInletVelocityMs,
+                CycloneParallelUnits = b.CycloneParallelUnits,
+                CycloneTargetEfficiencyPercent = b.CycloneTargetEfficiencyPercent,
+                CycloneMaxPressureDropPa = b.CycloneMaxPressureDropPa,
+                CycloneInjectionPressureKPa = b.CycloneInjectionPressureKPa,
                 Diagnostics = BuildDiagnosticsViewModels(design)
             };
 
@@ -289,6 +298,7 @@ namespace WetScrubber.Controllers
             design.ShellMaterial = model.ShellMaterial;
             design.InternalMaterial = model.InternalMaterial;
             design.PackingCode = model.PackingCode;
+            ApplyCycloneInputs(design, model);
             design.UpdatedAt = DateTime.UtcNow;
 
             // 2. Gas stream
@@ -433,10 +443,11 @@ namespace WetScrubber.Controllers
                 existing.MinLGRatio = calcResult.MinLGRatio;
                 existing.GasVelocity = calcResult.GasVelocity;
                 existing.PackingCode = design.PackingCode;
+                ApplyCycloneResults(existing, design, calcResult);
             }
             else
             {
-                _dbContext.ScrubberGeometries.Add(new ScrubberGeometry
+                var newGeometry = new ScrubberGeometry
                 {
                     DesignId = id,
                     TowerDiameter = calcResult.TowerDiameter,
@@ -449,7 +460,9 @@ namespace WetScrubber.Controllers
                     MinLGRatio = calcResult.MinLGRatio,
                     GasVelocity = calcResult.GasVelocity,
                     PackingCode = design.PackingCode
-                });
+                };
+                ApplyCycloneResults(newGeometry, design, calcResult);
+                _dbContext.ScrubberGeometries.Add(newGeometry);
             }
 
             // Update design UpdatedAt
@@ -821,7 +834,15 @@ namespace WetScrubber.Controllers
                 ReviewStatus = DesignReviewStatus.Draft,
                 IsLocked = false,
                 PreviousDesignId = source.DesignId,
-                RevisionNumber = source.RevisionNumber + 1
+                RevisionNumber = source.RevisionNumber + 1,
+                CycloneParticleMmdMicron = source.CycloneParticleMmdMicron,
+                CycloneParticleGeometricStdDev = source.CycloneParticleGeometricStdDev,
+                CycloneParticleDensityKgM3 = source.CycloneParticleDensityKgM3,
+                CycloneInletVelocityMs = source.CycloneInletVelocityMs,
+                CycloneParallelUnits = source.CycloneParallelUnits,
+                CycloneTargetEfficiencyPercent = source.CycloneTargetEfficiencyPercent,
+                CycloneMaxPressureDropPa = source.CycloneMaxPressureDropPa,
+                CycloneInjectionPressureKPa = source.CycloneInjectionPressureKPa
             };
             _dbContext.ScrubberDesigns.Add(revision);
             await _dbContext.SaveChangesAsync();
@@ -1119,6 +1140,47 @@ namespace WetScrubber.Controllers
         // checked, so a design saved with these left alone behaves the
         // same as one saved with the values that were pre-filled in
         // the form.
+        // Wet cyclone inputs are stored only for WetCyclone designs; cleared otherwise.
+        private static void ApplyCycloneInputs(ScrubberDesign design, CreateDesignViewModel model)
+        {
+            bool isCyclone = model.ScrubberType == ScrubberType.WetCyclone;
+
+            design.CycloneParticleMmdMicron = isCyclone ? model.CycloneParticleMmdMicron : null;
+            design.CycloneParticleGeometricStdDev = isCyclone ? model.CycloneParticleGeometricStdDev : null;
+            design.CycloneParticleDensityKgM3 = isCyclone ? model.CycloneParticleDensityKgM3 : null;
+            design.CycloneInletVelocityMs = isCyclone ? model.CycloneInletVelocityMs : null;
+            design.CycloneParallelUnits = isCyclone ? model.CycloneParallelUnits : null;
+            design.CycloneTargetEfficiencyPercent = isCyclone ? model.CycloneTargetEfficiencyPercent : null;
+            design.CycloneMaxPressureDropPa = isCyclone ? model.CycloneMaxPressureDropPa : null;
+            design.CycloneInjectionPressureKPa = isCyclone ? model.CycloneInjectionPressureKPa : null;
+        }
+
+        // Copies wet cyclone calculation outputs onto the persisted geometry row.
+        private static void ApplyCycloneResults(ScrubberGeometry geometry, ScrubberDesign design, CalculationResult result)
+        {
+            if (design.ScrubberType != ScrubberType.WetCyclone)
+            {
+                geometry.CycloneCutDiameterMicron = null;
+                geometry.CycloneParallelUnits = null;
+                geometry.CycloneInletAreaM2 = null;
+                geometry.CycloneGasOutletDiameterM = null;
+                geometry.CycloneEffectiveTurns = null;
+                geometry.CycloneFanPowerKw = null;
+                geometry.CyclonePumpPowerKw = null;
+                geometry.CycloneWaterRateLMin = null;
+                return;
+            }
+
+            geometry.CycloneCutDiameterMicron = result.CycloneCutDiameterMicron;
+            geometry.CycloneParallelUnits = result.CycloneParallelUnits;
+            geometry.CycloneInletAreaM2 = result.CycloneInletAreaM2;
+            geometry.CycloneGasOutletDiameterM = result.CycloneGasOutletDiameterM;
+            geometry.CycloneEffectiveTurns = result.CycloneEffectiveTurns;
+            geometry.CycloneFanPowerKw = result.FanPowerKW;
+            geometry.CyclonePumpPowerKw = result.PumpPowerKW;
+            geometry.CycloneWaterRateLMin = result.CycloneWaterRateLMin;
+        }
+
         private void NormalizeOptionalDefaults(CreateDesignViewModel model)
         {
             if (model.InletPressure <= 0)
@@ -1185,7 +1247,15 @@ namespace WetScrubber.Controllers
                 LiquidDensity = d.LiquidSpec?.Density > 0 ? d.LiquidSpec.Density : 1050,
                 LiquidViscosity = d.LiquidSpec?.Viscosity > 0 ? d.LiquidSpec.Viscosity : 1.0,
                 LiquidToGasRatio = d.LiquidSpec?.LiquidToGasRatio > 0 ? d.LiquidSpec.LiquidToGasRatio : 3.0,
-                Pollutants = pollutants
+                Pollutants = pollutants,
+                CycloneParticleMmdMicron = d.CycloneParticleMmdMicron ?? 20.0,
+                CycloneParticleGeometricStdDev = d.CycloneParticleGeometricStdDev ?? 2.0,
+                CycloneParticleDensityKgM3 = d.CycloneParticleDensityKgM3 ?? 2000.0,
+                CycloneInletVelocityMs = d.CycloneInletVelocityMs ?? 20.0,
+                CycloneParallelUnits = d.CycloneParallelUnits ?? 1,
+                CycloneTargetEfficiencyPercent = d.CycloneTargetEfficiencyPercent ?? 0.0,
+                CycloneMaxPressureDropPa = d.CycloneMaxPressureDropPa ?? 0.0,
+                CycloneInjectionPressureKPa = d.CycloneInjectionPressureKPa ?? 200.0
             };
         }
     }

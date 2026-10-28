@@ -28,6 +28,18 @@ namespace WetScrubber.Database
         [MaxLength(30)]
         public string? PackingCode { get; set; }
 
+        // ── Wet cyclone design inputs (null for other scrubber types) ──
+        // Persisted so RunCalculation can rebuild the view model from the
+        // database; null falls back to the view-model defaults.
+        public double? CycloneParticleMmdMicron { get; set; }
+        public double? CycloneParticleGeometricStdDev { get; set; }
+        public double? CycloneParticleDensityKgM3 { get; set; }
+        public double? CycloneInletVelocityMs { get; set; }
+        public int? CycloneParallelUnits { get; set; }
+        public double? CycloneTargetEfficiencyPercent { get; set; }
+        public double? CycloneMaxPressureDropPa { get; set; }
+        public double? CycloneInjectionPressureKPa { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

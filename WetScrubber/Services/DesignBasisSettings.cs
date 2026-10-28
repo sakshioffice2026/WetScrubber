@@ -16,6 +16,10 @@ namespace WetScrubber.Services
     ///   DefaultVoidFraction             : packing voidage when the packing record has none.
     ///   DefaultLiquidSurfaceTensionNM   : liquid surface tension used by Onda (N/m).
     ///   SprayTower*/Venturi*            : empirical sizing rules (UNVERIFIED placeholders, see engine).
+    ///   Cyclone*                        : wet cyclone limits and efficiencies (UNVERIFIED placeholders):
+    ///                                     pump/fan efficiency, wet correction factor on dry dP,
+    ///                                     inlet velocity warn/hard limits (m/s), dP ceiling (Pa),
+    ///                                     particle size bin count.
     /// </summary>
     public static class DesignBasisSettings
     {
@@ -35,6 +39,15 @@ namespace WetScrubber.Services
         public const double DefaultSprayTowerBaseHeightM = 2.0;
         public const double DefaultVenturiDiameterFactor = 2.5;
         public const double DefaultVenturiHeightFactor = 8.0;
+        public const double DefaultCyclonePumpEfficiency = 0.60;
+        public const double DefaultCycloneFanEfficiency = 0.65;
+        public const double DefaultCycloneWetCorrectionFactor = 1.0;
+        public const double DefaultCycloneVelocityWarnMinMs = 15.0;
+        public const double DefaultCycloneVelocityWarnMaxMs = 27.0;
+        public const double DefaultCycloneVelocityHardMinMs = 8.0;
+        public const double DefaultCycloneVelocityHardMaxMs = 35.0;
+        public const double DefaultCyclonePressureDropCeilingPa = 2500.0;
+        public const int DefaultCycloneSizeBinCount = 20;
 
         public static double PackedPumpHeadOffsetM { get; private set; } = DefaultPackedPumpHeadOffsetM;
         public static double VenturiPumpHeadM { get; private set; } = DefaultVenturiPumpHeadM;
@@ -50,6 +63,15 @@ namespace WetScrubber.Services
         public static double SprayTowerBaseHeightM { get; private set; } = DefaultSprayTowerBaseHeightM;
         public static double VenturiDiameterFactor { get; private set; } = DefaultVenturiDiameterFactor;
         public static double VenturiHeightFactor { get; private set; } = DefaultVenturiHeightFactor;
+        public static double CyclonePumpEfficiency { get; private set; } = DefaultCyclonePumpEfficiency;
+        public static double CycloneFanEfficiency { get; private set; } = DefaultCycloneFanEfficiency;
+        public static double CycloneWetCorrectionFactor { get; private set; } = DefaultCycloneWetCorrectionFactor;
+        public static double CycloneVelocityWarnMinMs { get; private set; } = DefaultCycloneVelocityWarnMinMs;
+        public static double CycloneVelocityWarnMaxMs { get; private set; } = DefaultCycloneVelocityWarnMaxMs;
+        public static double CycloneVelocityHardMinMs { get; private set; } = DefaultCycloneVelocityHardMinMs;
+        public static double CycloneVelocityHardMaxMs { get; private set; } = DefaultCycloneVelocityHardMaxMs;
+        public static double CyclonePressureDropCeilingPa { get; private set; } = DefaultCyclonePressureDropCeilingPa;
+        public static int CycloneSizeBinCount { get; private set; } = DefaultCycloneSizeBinCount;
 
         public static void Load(IConfiguration configuration)
         {
@@ -71,6 +93,27 @@ namespace WetScrubber.Services
             SprayTowerBaseHeightM = Read(section, nameof(SprayTowerBaseHeightM), DefaultSprayTowerBaseHeightM, 0.0, 20.0);
             VenturiDiameterFactor = Read(section, nameof(VenturiDiameterFactor), DefaultVenturiDiameterFactor, 1.0, 10.0);
             VenturiHeightFactor = Read(section, nameof(VenturiHeightFactor), DefaultVenturiHeightFactor, 1.0, 30.0);
+
+            CyclonePumpEfficiency = Read(section, nameof(CyclonePumpEfficiency), DefaultCyclonePumpEfficiency, 0.10, 1.0);
+            CycloneFanEfficiency = Read(section, nameof(CycloneFanEfficiency), DefaultCycloneFanEfficiency, 0.10, 1.0);
+            CycloneWetCorrectionFactor = Read(section, nameof(CycloneWetCorrectionFactor), DefaultCycloneWetCorrectionFactor, 0.2, 5.0);
+            CycloneVelocityHardMinMs = Read(section, nameof(CycloneVelocityHardMinMs), DefaultCycloneVelocityHardMinMs, 1.0, 50.0);
+            CycloneVelocityWarnMinMs = Read(section, nameof(CycloneVelocityWarnMinMs), DefaultCycloneVelocityWarnMinMs, 1.0, 50.0);
+            CycloneVelocityWarnMaxMs = Read(section, nameof(CycloneVelocityWarnMaxMs), DefaultCycloneVelocityWarnMaxMs, 1.0, 60.0);
+            CycloneVelocityHardMaxMs = Read(section, nameof(CycloneVelocityHardMaxMs), DefaultCycloneVelocityHardMaxMs, 1.0, 60.0);
+            CyclonePressureDropCeilingPa = Read(section, nameof(CyclonePressureDropCeilingPa), DefaultCyclonePressureDropCeilingPa, 100.0, 20000.0);
+
+            int bins = section.GetValue<int?>(nameof(CycloneSizeBinCount)) ?? DefaultCycloneSizeBinCount;
+            if (bins < 5 || bins > 200)
+                throw new InvalidOperationException(
+                    $"{SectionName}:{nameof(CycloneSizeBinCount)} must be between 5 and 200; got {bins}.");
+            CycloneSizeBinCount = bins;
+
+            if (!(CycloneVelocityHardMinMs <= CycloneVelocityWarnMinMs
+                  && CycloneVelocityWarnMinMs <= CycloneVelocityWarnMaxMs
+                  && CycloneVelocityWarnMaxMs <= CycloneVelocityHardMaxMs))
+                throw new InvalidOperationException(
+                    $"{SectionName}: cyclone velocity limits must satisfy HardMin <= WarnMin <= WarnMax <= HardMax.");
         }
 
         private static double Read(

@@ -6,6 +6,8 @@ namespace WetScrubber.Business.MassTransfer
     {
         public double DropletDiameterM { get; set; }
         public double TerminalVelocityMS { get; set; }
+        public double SlipVelocityMS { get; set; }
+        public double HoldupFraction { get; set; }
         public double SpecificInterfacialAreaM2M3 { get; set; }
         public double GasFilmCoeffMS { get; set; }
         public double RequiredHeightM { get; set; }
@@ -21,8 +23,11 @@ namespace WetScrubber.Business.MassTransfer
     /// Gas-film-controlled spray-tower screening model.
     /// Uses Schiller-Naumann drag and Ranz-Marshall gas-film mass transfer.
     /// The counter-current absorption relation is absorption-factor aware.
+    /// When no relative velocity is supplied, the droplet-gas slip velocity is the
+    /// computed terminal velocity and the droplet holdup uses the absolute
+    /// downward droplet velocity (terminal velocity minus gas velocity).
     /// Liquid-film resistance, reaction enhancement, droplet-size distribution,
-    /// coalescence, and entrainment are not represented.
+    /// coalescence, and entrainment beyond the vt &lt;= vg check are not represented.
     /// </summary>
     public static class SprayTowerDropletTransfer
     {
@@ -31,7 +36,7 @@ namespace WetScrubber.Business.MassTransfer
 
         public static SprayTowerTransferResult Calculate(
             double dropletDiameterM,
-            double dropletVsGasRelativeVelocityMs,
+            double? dropletVsGasRelativeVelocityMs,
             double gasVelocityMs,
             double liquidVolumetricFluxM3M2S,
             double gasDensityKgM3,
@@ -44,7 +49,8 @@ namespace WetScrubber.Business.MassTransfer
             bool evaluateAtTowerHeight = false)
         {
             RequirePositiveFinite(dropletDiameterM, nameof(dropletDiameterM));
-            RequirePositiveFinite(dropletVsGasRelativeVelocityMs, nameof(dropletVsGasRelativeVelocityMs));
+            if (dropletVsGasRelativeVelocityMs.HasValue)
+                RequirePositiveFinite(dropletVsGasRelativeVelocityMs.Value, nameof(dropletVsGasRelativeVelocityMs));
             RequirePositiveFinite(gasVelocityMs, nameof(gasVelocityMs));
             RequirePositiveFinite(liquidVolumetricFluxM3M2S, nameof(liquidVolumetricFluxM3M2S));
             RequirePositiveFinite(gasDensityKgM3, nameof(gasDensityKgM3));
@@ -65,15 +71,49 @@ namespace WetScrubber.Business.MassTransfer
 
             double dp = dropletDiameterM;
             double vt = TerminalVelocity(dp, liquidDensityKgM3, gasDensityKgM3, gasViscosityPas);
-            double vRel = dropletVsGasRelativeVelocityMs;
-            double holdup = liquidVolumetricFluxM3M2S / vRel;
+
+            double slipVelocity;
+            double dropletAbsoluteVelocity;
+            if (dropletVsGasRelativeVelocityMs.HasValue)
+            {
+                slipVelocity = dropletVsGasRelativeVelocityMs.Value;
+                dropletAbsoluteVelocity = slipVelocity;
+            }
+            else
+            {
+                slipVelocity = vt;
+                dropletAbsoluteVelocity = vt - gasVelocityMs;
+
+                if (dropletAbsoluteVelocity <= 0.0)
+                {
+                    return new SprayTowerTransferResult
+                    {
+                        DropletDiameterM = dp,
+                        TerminalVelocityMS = vt,
+                        SlipVelocityMS = slipVelocity,
+                        HoldupFraction = double.NaN,
+                        SpecificInterfacialAreaM2M3 = 0.0,
+                        GasFilmCoeffMS = 0.0,
+                        RequiredHeightM = double.PositiveInfinity,
+                        InstalledHeightM = towerHeightCapM,
+                        NTU = 0.0,
+                        OutletFraction = 1.0,
+                        RemovalEfficiencyPercent = 0.0,
+                        IsFeasible = false,
+                        InfeasibilityReason =
+                            $"Gas velocity {gasVelocityMs:F3} m/s is at or above the droplet terminal velocity {vt:F3} m/s; droplets are carried out of the tower."
+                    };
+                }
+            }
+
+            double holdup = liquidVolumetricFluxM3M2S / dropletAbsoluteVelocity;
 
             if (!double.IsFinite(holdup) || holdup <= 0.0 || holdup >= 0.10)
                 throw new ArgumentOutOfRangeException(nameof(liquidVolumetricFluxM3M2S),
                     "Calculated spray holdup must be greater than zero and below 0.10; revise the spray design inputs.");
 
             double specificArea = 6.0 * holdup / dp;
-            double dropletRe = gasDensityKgM3 * vRel * dp / gasViscosityPas;
+            double dropletRe = gasDensityKgM3 * slipVelocity * dp / gasViscosityPas;
             double sc = gasViscosityPas / (gasDensityKgM3 * gasDiffusivityM2S);
             double sh = 2.0 + 0.6 * Math.Sqrt(dropletRe) * Math.Pow(sc, 1.0 / 3.0);
             double kG = sh * gasDiffusivityM2S / dp;
@@ -92,6 +132,8 @@ namespace WetScrubber.Business.MassTransfer
                 {
                     DropletDiameterM = dp,
                     TerminalVelocityMS = vt,
+                    SlipVelocityMS = slipVelocity,
+                    HoldupFraction = holdup,
                     SpecificInterfacialAreaM2M3 = specificArea,
                     GasFilmCoeffMS = kG,
                     RequiredHeightM = double.PositiveInfinity,
@@ -120,6 +162,8 @@ namespace WetScrubber.Business.MassTransfer
             {
                 DropletDiameterM = dp,
                 TerminalVelocityMS = vt,
+                SlipVelocityMS = slipVelocity,
+                HoldupFraction = holdup,
                 SpecificInterfacialAreaM2M3 = specificArea,
                 GasFilmCoeffMS = kG,
                 RequiredHeightM = requiredHeight,

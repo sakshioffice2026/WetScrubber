@@ -1,5 +1,8 @@
+using WetScrubber.Business.Common;
+using WetScrubber.Business.Cyclone;
 using WetScrubber.Business.Exceptions;
 using WetScrubber.Business.MassTransfer;
+using WetScrubber.Business.Particulate;
 using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Business.Venturi;
 using WetScrubber.Database.Enums;
@@ -129,6 +132,7 @@ namespace WetScrubber.Services
                 ScrubberType.PackedTower => RunPackedTowerCalc(vm),
                 ScrubberType.VenturiScrubber => RunVenturiCalc(vm),
                 ScrubberType.SprayTower => RunSprayTowerCalc(vm),
+                ScrubberType.WetCyclone => RunWetCycloneCalc(vm),
                 _ => RunPackedTowerCalc(vm)
             };
         }
@@ -937,6 +941,127 @@ namespace WetScrubber.Services
 
             result.NTU = 0;
             result.HTU = 0;
+
+            return result;
+        }
+
+        // ════════════════════════════════════════════════════════════
+        //  WET CYCLONE  (particulate only; Lapple d50 + Shepherd-Lapple dP)
+        // ════════════════════════════════════════════════════════════
+        private CalculationResult RunWetCycloneCalc(
+            CreateDesignViewModel vm)
+        {
+            var result = new CalculationResult();
+
+            double gasFlowM3S = vm.ActualFlowRate / 3600.0;
+
+            var input = new WetCycloneInput
+            {
+                GasFlowM3s = gasFlowM3S,
+                TemperatureK = vm.InletTemperature + 273.15,
+                PressurePa = vm.InletPressure,
+                GasViscosityPas = vm.GasViscosity,
+                GasMolarMassKgMol = vm.CarrierGasMolecularWeightGMol / 1000.0,
+                GasDensityKgM3 = vm.GasDensity,
+
+                Distribution = ParticleSizeDistribution.LogNormal(
+                    vm.CycloneParticleMmdMicron * 1e-6,
+                    vm.CycloneParticleGeometricStdDev,
+                    DesignBasisSettings.CycloneSizeBinCount),
+                ParticleDensityKgM3 = vm.CycloneParticleDensityKgM3,
+
+                InletVelocityMs = vm.CycloneInletVelocityMs,
+                ParallelUnits = vm.CycloneParallelUnits,
+
+                LiquidToGasRatioLM3 = vm.LiquidToGasRatio,
+                LiquidInjectionPressurePa = vm.CycloneInjectionPressureKPa * 1000.0,
+                PumpEfficiency = DesignBasisSettings.CyclonePumpEfficiency,
+                FanEfficiency = DesignBasisSettings.CycloneFanEfficiency,
+                WetCorrectionFactor = DesignBasisSettings.CycloneWetCorrectionFactor,
+
+                TargetEfficiency = vm.CycloneTargetEfficiencyPercent > 0
+                    ? vm.CycloneTargetEfficiencyPercent / 100.0
+                    : (double?)null,
+                MaxPressureDropPa = vm.CycloneMaxPressureDropPa > 0
+                    ? vm.CycloneMaxPressureDropPa
+                    : DesignBasisSettings.CyclonePressureDropCeilingPa,
+
+                VelocityHardMinMs = DesignBasisSettings.CycloneVelocityHardMinMs,
+                VelocityWarnMinMs = DesignBasisSettings.CycloneVelocityWarnMinMs,
+                VelocityWarnMaxMs = DesignBasisSettings.CycloneVelocityWarnMaxMs,
+                VelocityHardMaxMs = DesignBasisSettings.CycloneVelocityHardMaxMs
+            };
+
+            var cyclone = WetCycloneCollectionModel.Calculate(input);
+
+            result.ScrubberType = "Wet Cyclone";
+            result.UsesPackingMetrics = false;
+            result.UsesFloodingMetrics = false;
+            result.HasMinimumLGRatioEstimate = false;
+            result.ActualLGRatio = vm.LiquidToGasRatio;
+            result.NTU = 0;
+            result.HTU = 0;
+            result.PackingHeight = 0;
+
+            result.ModelValidationStatus = cyclone.ValidationStatus.ToString();
+            result.GasAbsorptionNotModeled = cyclone.GasAbsorptionNotModeled;
+
+            foreach (var finding in cyclone.Findings)
+            {
+                if (finding.Severity == FindingSeverity.Info)
+                    result.Warnings.Add("CYCLONE NOTE: " + finding.Message);
+                else if (finding.Severity == FindingSeverity.Warning)
+                    result.Warnings.Add("CYCLONE: " + finding.Message);
+            }
+
+            if (cyclone.Geometry == null)
+            {
+                result.IsFeasible = false;
+                result.InfeasibilityReason = string.Join(" ", cyclone.InfeasibilityReasons);
+                return result;
+            }
+
+            result.TowerDiameter = Math.Round(cyclone.BodyDiameterM, 3);
+            result.TowerHeight = Math.Round(cyclone.TotalHeightM, 2);
+            result.PressureDrop = Math.Round(cyclone.PressureDropPa, 0);
+            result.RemovalEfficiency = Math.Round(cyclone.OverallEfficiencyPercent, 2);
+            result.GasVelocity = Math.Round(cyclone.InletVelocityMs, 1);
+
+            result.AuxiliaryPressureDropPa = FanSizingSettings.AuxiliaryPressureDropPa;
+            result.SystemPressureDrop = result.PressureDrop + result.AuxiliaryPressureDropPa;
+
+            result.FanPowerKW = Math.Round(
+                CalculateFanPower(
+                    gasFlowM3S,
+                    result.SystemPressureDrop,
+                    DesignBasisSettings.CycloneFanEfficiency),
+                2);
+
+            result.PumpPowerKW = Math.Round(cyclone.PumpPowerW / 1000.0, 2);
+            result.LiquidFlowRateM3Hr = Math.Round(cyclone.WaterRateM3s * 3600.0, 2);
+
+            result.CycloneCutDiameterMicron = Math.Round(cyclone.CutDiameterM * 1e6, 2);
+            result.CycloneParallelUnits = cyclone.ParallelUnits;
+            result.CycloneInletAreaM2 = Math.Round(cyclone.InletAreaM2, 4);
+            result.CycloneGasOutletDiameterM = Math.Round(cyclone.GasOutletDiameterM, 3);
+            result.CycloneEffectiveTurns = Math.Round(cyclone.EffectiveTurns, 2);
+            result.CycloneWaterRateLMin = Math.Round(cyclone.WaterRateLMin, 1);
+
+            result.Warnings.Add(
+                "CYCLONE MODEL: cut diameter and fractional efficiency are the Lapple correlation, " +
+                "pressure drop is Shepherd-Lapple; no wet-wall or spray enhancement is applied. " +
+                "Model is not yet validated against benchmarks. Verify against vendor data before final design.");
+
+            result.Warnings.Add(
+                "CYCLONE SCOPE: this is a particle-collection model and does not predict absorption/removal of " +
+                "gaseous pollutants.");
+
+            if (!cyclone.IsFeasible)
+            {
+                result.IsFeasible = false;
+                result.InfeasibilityReason = string.Join(" ", cyclone.InfeasibilityReasons);
+                result.Warnings.Add(result.InfeasibilityReason);
+            }
 
             return result;
         }
@@ -3093,6 +3218,18 @@ namespace WetScrubber.Services
         public bool IsRatingMode { get; set; }
 
         public List<string> Warnings { get; set; } = new();
+
+        // ── Wet cyclone results (zero / null for other scrubber types) ──
+        public double CycloneCutDiameterMicron { get; set; }
+        public int CycloneParallelUnits { get; set; }
+        public double CycloneInletAreaM2 { get; set; }
+        public double CycloneGasOutletDiameterM { get; set; }
+        public double CycloneEffectiveTurns { get; set; }
+        public double CycloneWaterRateLMin { get; set; }
+
+        // Model status flags (set by models that report them).
+        public string ModelValidationStatus { get; set; } = string.Empty;
+        public bool GasAbsorptionNotModeled { get; set; }
     }
 
     public class NtuHtuResult

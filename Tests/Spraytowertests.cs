@@ -11,11 +11,12 @@ public sealed class SprayTowerTests
         double towerHeightCapM = 15.0,
         bool evaluateAtTowerHeight = false,
         double liquidFluxM3M2S = 0.002,
-        double relativeVelocityMs = 2.0)
+        double? relativeVelocityMs = 2.0,
+        double gasVelocityMs = 0.8)
         => SprayTowerDropletTransfer.Calculate(
             dropletDiameterM: 0.001,
             dropletVsGasRelativeVelocityMs: relativeVelocityMs,
-            gasVelocityMs: 0.8,
+            gasVelocityMs: gasVelocityMs,
             liquidVolumetricFluxM3M2S: liquidFluxM3M2S,
             gasDensityKgM3: 1.2,
             liquidDensityKgM3: 1000.0,
@@ -212,5 +213,54 @@ public sealed class SprayTowerTests
         var r = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1);
 
         Assert.Equal(6.0, r.SpecificInterfacialAreaM2M3, precision: 9);
+    }
+
+    [Fact]
+    public void Calculate_ExplicitRelativeVelocity_IsUsedAsSlipVelocity()
+    {
+        var r = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1, relativeVelocityMs: 2.0);
+
+        Assert.Equal(2.0, r.SlipVelocityMS, precision: 9);
+        Assert.Equal(0.001, r.HoldupFraction, precision: 9);
+    }
+
+    [Fact]
+    public void Calculate_NullRelativeVelocity_UsesTerminalVelocityAsSlip()
+    {
+        var r = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1, relativeVelocityMs: null);
+
+        Assert.Equal(r.TerminalVelocityMS, r.SlipVelocityMS, precision: 9);
+    }
+
+    [Fact]
+    public void Calculate_NullRelativeVelocity_HoldupUsesTerminalMinusGasVelocity()
+    {
+        var r = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1, relativeVelocityMs: null);
+
+        double expectedHoldup = 0.002 / (r.TerminalVelocityMS - 0.8);
+
+        Assert.Equal(expectedHoldup, r.HoldupFraction, precision: 9);
+        Assert.Equal(6.0 * expectedHoldup / 0.001, r.SpecificInterfacialAreaM2M3, precision: 6);
+    }
+
+    [Fact]
+    public void Calculate_NullRelativeVelocity_HigherGasVelocity_RaisesHoldup()
+    {
+        var slow = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1, relativeVelocityMs: null, gasVelocityMs: 0.5);
+        var fast = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1, relativeVelocityMs: null, gasVelocityMs: 2.0);
+
+        Assert.True(fast.HoldupFraction > slow.HoldupFraction);
+    }
+
+    [Fact]
+    public void Calculate_NullRelativeVelocity_GasVelocityAboveTerminal_IsInfeasible()
+    {
+        var r = Spray(absorptionFactor: 2.0, targetOutletFraction: 0.1, relativeVelocityMs: null, gasVelocityMs: 8.0);
+
+        Assert.False(r.IsFeasible);
+        Assert.Contains("terminal velocity", r.InfeasibilityReason);
+        Assert.True(double.IsPositiveInfinity(r.RequiredHeightM));
+        Assert.Equal(0.0, r.RemovalEfficiencyPercent, precision: 9);
+        Assert.Equal(1.0, r.OutletFraction, precision: 9);
     }
 }
