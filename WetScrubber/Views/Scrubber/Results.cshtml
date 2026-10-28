@@ -9,9 +9,8 @@
     var isVenturi = scrubberType.Contains("Venturi", StringComparison.OrdinalIgnoreCase);
     var isWetCyclone = scrubberType.Contains("Cyclone", StringComparison.OrdinalIgnoreCase);
     var isImpingement = scrubberType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
-    var isJetEjector = scrubberType.Contains("Ejector", StringComparison.OrdinalIgnoreCase);
-    var isParticulateOnly = isVenturi || isWetCyclone;
-    var isPreviewType = isWetCyclone || isImpingement || isJetEjector;
+        var isParticulateOnly = isVenturi || isWetCyclone;
+    var isPreviewType = isWetCyclone || isImpingement;
 }
 
 @section Styles {
@@ -43,7 +42,6 @@
         <strong>Preview — not yet validated.</strong>
         @if (isWetCyclone) { <span> Particulate collection only; gas absorption is not modeled for this scrubber type.</span> }
         @if (isImpingement) { <span> Plate hydraulics and stage removal are screening estimates until benchmarks pass.</span> }
-        @if (isJetEjector) { <span> Screening-level estimate; entrainment and mass-transfer correlations are unvalidated.</span> }
     </div>
 }
 
@@ -72,9 +70,9 @@
             <div class="result-kpi-sub">@(isVenturi ? "Particle-impaction screening estimate; not gas absorption" : isWetCyclone ? "Fractional-efficiency estimate (cut diameter based); not gas absorption" : isPreviewType ? "Preview estimate; not yet validated" : calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
         </div></div>
         <div class="col"><div class="result-kpi h-100 kpi-indigo">
-            <div class="result-kpi-label">@(isPackedTower ? "Pressure Drop Across Packing" : isSprayTower ? "Spray Tower Pressure Drop" : isVenturi ? "Venturi Pressure Drop" : isWetCyclone ? "Cyclone Pressure Drop" : isImpingement ? "Total Plate Pressure Drop" : isJetEjector ? "Ejector Pressure Drop" : "Pressure Drop")</div>
+            
             <div class="result-kpi-value">@calcResult.PressureDrop.ToString("N0")<span class="result-kpi-unit">Pa</span></div>
-            <div class="result-kpi-sub">@(isPackedTower ? "Packing-bed pressure loss" : isSprayTower ? "Preliminary tower loss estimate" : isVenturi ? "Momentum-based throat estimate" : isWetCyclone ? "Velocity-head based estimate" : isImpingement ? "Sum across plates in series" : isJetEjector ? "Screening estimate" : "Calculated pressure loss")</div>
+           
         </div></div>
         <div class="col"><div class="result-kpi h-100 kpi-sky">
             <div class="result-kpi-label">@(isVenturi ? "Throat Gas Velocity" : isWetCyclone ? "Inlet Gas Velocity" : isImpingement ? "Hole Gas Velocity" : "Gas Velocity")</div>

@@ -150,14 +150,12 @@
 
 /* ── Preview (not yet validated) scrubber types 4–6 ──────────── */
 .type-card[data-value="4"],
-.type-card[data-value="5"],
 .type-card[data-value="6"] {
     border-style: dashed;
 }
 
     .type-card[data-value="4"]::before,
-    .type-card[data-value="5"]::before,
-    .type-card[data-value="6"]::before {
+        .type-card[data-value="6"]::before {
         content: 'PREVIEW';
         position: absolute;
         top: 8px;
@@ -173,8 +171,7 @@
     }
 
     .type-card[data-value="4"].selected,
-    .type-card[data-value="5"].selected,
-    .type-card[data-value="6"].selected {
+       .type-card[data-value="6"].selected {
         border-style: solid;
     }
 

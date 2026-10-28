@@ -74,7 +74,7 @@ namespace WetScrubber.Business.Reports
             sb.AppendLine($"Shell Material : {design.ShellMaterial}");
             sb.AppendLine($"Internal Material : {design.InternalMaterial}");
             if (design.ScrubberType is ScrubberType.WetCyclone
-                or ScrubberType.JetEjectorScrubber
+             
                 or ScrubberType.ImpingementPlate)
             {
                 sb.AppendLine("Model Status : PREVIEW - not yet validated");
@@ -163,7 +163,7 @@ namespace WetScrubber.Business.Reports
 
             var isCyclone = design.ScrubberType == ScrubberType.WetCyclone;
             var hasPacking = design.ScrubberType is not (ScrubberType.WetCyclone
-                or ScrubberType.JetEjectorScrubber
+              
                 or ScrubberType.ImpingementPlate);
 
             sb.AppendLine($"{(isCyclone ? "Cyclone Body Diameter" : "Tower Diameter")} : {geometry.TowerDiameter}");
@@ -208,7 +208,7 @@ namespace WetScrubber.Business.Reports
              
                 IsParticulateOnly = design.ScrubberType == ScrubberType.WetCyclone,
                 IsPreview = design.ScrubberType is ScrubberType.WetCyclone
-                    or ScrubberType.JetEjectorScrubber
+        
                     or ScrubberType.ImpingementPlate
             };
 
@@ -238,8 +238,7 @@ namespace WetScrubber.Business.Reports
             ScrubberType.VenturiScrubber => "Venturi Scrubber",
             ScrubberType.SprayTower => "Spray Tower",
             ScrubberType.WetCyclone => "Wet Cyclone",
-            ScrubberType.JetEjectorScrubber => "Jet Ejector Scrubber",
-            ScrubberType.ImpingementPlate => "Impingement Plate",
+                       ScrubberType.ImpingementPlate => "Impingement Plate",
             _ => type.ToString()
         };
 
@@ -257,7 +256,7 @@ namespace WetScrubber.Business.Reports
             sb.AppendLine();
 
             var isPreview = design.ScrubberType is ScrubberType.WetCyclone
-                or ScrubberType.JetEjectorScrubber
+         
                 or ScrubberType.ImpingementPlate;
 
             if (isPreview)

@@ -34,7 +34,7 @@ namespace WetScrubber.Business.Diagnostics
         public bool IsLimestoneSlurry { get; init; }
         public double SolidsLoadingWtPercent { get; init; }
 
-        // Types 4–6 (WetCyclone, JetEjectorScrubber, ImpingementPlate).
+        // Types 4 and 6 (WetCyclone, ImpingementPlate).
         // Defaults keep existing callers and rules unaffected.
         public double CutDiameterMicron { get; init; }     // µm, d50 (particulate types)
         public double PercentFlood { get; init; }          // % (plate / packed types)

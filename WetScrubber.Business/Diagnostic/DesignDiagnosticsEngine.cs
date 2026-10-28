@@ -28,7 +28,7 @@ namespace WetScrubber.Business.Diagnostics
         // each needs a cited source and range before the validation gate.
         private const double WetCyclonePressureDropCeilingPa = 2500.0;
         private const double ImpingementPlatePressureDropCeilingPa = 3000.0;
-        private const double JetEjectorPressureDropCeilingPa = 1500.0;
+   
 
         // Same recommended flooding limit the Results view already displays.
         private const double ImpingementPlateRecommendedFloodPercent = 70.0;
@@ -88,10 +88,10 @@ namespace WetScrubber.Business.Diagnostics
 
         private static bool IsWetCyclone(DesignMetrics m) => TypeContains(m, "Cyclone");
         private static bool IsImpingementPlate(DesignMetrics m) => TypeContains(m, "Impingement");
-        private static bool IsJetEjector(DesignMetrics m) => TypeContains(m, "Ejector");
+  
 
         private static bool IsPreviewType(DesignMetrics m) =>
-            m.IsPreview || IsWetCyclone(m) || IsImpingementPlate(m) || IsJetEjector(m);
+            m.IsPreview || IsWetCyclone(m) || IsImpingementPlate(m);
 
         private static void EvaluatePreviewAndScope(
             DesignMetrics m,
@@ -289,8 +289,7 @@ namespace WetScrubber.Business.Diagnostics
             double? ceiling =
                 IsWetCyclone(m) ? WetCyclonePressureDropCeilingPa
                 : IsImpingementPlate(m) ? ImpingementPlatePressureDropCeilingPa
-                : IsJetEjector(m) ? JetEjectorPressureDropCeilingPa
-                : m.ScrubberType switch
+                               : m.ScrubberType switch
                 {
                     "Packed Tower" => PackedTowerPressureDropCeilingPa,
                     "Venturi Scrubber" => VenturiPressureDropCeilingPa,
@@ -305,8 +304,7 @@ namespace WetScrubber.Business.Diagnostics
                         ? "Consider a larger inlet area (lower inlet velocity) or several cyclones in parallel, then recalculate."
                     : IsImpingementPlate(m)
                         ? "Consider a larger column diameter, larger open area, or fewer plates, then recalculate."
-                    : IsJetEjector(m)
-                        ? "Review nozzle size and motive-liquid pressure, then recalculate."
+                  
                     : "Consider a larger tower diameter or lower-pressure-drop packing.";
 
                 findings.Add(new DesignFinding
@@ -351,9 +349,7 @@ namespace WetScrubber.Business.Diagnostics
                         ? "Reduce the cut diameter by raising inlet velocity (within limits), using a smaller-diameter cyclone, or adding cyclones in parallel, then re-run the calculation."
                     : IsImpingementPlate(m)
                         ? "Add plates and/or increase the L/G ratio, then re-run the calculation."
-                    : IsJetEjector(m)
-                        ? "Increase the motive-liquid rate or reactivity of the scrubbing liquid, then re-run the calculation."
-                    : "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.";
+                                       : "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.";
 
                 findings.Add(new DesignFinding
                 {

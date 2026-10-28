@@ -249,6 +249,14 @@ namespace WetScrubber.Controllers
                 CycloneTargetEfficiencyPercent = b.CycloneTargetEfficiencyPercent,
                 CycloneMaxPressureDropPa = b.CycloneMaxPressureDropPa,
                 CycloneInjectionPressureKPa = b.CycloneInjectionPressureKPa,
+                ImpingementPlateStages = b.ImpingementPlateStages,
+                ImpingementPlateColumnDiameterM = b.ImpingementPlateColumnDiameterM,
+                ImpingementPlateGasFlowM3Hr = b.ImpingementPlateGasFlowM3Hr,
+                ImpingementPlateLiquidFlowM3Hr = b.ImpingementPlateLiquidFlowM3Hr,
+                ImpingementPlateGasDensityKgM3 = b.ImpingementPlateGasDensityKgM3,
+                ImpingementPlateLiquidDensityKgM3 = b.ImpingementPlateLiquidDensityKgM3,
+                ImpingementPlateTargetRemovalPercent = b.ImpingementPlateTargetRemovalPercent,
+                ImpingementPlateCutDiameterMicron = b.ImpingementPlateCutDiameterMicron,
                 Diagnostics = BuildDiagnosticsViewModels(design)
             };
 
@@ -446,6 +454,7 @@ namespace WetScrubber.Controllers
                 existing.GasVelocity = calcResult.GasVelocity;
                 existing.PackingCode = design.PackingCode;
                 ApplyCycloneResults(existing, design, calcResult);
+                ApplyImpingementPlateResults(existing, design, calcResult);
             }
             else
             {
@@ -464,6 +473,7 @@ namespace WetScrubber.Controllers
                     PackingCode = design.PackingCode
                 };
                 ApplyCycloneResults(newGeometry, design, calcResult);
+                ApplyImpingementPlateResults(newGeometry, design, calcResult);
                 _dbContext.ScrubberGeometries.Add(newGeometry);
             }
 
@@ -844,7 +854,15 @@ namespace WetScrubber.Controllers
                 CycloneParallelUnits = source.CycloneParallelUnits,
                 CycloneTargetEfficiencyPercent = source.CycloneTargetEfficiencyPercent,
                 CycloneMaxPressureDropPa = source.CycloneMaxPressureDropPa,
-                CycloneInjectionPressureKPa = source.CycloneInjectionPressureKPa
+                CycloneInjectionPressureKPa = source.CycloneInjectionPressureKPa,
+                ImpingementPlateStages = source.ImpingementPlateStages,
+                ImpingementPlateColumnDiameterM = source.ImpingementPlateColumnDiameterM,
+                ImpingementPlateGasFlowM3Hr = source.ImpingementPlateGasFlowM3Hr,
+                ImpingementPlateLiquidFlowM3Hr = source.ImpingementPlateLiquidFlowM3Hr,
+                ImpingementPlateGasDensityKgM3 = source.ImpingementPlateGasDensityKgM3,
+                ImpingementPlateLiquidDensityKgM3 = source.ImpingementPlateLiquidDensityKgM3,
+                ImpingementPlateTargetRemovalPercent = source.ImpingementPlateTargetRemovalPercent,
+                ImpingementPlateCutDiameterMicron = source.ImpingementPlateCutDiameterMicron
             };
             _dbContext.ScrubberDesigns.Add(revision);
             await _dbContext.SaveChangesAsync();
@@ -1216,7 +1234,19 @@ namespace WetScrubber.Controllers
             geometry.CyclonePumpPowerKw = result.PumpPowerKW;
             geometry.CycloneWaterRateLMin = result.CycloneWaterRateLMin;
         }
+        private static void ApplyImpingementPlateResults(ScrubberGeometry geometry, ScrubberDesign design, CalculationResult result)
+        {
+            bool isPlate = design.ScrubberType == ScrubberType.ImpingementPlate;
 
+            geometry.ImpingementPlateStages = isPlate ? result.ImpingementPlateStages : null;
+            geometry.ImpingementPlateActiveAreaM2 = isPlate ? result.ImpingementPlateActiveAreaM2 : null;
+            geometry.ImpingementPlateGasVelocityMPerS = isPlate ? result.ImpingementPlateGasVelocityMPerS : null;
+            geometry.ImpingementPlateFloodingVelocityMPerS = isPlate ? result.ImpingementPlateFloodingVelocityMPerS : null;
+            geometry.ImpingementPlatePercentFlood = isPlate ? result.ImpingementPlatePercentFlood : null;
+            geometry.ImpingementPlatePressureDropPa = isPlate ? result.ImpingementPlatePressureDropPa : null;
+            geometry.ImpingementPlateRemovalEfficiencyPercent = isPlate ? result.ImpingementPlateRemovalEfficiencyPercent : null;
+            geometry.ImpingementPlateCutDiameterMicron = isPlate ? result.ImpingementPlateCutDiameterMicron : null;
+        }
         private void NormalizeOptionalDefaults(CreateDesignViewModel model)
         {
             if (model.InletPressure <= 0)
@@ -1291,7 +1321,15 @@ namespace WetScrubber.Controllers
                 CycloneParallelUnits = d.CycloneParallelUnits ?? 1,
                 CycloneTargetEfficiencyPercent = d.CycloneTargetEfficiencyPercent ?? 0.0,
                 CycloneMaxPressureDropPa = d.CycloneMaxPressureDropPa ?? 0.0,
-                CycloneInjectionPressureKPa = d.CycloneInjectionPressureKPa ?? 200.0
+                CycloneInjectionPressureKPa = d.CycloneInjectionPressureKPa ?? 200.0,
+                ImpingementPlateStages = d.ImpingementPlateStages ?? 3,
+                ImpingementPlateColumnDiameterM = d.ImpingementPlateColumnDiameterM ?? 1.0,
+                ImpingementPlateGasFlowM3Hr = d.ImpingementPlateGasFlowM3Hr ?? 0.0,
+                ImpingementPlateLiquidFlowM3Hr = d.ImpingementPlateLiquidFlowM3Hr ?? 0.0,
+                ImpingementPlateGasDensityKgM3 = d.ImpingementPlateGasDensityKgM3 ?? 1.2,
+                ImpingementPlateLiquidDensityKgM3 = d.ImpingementPlateLiquidDensityKgM3 ?? 1000.0,
+                ImpingementPlateTargetRemovalPercent = d.ImpingementPlateTargetRemovalPercent ?? 90.0,
+                ImpingementPlateCutDiameterMicron = d.ImpingementPlateCutDiameterMicron ?? 5.0
             };
         }
     }

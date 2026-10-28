@@ -6,9 +6,8 @@
     var ddIsVenturi = ddType.Contains("Venturi", StringComparison.OrdinalIgnoreCase);
     var ddIsWetCyclone = ddType.Contains("Cyclone", StringComparison.OrdinalIgnoreCase);
     var ddIsImpingement = ddType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
-    var ddIsJetEjector = ddType.Contains("Ejector", StringComparison.OrdinalIgnoreCase);
     var ddIsParticulateOnly = ddIsVenturi || ddIsWetCyclone;
-    var ddIsPreview = ddIsWetCyclone || ddIsImpingement || ddIsJetEjector;
+    var ddIsPreview = ddIsWetCyclone || ddIsImpingement;
 }
 
 @section Styles {
@@ -109,7 +108,7 @@
                 <div class="dd-banner-text">
                     @if (ddIsWetCyclone) { <text>Wet cyclone models particulate collection only; gas absorption is not modeled.</text> }
                     @if (ddIsImpingement) { <text>Impingement plate results are screening estimates until benchmarks pass.</text> }
-                    @if (ddIsJetEjector) { <text>Jet ejector results are screening estimates; correlations are unvalidated.</text>  }
+                  
                 </div>
             </div>
         </div>
@@ -321,7 +320,7 @@
                 dimensions, cut diameter, particle collection efficiency, pressure drop, and power
                 requirements using Lapple ratios and fractional-efficiency methods.</text>
             }
-            else if (ddIsImpingement || ddIsJetEjector)
+                else if (ddIsImpingement)
             {
                 <text>All inputs are saved. Click <strong>Run Calculation</strong> to compute a
                 preview screening estimate of dimensions, removal, pressure drop, and power requirements.</text>

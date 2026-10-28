@@ -103,7 +103,7 @@
                             <option value="2" selected="@(Model.ScrubberType == ScrubberType.VenturiScrubber ? "selected" : null)">Venturi Scrubber — particles &amp; sticky gases</option>
                             <option value="3" selected="@(Model.ScrubberType == ScrubberType.SprayTower ? "selected" : null)">Spray Tower — low pressure drop, easy maintenance</option>
                             <option value="4" selected="@(Model.ScrubberType == ScrubberType.WetCyclone ? "selected" : null)">Wet Cyclone — centrifugal separation, large particles</option>
-                            <option value="5" selected="@(Model.ScrubberType == ScrubberType.JetEjectorScrubber ? "selected" : null)">Jet Ejector — no moving parts, corrosive gases</option>
+                           
                             <option value="6" selected="@(Model.ScrubberType == ScrubberType.ImpingementPlate ? "selected" : null)">Impingement Plate — multi-stage plate column</option>
                         </select>
                         <span class="field-error">@Html.ValidationMessageFor(m => m.ScrubberType)</span>

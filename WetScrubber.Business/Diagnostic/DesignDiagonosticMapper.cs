@@ -54,7 +54,7 @@ namespace WetScrubber.Business.Diagnostics
                 InternalMaterial = design.InternalMaterial.ToString(),
                 IsParticulateOnly = design.ScrubberType == ScrubberType.WetCyclone,
                 IsPreview = design.ScrubberType is ScrubberType.WetCyclone
-                    or ScrubberType.JetEjectorScrubber
+                 
                     or ScrubberType.ImpingementPlate
             };
 
@@ -67,7 +67,6 @@ namespace WetScrubber.Business.Diagnostics
         private static string ToScrubberTypeLabel(ScrubberType type) => type switch
         {
             ScrubberType.WetCyclone => "Wet Cyclone",
-            ScrubberType.JetEjectorScrubber => "Jet Ejector Scrubber",
             ScrubberType.ImpingementPlate => "Impingement Plate",
             ScrubberType.PackedTower => "Packed Tower",
             ScrubberType.VenturiScrubber => "Venturi Scrubber",

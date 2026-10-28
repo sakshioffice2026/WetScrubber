@@ -7,7 +7,6 @@ namespace WetScrubber.Database.Enums
         VenturiScrubber = 2,
         SprayTower = 3,
         WetCyclone = 4,
-        JetEjectorScrubber = 5,
         ImpingementPlate = 6
     }
 
