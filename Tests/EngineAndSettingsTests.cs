@@ -1,6 +1,7 @@
 using Xunit;
 using Microsoft.Extensions.Configuration;
 using WetScrubber.Business.Exceptions;
+using WetScrubber.Business.Venturi;
 using WetScrubber.Services;
 
 namespace WetScrubber.Business.Tests;
@@ -71,7 +72,7 @@ public sealed class EngineAndSettingsTests
     public void Venturi_Sizing_MatchesHandCalculation()
     {
         // 3 m3/s at 60 m/s -> 0.05 m2 -> D = sqrt(4*0.05/pi) = 0.2523 m
-        // dP = rho*v^2/2 * (1 + (L/G/1000)*(rhoL/rhoG)) = 1962 * 1.9174 = 3762 Pa
+        // Calvert: dP[cmH2O] = 8.24e-4 * (6000 cm/s)^2 * (1 L/m3 / 1000) = 29.664 cmH2O = 2909 Pa
         var engine = new ScrubberCalculationEngine();
 
         var result = engine.CalculateVenturiSizing(
@@ -86,8 +87,71 @@ public sealed class EngineAndSettingsTests
 
         Assert.Equal(0.05, result.ThroatArea, precision: 6);
         Assert.Equal(0.2523, result.ThroatDiameter, precision: 3);
-        Assert.InRange(result.PressureDrop, 3750.0, 3775.0);
+        Assert.InRange(result.PressureDrop, 2900.0, 2920.0);
         Assert.InRange(result.CollectionEfficiency, 0.0, 100.0);
+        Assert.InRange(result.DropletDiameterMicron, 100.0, 125.0);
+    }
+
+    [Fact]
+    public void Venturi_Johnstone_Efficiency_MatchesHandCalculation()
+    {
+        // 1 um, 2000 kg/m3, 60 m/s, L/G 1 L/m3: C = 1.166, d_d = 111.5 um,
+        // psi = 7.15, eta = 1 - exp(-1.12 * sqrt(psi)) = 95.0 %
+        var engine = new ScrubberCalculationEngine();
+
+        var result = engine.CalculateVenturiSizing(
+            3.0, 60.0, 1.0, 1.09, 2000.0, 1.0, 1000.0, 1.95e-5);
+
+        Assert.InRange(result.CollectionEfficiency, 93.0, 97.0);
+    }
+
+    [Fact]
+    public void Venturi_LargeParticle_AtHighVelocity_IsNearlyFullyCollected()
+    {
+        var engine = new ScrubberCalculationEngine();
+
+        var result = engine.CalculateVenturiSizing(
+            3.0, 80.0, 1.0, 1.2, 1500.0, 5.0, 1000.0, 1.81e-5);
+
+        Assert.InRange(result.CollectionEfficiency, 99.0, 100.0);
+    }
+
+    [Fact]
+    public void Venturi_Efficiency_IncreasesWithLiquidToGasRatio()
+    {
+        double Eff(double lg) => VenturiCollectionModel.Calculate(
+            60.0, lg, 1e-6, 2000.0, 1.95e-5).CollectionEfficiencyPercent;
+
+        Assert.True(Eff(1.5) > Eff(1.0));
+    }
+
+    [Fact]
+    public void Venturi_Model_FlagsThroatVelocityOutsideUsualRange()
+    {
+        var result = VenturiCollectionModel.Calculate(
+            30.0, 1.0, 2e-6, 2000.0, 1.95e-5);
+
+        Assert.Contains(result.Warnings, w => w.Contains("Throat velocity"));
+    }
+
+    [Fact]
+    public void NukiyamaTanasawa_Diameter_MatchesHandCalculation()
+    {
+        // 60 m/s, 1 L/m3, water: 82.7 um + 28.7 um = 111.5 um
+        double d = VenturiCollectionModel.NukiyamaTanasawaDiameterM(
+            60.0, 1.0, 1000.0, 1.0e-3, 0.072);
+
+        Assert.InRange(d, 108e-6, 115e-6);
+    }
+
+    [Fact]
+    public void Cunningham_Slip_IsAboveOne_AndFallsWithParticleSize()
+    {
+        double small = VenturiCollectionModel.CunninghamSlip(0.5e-6);
+        double large = VenturiCollectionModel.CunninghamSlip(5e-6);
+
+        Assert.True(small > large);
+        Assert.True(large > 1.0);
     }
 
     [Theory]
