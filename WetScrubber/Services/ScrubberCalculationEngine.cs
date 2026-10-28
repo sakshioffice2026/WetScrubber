@@ -7,6 +7,8 @@ using WetScrubber.Business.Thermodynamics;
 using WetScrubber.Business.Venturi;
 using WetScrubber.Database.Enums;
 using WetScrubber.Models;
+using WetScrubber.Business.Particulate;
+using WetScrubber.Business.Plate;
 
 namespace WetScrubber.Services
 {
@@ -120,6 +122,7 @@ namespace WetScrubber.Services
             if (string.IsNullOrWhiteSpace(vm.CarrierGasCode))
                 throw new InvalidOperationException(
                     "Carrier gas code must be provided.");
+
         }
 
         // ════════════════════════════════════════════════════════════
@@ -129,6 +132,7 @@ namespace WetScrubber.Services
         {
             return vm.ScrubberType switch
             {
+                ScrubberType.ImpingementPlate => RunImpingementPlateCalc(vm),
                 ScrubberType.PackedTower => RunPackedTowerCalc(vm),
                 ScrubberType.VenturiScrubber => RunVenturiCalc(vm),
                 ScrubberType.SprayTower => RunSprayTowerCalc(vm),
@@ -999,6 +1003,7 @@ namespace WetScrubber.Services
             result.UsesFloodingMetrics = false;
             result.HasMinimumLGRatioEstimate = false;
             result.ActualLGRatio = vm.LiquidToGasRatio;
+
             result.NTU = 0;
             result.HTU = 0;
             result.PackingHeight = 0;
@@ -1288,6 +1293,14 @@ namespace WetScrubber.Services
                 result.Warnings.Add(result.InfeasibilityReason);
             }
             return result;
+        }
+        private CalculationResult RunImpingementPlateCalc(
+        CreateDesignViewModel vm)
+        {
+            // Connect ImpingementPlateModel.Calculate(...) here.
+            // Map the model's validated results into CalculationResult.
+            throw new NotImplementedException(
+                "Impingement plate calculation is not connected yet.");
         }
 
         // ════════════════════════════════════════════════════════════
@@ -3216,7 +3229,15 @@ namespace WetScrubber.Services
 
         // True when the packing height was fixed by the user.
         public bool IsRatingMode { get; set; }
-
+        // Impingement plate results
+        public int ImpingementPlateStages { get; set; }
+        public double ImpingementPlateActiveAreaM2 { get; set; }
+        public double ImpingementPlateGasVelocityMPerS { get; set; }
+        public double ImpingementPlateFloodingVelocityMPerS { get; set; }
+        public double ImpingementPlatePercentFlood { get; set; }
+        public double ImpingementPlatePressureDropPa { get; set; }
+        public double ImpingementPlateRemovalEfficiencyPercent { get; set; }
+        public double ImpingementPlateCutDiameterMicron { get; set; }
         public List<string> Warnings { get; set; } = new();
 
         // ── Wet cyclone results (zero / null for other scrubber types) ──

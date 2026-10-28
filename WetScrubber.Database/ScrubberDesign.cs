@@ -32,6 +32,16 @@ namespace WetScrubber.Database
         // Persisted so RunCalculation can rebuild the view model from the
         // database; null falls back to the view-model defaults.
         public double? CycloneParticleMmdMicron { get; set; }
+
+        // Impingement plate design inputs
+        public int? ImpingementPlateStages { get; set; }
+        public double? ImpingementPlateColumnDiameterM { get; set; }
+        public double? ImpingementPlateGasFlowM3Hr { get; set; }
+        public double? ImpingementPlateLiquidFlowM3Hr { get; set; }
+        public double? ImpingementPlateGasDensityKgM3 { get; set; }
+        public double? ImpingementPlateLiquidDensityKgM3 { get; set; }
+        public double? ImpingementPlateTargetRemovalPercent { get; set; }
+        public double? ImpingementPlateCutDiameterMicron { get; set; }
         public double? CycloneParticleGeometricStdDev { get; set; }
         public double? CycloneParticleDensityKgM3 { get; set; }
         public double? CycloneInletVelocityMs { get; set; }

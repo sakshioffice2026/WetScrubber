@@ -42,6 +42,16 @@ namespace WetScrubber.Database
         // Body diameter -> TowerDiameter, total height -> TowerHeight,
         // inlet velocity -> GasVelocity, L/G -> ActualLGRatio,
         // overall efficiency -> RemovalEfficiency, pressure drop -> PressureDrop.
+
+        // Impingement plate calculated results
+        public int? ImpingementPlateStages { get; set; }
+        public double? ImpingementPlateActiveAreaM2 { get; set; }
+        public double? ImpingementPlateGasVelocityMPerS { get; set; }
+        public double? ImpingementPlateFloodingVelocityMPerS { get; set; }
+        public double? ImpingementPlatePercentFlood { get; set; }
+        public double? ImpingementPlatePressureDropPa { get; set; }
+        public double? ImpingementPlateRemovalEfficiencyPercent { get; set; }
+        public double? ImpingementPlateCutDiameterMicron { get; set; }
         public double? CycloneCutDiameterMicron { get; set; }
         public int? CycloneParallelUnits { get; set; }
         public double? CycloneInletAreaM2 { get; set; }

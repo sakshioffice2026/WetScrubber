@@ -48,6 +48,12 @@ namespace WetScrubber.Services
         public const double DefaultCycloneVelocityHardMinMs = 8.0;
         public const double DefaultCycloneVelocityHardMaxMs = 35.0;
         public const double DefaultCyclonePressureDropCeilingPa = 2500.0;
+        // Impingement plate settings (provisional; require engineering validation).
+        public const double DefaultImpingementPlateRecommendedFloodPercent = 70.0;
+        public const double DefaultImpingementPlatePressureDropCeilingPa = 3000.0;
+        public const double DefaultImpingementPlateHoleAreaFraction = 0.10;
+        public const double DefaultImpingementPlateDischargeCoefficient = 0.70;
+        public const double DefaultImpingementPlateCapacityFactorMPerS = 0.08;
         public const int DefaultCycloneSizeBinCount = 20;
 
         public static double PackedPumpHeadOffsetM { get; private set; } = DefaultPackedPumpHeadOffsetM;
@@ -68,6 +74,20 @@ namespace WetScrubber.Services
         public static double CyclonePumpEfficiency { get; private set; } = DefaultCyclonePumpEfficiency;
         public static double CycloneFanEfficiency { get; private set; } = DefaultCycloneFanEfficiency;
         public static double CycloneWetCorrectionFactor { get; private set; } = DefaultCycloneWetCorrectionFactor;
+        public static double ImpingementPlateRecommendedFloodPercent { get; private set; }
+    = DefaultImpingementPlateRecommendedFloodPercent;
+
+        public static double ImpingementPlatePressureDropCeilingPa { get; private set; }
+            = DefaultImpingementPlatePressureDropCeilingPa;
+
+        public static double ImpingementPlateHoleAreaFraction { get; private set; }
+            = DefaultImpingementPlateHoleAreaFraction;
+
+        public static double ImpingementPlateDischargeCoefficient { get; private set; }
+            = DefaultImpingementPlateDischargeCoefficient;
+
+        public static double ImpingementPlateCapacityFactorMPerS { get; private set; }
+            = DefaultImpingementPlateCapacityFactorMPerS;
         public static double CycloneVelocityWarnMinMs { get; private set; } = DefaultCycloneVelocityWarnMinMs;
         public static double CycloneVelocityWarnMaxMs { get; private set; } = DefaultCycloneVelocityWarnMaxMs;
         public static double CycloneVelocityHardMinMs { get; private set; } = DefaultCycloneVelocityHardMinMs;
@@ -85,6 +105,40 @@ namespace WetScrubber.Services
             VenturiPumpHeadM = Read(section, nameof(VenturiPumpHeadM), DefaultVenturiPumpHeadM, 0.0, 100.0);
             SprayTowerPumpHeadM = Read(section, nameof(SprayTowerPumpHeadM), DefaultSprayTowerPumpHeadM, 0.0, 100.0);
             FreeboardFactor = Read(section, nameof(FreeboardFactor), DefaultFreeboardFactor, 0.0, 1.0);
+            ImpingementPlateRecommendedFloodPercent = Read(
+    section,
+    nameof(ImpingementPlateRecommendedFloodPercent),
+    DefaultImpingementPlateRecommendedFloodPercent,
+    10.0,
+    100.0);
+
+            ImpingementPlatePressureDropCeilingPa = Read(
+                section,
+                nameof(ImpingementPlatePressureDropCeilingPa),
+                DefaultImpingementPlatePressureDropCeilingPa,
+                100.0,
+                20000.0);
+
+            ImpingementPlateHoleAreaFraction = Read(
+                section,
+                nameof(ImpingementPlateHoleAreaFraction),
+                DefaultImpingementPlateHoleAreaFraction,
+                0.01,
+                0.50);
+
+            ImpingementPlateDischargeCoefficient = Read(
+                section,
+                nameof(ImpingementPlateDischargeCoefficient),
+                DefaultImpingementPlateDischargeCoefficient,
+                0.10,
+                1.0);
+
+            ImpingementPlateCapacityFactorMPerS = Read(
+                section,
+                nameof(ImpingementPlateCapacityFactorMPerS),
+                DefaultImpingementPlateCapacityFactorMPerS,
+                0.01,
+                1.0);
             SumpAndTopAllowanceM = Read(section, nameof(SumpAndTopAllowanceM), DefaultSumpAndTopAllowanceM, 0.0, 10.0);
             SprayTowerAuxiliaryPressureDropPa = Read(section, nameof(SprayTowerAuxiliaryPressureDropPa), DefaultSprayTowerAuxiliaryPressureDropPa, 0.0, 5000.0);
             DefaultVoidFraction = Read(section, nameof(DefaultVoidFraction), DefaultDefaultVoidFraction, 0.30, 0.99);

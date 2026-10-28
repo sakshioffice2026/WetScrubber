@@ -214,6 +214,39 @@ namespace WetScrubber.Models
         [Display(Name = "Liquid Injection Pressure (kPa)")]
         public double CycloneInjectionPressureKPa { get; set; } = 200.0;
 
+        // Impingement plate design inputs
+        [Range(1, 100)]
+        [Display(Name = "Number of Impingement Plate Stages")]
+        public int ImpingementPlateStages { get; set; } = 3;
+
+        [Range(0.1, 20)]
+        [Display(Name = "Column Diameter (m)")]
+        public double ImpingementPlateColumnDiameterM { get; set; } = 1.0;
+
+        [Range(0, 10000000)]
+        [Display(Name = "Gas Flow Rate (m³/hr)")]
+        public double ImpingementPlateGasFlowM3Hr { get; set; }
+
+        [Range(0, 100000)]
+        [Display(Name = "Liquid Flow Rate (m³/hr)")]
+        public double ImpingementPlateLiquidFlowM3Hr { get; set; }
+
+        [Range(0.1, 10)]
+        [Display(Name = "Gas Density (kg/m³)")]
+        public double ImpingementPlateGasDensityKgM3 { get; set; } = 1.2;
+
+        [Range(500, 2000)]
+        [Display(Name = "Liquid Density (kg/m³)")]
+        public double ImpingementPlateLiquidDensityKgM3 { get; set; } = 1000;
+
+        [Range(0, 100)]
+        [Display(Name = "Target Removal Efficiency (%)")]
+        public double ImpingementPlateTargetRemovalPercent { get; set; } = 90;
+
+        [Range(0.1, 500)]
+        [Display(Name = "Cut Diameter (micron)")]
+        public double ImpingementPlateCutDiameterMicron { get; set; } = 5.0;
+
         public CreateDesignViewModel Clone()
         {
             return new CreateDesignViewModel
@@ -266,7 +299,15 @@ namespace WetScrubber.Models
                 CycloneParallelUnits = this.CycloneParallelUnits,
                 CycloneTargetEfficiencyPercent = this.CycloneTargetEfficiencyPercent,
                 CycloneMaxPressureDropPa = this.CycloneMaxPressureDropPa,
-                CycloneInjectionPressureKPa = this.CycloneInjectionPressureKPa
+                CycloneInjectionPressureKPa = this.CycloneInjectionPressureKPa,
+                ImpingementPlateStages = this.ImpingementPlateStages,
+                ImpingementPlateColumnDiameterM = this.ImpingementPlateColumnDiameterM,
+                ImpingementPlateGasFlowM3Hr = this.ImpingementPlateGasFlowM3Hr,
+                ImpingementPlateLiquidFlowM3Hr = this.ImpingementPlateLiquidFlowM3Hr,
+                ImpingementPlateGasDensityKgM3 = this.ImpingementPlateGasDensityKgM3,
+                ImpingementPlateLiquidDensityKgM3 = this.ImpingementPlateLiquidDensityKgM3,
+                ImpingementPlateTargetRemovalPercent = this.ImpingementPlateTargetRemovalPercent,
+                ImpingementPlateCutDiameterMicron = this.ImpingementPlateCutDiameterMicron
             };
         }
     }
@@ -287,6 +328,14 @@ namespace WetScrubber.Models
         public List<string> AffectedFields { get; set; } = new();
         public double? SuggestedValue { get; set; }
         public string? SuggestedValueLabel { get; set; }
+
+        // Impingement plate results
+        public int ImpingementPlateStages { get; set; }
+        public double ImpingementPlateColumnDiameterM { get; set; }
+        public double ImpingementPlatePressureDropPa { get; set; }
+        public double ImpingementPlatePercentFlood { get; set; }
+        public double ImpingementPlateRemovalEfficiencyPercent { get; set; }
+        public bool HasImpingementPlateResults { get; set; }
     }
 
     // ============================================================
