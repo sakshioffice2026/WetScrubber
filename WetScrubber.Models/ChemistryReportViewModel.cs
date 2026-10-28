@@ -23,6 +23,8 @@ namespace WetScrubber.Models
         [Range(0.0001, 1000000, ErrorMessage = "Must be > 0")]
         public double InletGasFlowKmolPerHr { get; set; } = 100;
 
+        [Range(0.01, 1000, ErrorMessage = "Must be > 0")]
+        public double TowerAreaM2 { get; set; } = 2.55;
         public double InletGasDensityKgM3 { get; set; } = 1.2;
         public double InletGasViscosityPas { get; set; } = 0.000018;
         public double InletGasDiffusivityM2S { get; set; } = 0.0000001;

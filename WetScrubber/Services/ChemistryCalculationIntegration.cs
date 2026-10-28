@@ -459,6 +459,11 @@ namespace WetScrubber.Business.Services
                     liquidTemperatureK,
                     enhancementFactor);
 
+            double hYXEffective =
+                input.IncludeReactiveAbsorption && enhancementFactor > 1.0
+                    ? hYX / enhancementFactor
+                    : hYX;
+
             result.EquilibriumValidation =
                 ChemistryValidityChecker.ValidateEquilibriumAndMassTransfer(
                     hYX,
@@ -501,7 +506,7 @@ namespace WetScrubber.Business.Services
                     input.InletGasMoleFractionPollutant,
                     targetOutletFraction,
                     input.InletLiquidMoleFraction,
-                    hYX,
+                    hYXEffective,
                     input.PressureKPa);
 
             if (!feasible)
@@ -579,10 +584,16 @@ namespace WetScrubber.Business.Services
                                 input.PollutantCode);
 
                         // Solver expects H_yx (y* = H * x).
-                        return input.HenryConvention ==
-                               HenrysLawConvention.GasReferenced
-                            ? 1.0 / localHenry.Value
-                            : localHenry.Value;
+                        double hLocalYX =
+                            input.HenryConvention ==
+                            HenrysLawConvention.GasReferenced
+                                ? 1.0 / localHenry.Value
+                                : localHenry.Value;
+
+                        return input.IncludeReactiveAbsorption &&
+                               enhancementFactor > 1.0
+                            ? hLocalYX / enhancementFactor
+                            : hLocalYX;
                     });
 
             // Numerical-quality warnings (layer refinement, analytic cross-check)
@@ -664,7 +675,8 @@ namespace WetScrubber.Business.Services
             // does not use the operating-line balance. If it is unavailable,
             // fall back to the liquid-stream difference.
             double integratedPickupKmolPerHr =
-                result.TowerSolverResult.ProfileIntegratedAbsorbedFluxKmolM2Hr;
+                result.TowerSolverResult.ProfileIntegratedAbsorbedFluxKmolM2Hr
+                * input.Packing.TowerAreaM2;
 
             double liquidAbsorbedKmolPerHr =
                 !double.IsNaN(integratedPickupKmolPerHr) &&

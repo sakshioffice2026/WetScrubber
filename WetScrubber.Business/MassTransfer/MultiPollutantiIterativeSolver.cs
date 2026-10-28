@@ -89,7 +89,7 @@ namespace WetScrubber.Business.MassTransfer
             public double LiquidViscosityPas { get; set; } = 1e-3;
             public double GasViscosityPas { get; set; } = 1.8e-5;
             public double LiquidDiffusivityM2S { get; set; } = 2e-9;   // used when no MolarVolumeCm3Mol
-            public double GasDiffusivityM2S { get; set; } = 2e-5;      // used when no Fuller data
+            public double GasDiffusivityM2S { get; set; } = 1.3e-5;      // used when no Fuller data     
             public double LiquidSolventMolecularWeightGMol { get; set; } = 18.02;
             public double LiquidSolventAssociationFactor { get; set; } = 2.6;
 

@@ -353,7 +353,7 @@ namespace WetScrubber.Services
             const double liquidSurfaceTensionNM = 0.072;
 
             // Temporary standard tower cross-sectional area.
-            const double towerAreaM2 = 1.0;
+            double towerAreaM2 = form.TowerAreaM2;
 
             // Liquid mass flow:
             //
@@ -373,8 +373,11 @@ namespace WetScrubber.Services
              * This should be replaced by an authoritative total-gas
              * mass-flow field when that field is added to the form model.
              */
+            const double GasMolecularWeightKgPerKmol = 28.96;
+
             double gasMassFlowKgS =
-                form.InletGasFlowKmolPerHr / 3600.0;
+                form.InletGasFlowKmolPerHr *
+                GasMolecularWeightKgPerKmol / 3600.0;
 
             var packing =
                 new PackingMassTransferInput

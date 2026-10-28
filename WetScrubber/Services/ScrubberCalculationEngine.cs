@@ -965,7 +965,12 @@ namespace WetScrubber.Services
                 PressurePa = vm.InletPressure,
                 GasViscosityPas = vm.GasViscosity,
                 GasMolarMassKgMol = vm.CarrierGasMolecularWeightGMol / 1000.0,
-                GasDensityKgM3 = vm.GasDensity,
+                GasDensityKgM3 = GetActualGasDensity(
+                    vm.GasDensity,
+                    vm.InletTemperature + 273.15,
+                    vm.InletPressure,
+                    null,
+                    0.0),
 
                 Distribution = ParticleSizeDistribution.LogNormal(
                     vm.CycloneParticleMmdMicron * 1e-6,
@@ -1156,8 +1161,21 @@ namespace WetScrubber.Services
                     molecularWeightB: vm.CarrierGasMolecularWeightGMol,
                     temperatureK: vm.InletTemperature + 273.15,
                     pressureKPa: vm.InletPressure / 1000.0);
-                double effectiveHenry = GetEffectiveHenrysLawConstant(
-                    pollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
+                if (GetReactiveEquilibriumBasis(pollutant, vm).UseReactiveEquilibrium)
+                {
+                    const string reactiveNote =
+                        "UPPER BOUND: the reagent is treated as instantaneous and irreversible " +
+                        "(effective equilibrium slope at its minimum) because no verified rate " +
+                        "constant is available. Spray height is optimistic.";
+
+                    if (!result.Warnings.Contains(reactiveNote))
+                        result.Warnings.Add(reactiveNote);
+                }
+                double effectiveHenry =
+                         GetReactiveEquilibriumBasis(pollutant, vm).UseReactiveEquilibrium
+                            ? HenrysConstantUnits.MinimumH
+                            : GetEffectiveHenrysLawConstant(
+                                pollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
                 double molarLG = CalculateMolarLiquidToGasRatio(
                     vm.LiquidToGasRatio, vm.LiquidDensity, vm.InletTemperature,
                     vm.InletPressure, vm.LiquidMolecularWeightGMol);
