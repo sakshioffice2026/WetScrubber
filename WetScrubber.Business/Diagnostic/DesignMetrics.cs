@@ -34,6 +34,15 @@ namespace WetScrubber.Business.Diagnostics
         public bool IsLimestoneSlurry { get; init; }
         public double SolidsLoadingWtPercent { get; init; }
 
+        // Types 4–6 (WetCyclone, JetEjectorScrubber, ImpingementPlate).
+        // Defaults keep existing callers and rules unaffected.
+        public double CutDiameterMicron { get; init; }     // µm, d50 (particulate types)
+        public double PercentFlood { get; init; }          // % (plate / packed types)
+        public int NumberOfStages { get; init; }           // plates in series
+        public bool IsFeasible { get; init; } = true;      // from the model result contract
+        public bool IsParticulateOnly { get; init; }       // gas absorption not modeled
+        public bool IsPreview { get; init; }               // not yet validated
+
         // Used by the material service-temperature check.
         public double InletTemperatureC { get; init; }
         public string? ShellMaterial { get; init; }

@@ -2765,8 +2765,8 @@ namespace WetScrubber.Services
                     particleDiameterM: particleDiameterMicron * 1e-6,
                     particleDensityKgM3: particleDensityKgM3,
                     gasViscosityPas: gasViscosityPas,
-                    liquidDensityKgM3: liquidDensityKgM3);
-
+                    liquidDensityKgM3: liquidDensityKgM3,
+                    geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
             if (!double.IsFinite(collection.CollectionEfficiencyPercent) ||
                 collection.CollectionEfficiencyPercent < 0.0 ||
                 collection.CollectionEfficiencyPercent > 100.0)

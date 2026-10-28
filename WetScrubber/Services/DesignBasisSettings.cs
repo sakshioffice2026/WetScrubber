@@ -39,6 +39,7 @@ namespace WetScrubber.Services
         public const double DefaultSprayTowerBaseHeightM = 2.0;
         public const double DefaultVenturiDiameterFactor = 2.5;
         public const double DefaultVenturiHeightFactor = 8.0;
+        public const double DefaultVenturiParticleGeometricStdDev = 1.0;
         public const double DefaultCyclonePumpEfficiency = 0.60;
         public const double DefaultCycloneFanEfficiency = 0.65;
         public const double DefaultCycloneWetCorrectionFactor = 1.0;
@@ -61,6 +62,7 @@ namespace WetScrubber.Services
         public static double SprayTowerRemovalCoefficient { get; private set; } = DefaultSprayTowerRemovalCoefficient;
         public static double SprayTowerHeightPerM3S { get; private set; } = DefaultSprayTowerHeightPerM3S;
         public static double SprayTowerBaseHeightM { get; private set; } = DefaultSprayTowerBaseHeightM;
+        public static double VenturiParticleGeometricStdDev { get; private set; } = DefaultVenturiParticleGeometricStdDev;
         public static double VenturiDiameterFactor { get; private set; } = DefaultVenturiDiameterFactor;
         public static double VenturiHeightFactor { get; private set; } = DefaultVenturiHeightFactor;
         public static double CyclonePumpEfficiency { get; private set; } = DefaultCyclonePumpEfficiency;
@@ -91,6 +93,7 @@ namespace WetScrubber.Services
             SprayTowerRemovalCoefficient = Read(section, nameof(SprayTowerRemovalCoefficient), DefaultSprayTowerRemovalCoefficient, 0.01, 10.0);
             SprayTowerHeightPerM3S = Read(section, nameof(SprayTowerHeightPerM3S), DefaultSprayTowerHeightPerM3S, 0.0, 50.0);
             SprayTowerBaseHeightM = Read(section, nameof(SprayTowerBaseHeightM), DefaultSprayTowerBaseHeightM, 0.0, 20.0);
+            VenturiParticleGeometricStdDev = Read(section, nameof(VenturiParticleGeometricStdDev), DefaultVenturiParticleGeometricStdDev, 1.0, 10.0);
             VenturiDiameterFactor = Read(section, nameof(VenturiDiameterFactor), DefaultVenturiDiameterFactor, 1.0, 10.0);
             VenturiHeightFactor = Read(section, nameof(VenturiHeightFactor), DefaultVenturiHeightFactor, 1.0, 30.0);
 

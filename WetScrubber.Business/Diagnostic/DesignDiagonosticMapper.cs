@@ -48,7 +48,14 @@ namespace WetScrubber.Business.Diagnostics
                 PackingCode = geometry.PackingCode ?? design.PackingCode,
                 PackingSizingMethod = geometry.PackingSizingMethod,
                 IsLimestoneSlurry = geometry.IsLimestoneSlurry,
-                SolidsLoadingWtPercent = geometry.SolidsLoadingWtPercent
+                SolidsLoadingWtPercent = geometry.SolidsLoadingWtPercent,
+                InletTemperatureC = design.GasStream?.InletTemperature ?? 0.0,
+                ShellMaterial = design.ShellMaterial.ToString(),
+                InternalMaterial = design.InternalMaterial.ToString(),
+                IsParticulateOnly = design.ScrubberType == ScrubberType.WetCyclone,
+                IsPreview = design.ScrubberType is ScrubberType.WetCyclone
+                    or ScrubberType.JetEjectorScrubber
+                    or ScrubberType.ImpingementPlate
             };
 
             return engine.Evaluate(metrics);
@@ -59,6 +66,9 @@ namespace WetScrubber.Business.Diagnostics
         // private copy in TemplateNarrativeBuilder and call this one.
         private static string ToScrubberTypeLabel(ScrubberType type) => type switch
         {
+            ScrubberType.WetCyclone => "Wet Cyclone",
+            ScrubberType.JetEjectorScrubber => "Jet Ejector Scrubber",
+            ScrubberType.ImpingementPlate => "Impingement Plate",
             ScrubberType.PackedTower => "Packed Tower",
             ScrubberType.VenturiScrubber => "Venturi Scrubber",
             ScrubberType.SprayTower => "Spray Tower",

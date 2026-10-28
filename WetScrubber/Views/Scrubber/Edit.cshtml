@@ -92,7 +92,7 @@
             </div>
 
             <!-- Hidden select for model binding -->
-            <input type="hidden" asp-for="ScrubberType" id="ScrubberType" value="1" />
+            <input type="hidden" asp-for="ScrubberType" id="ScrubberType" value="@((int)Model.ScrubberType)" />
 
             <!-- Scrubber type visual cards -->
             <div class="type-grid">
@@ -405,6 +405,77 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
+         WET CYCLONE INPUTS (shown only for Wet Cyclone)
+    ════════════════════════════════════════════════════════ -->
+    <div class="form-card" id="sec-cyclone" style="@(Model.ScrubberType == ScrubberType.WetCyclone ? "" : "display:none")">
+        <div class="form-card-header">
+            <div class="form-card-icon">
+                <svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 2a4 4 0 110 8A4 4 0 018 4z" /></svg>
+            </div>
+            <div>
+                <div class="form-card-title">Wet Cyclone Inputs</div>
+                <div class="form-card-sub">Particulate collection only; gas absorption is not modeled</div>
+            </div>
+        </div>
+        <div class="form-card-body">
+            <div class="fg3">
+
+                <div class="form-group">
+                    <label asp-for="CycloneParticleMmdMicron">Mass median particle diameter <span class="unit">(micron)</span></label>
+                    <input asp-for="CycloneParticleMmdMicron" type="number" step="any" placeholder="20" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneParticleMmdMicron)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneParticleGeometricStdDev">Geometric std. deviation <span class="unit">(-)</span></label>
+                    <input asp-for="CycloneParticleGeometricStdDev" type="number" step="any" placeholder="2.0" />
+                    <span class="field-hint">1.0 = single particle size.</span>
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneParticleGeometricStdDev)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneParticleDensityKgM3">Particle density <span class="unit">(kg/m³)</span></label>
+                    <input asp-for="CycloneParticleDensityKgM3" type="number" step="any" placeholder="2000" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneParticleDensityKgM3)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneInletVelocityMs">Inlet velocity <span class="unit">(m/s)</span></label>
+                    <input asp-for="CycloneInletVelocityMs" type="number" step="any" placeholder="20" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneInletVelocityMs)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneParallelUnits">Cyclones in parallel <span class="unit">(units)</span></label>
+                    <input asp-for="CycloneParallelUnits" type="number" step="1" placeholder="1" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneParallelUnits)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneTargetEfficiencyPercent">Target overall efficiency <span class="unit">(%)</span></label>
+                    <input asp-for="CycloneTargetEfficiencyPercent" type="number" step="any" placeholder="0" />
+                    <span class="field-hint">0 = no target.</span>
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneTargetEfficiencyPercent)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneMaxPressureDropPa">Max pressure drop <span class="unit">(Pa)</span></label>
+                    <input asp-for="CycloneMaxPressureDropPa" type="number" step="any" placeholder="0" />
+                    <span class="field-hint">0 = use the design-basis ceiling.</span>
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneMaxPressureDropPa)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="CycloneInjectionPressureKPa">Liquid injection pressure <span class="unit">(kPa)</span></label>
+                    <input asp-for="CycloneInjectionPressureKPa" type="number" step="any" placeholder="200" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.CycloneInjectionPressureKPa)</span>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
          SECTION 5 — Construction Materials
     ════════════════════════════════════════════════════════ -->
     <div class="form-card">
@@ -528,4 +599,16 @@
 @section Scripts {
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="~/js/scrubber.js"></script>
+    <script>
+        $(function () {
+            function toggleCyclone() {
+                $('#sec-cyclone').toggle($('#ScrubberType').val() === '4');
+            }
+            $('.type-card').on('click', function () {
+                $('#ScrubberType').val($(this).data('value'));
+                toggleCyclone();
+            });
+            toggleCyclone();
+        });
+    </script>
 }

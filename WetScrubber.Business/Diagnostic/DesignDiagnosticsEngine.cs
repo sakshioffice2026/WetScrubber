@@ -24,6 +24,15 @@ namespace WetScrubber.Business.Diagnostics
         private const double VenturiPressureDropCeilingPa = 8000.0;
         private const double SprayTowerPressureDropCeilingPa = 1500.0;
 
+        // PROVISIONAL screening ceilings for types 4–6. Not source-verified;
+        // each needs a cited source and range before the validation gate.
+        private const double WetCyclonePressureDropCeilingPa = 2500.0;
+        private const double ImpingementPlatePressureDropCeilingPa = 3000.0;
+        private const double JetEjectorPressureDropCeilingPa = 1500.0;
+
+        // Same recommended flooding limit the Results view already displays.
+        private const double ImpingementPlateRecommendedFloodPercent = 70.0;
+
         private const double PackingHeightSuggestionMultiple = 1.5;
         private const double AbsorptionFactorSuggestionMargin = 1.05;
         private const double RemovalEfficiencySuggestionMargin = 1.05;
@@ -37,10 +46,13 @@ namespace WetScrubber.Business.Diagnostics
             var findings = new List<DesignFinding>();
 
             EvaluateStaleDiagnosticsData(metrics, findings);
+            EvaluatePreviewAndScope(metrics, findings);
+            EvaluateModelFeasibility(metrics, findings);
             EvaluatePackingHeightPlausibility(metrics, findings);
             EvaluateAbsorptionFactor(metrics, findings);
             EvaluateLGMargin(metrics, findings);
             EvaluatePressureDrop(metrics, findings);
+            EvaluatePlateFlooding(metrics, findings);
             EvaluateRemovalEfficiency(metrics, findings);
             EvaluateMaterialTemperature(metrics, findings);
 
@@ -69,6 +81,88 @@ namespace WetScrubber.Business.Diagnostics
                         "Re-run the calculation for this design, then regenerate the report."
                 });
             }
+        }
+
+        private static bool TypeContains(DesignMetrics m, string token) =>
+            m.ScrubberType?.Contains(token, System.StringComparison.OrdinalIgnoreCase) == true;
+
+        private static bool IsWetCyclone(DesignMetrics m) => TypeContains(m, "Cyclone");
+        private static bool IsImpingementPlate(DesignMetrics m) => TypeContains(m, "Impingement");
+        private static bool IsJetEjector(DesignMetrics m) => TypeContains(m, "Ejector");
+
+        private static bool IsPreviewType(DesignMetrics m) =>
+            m.IsPreview || IsWetCyclone(m) || IsImpingementPlate(m) || IsJetEjector(m);
+
+        private static void EvaluatePreviewAndScope(
+            DesignMetrics m,
+            List<DesignFinding> findings)
+        {
+            if (IsPreviewType(m))
+            {
+                findings.Add(new DesignFinding
+                {
+                    Code = "MODEL_PREVIEW_NOT_VALIDATED",
+                    Severity = FindingSeverity.Info,
+                    Symptom = $"{m.ScrubberType} results are marked Preview.",
+                    Diagnosis =
+                        "This model has not yet passed its benchmark suite, so its correlations and constants are unvalidated.",
+                    Recommendation =
+                        "Treat results as screening estimates and do not use them for final design until the model is validated."
+                });
+            }
+
+            if (m.IsParticulateOnly || IsWetCyclone(m))
+            {
+                findings.Add(new DesignFinding
+                {
+                    Code = "SCOPE_PARTICULATE_ONLY",
+                    Severity = FindingSeverity.Info,
+                    Symptom = "This model covers particulate collection only.",
+                    Diagnosis =
+                        "Gas absorption is not modeled, so gaseous pollutant targets are not evaluated.",
+                    Recommendation =
+                        "Use an absorption-capable scrubber type for gaseous pollutants."
+                });
+            }
+        }
+
+        private static void EvaluateModelFeasibility(
+            DesignMetrics m,
+            List<DesignFinding> findings)
+        {
+            if (m.IsFeasible)
+                return;
+
+            findings.Add(new DesignFinding
+            {
+                Code = "MODEL_INFEASIBLE",
+                Severity = FindingSeverity.Critical,
+                Symptom = "The calculation reported this design as infeasible.",
+                Diagnosis =
+                    "One or more model limits were violated (see the calculation notes on the Results page).",
+                Recommendation =
+                    "Review the infeasibility reason and warnings, adjust the inputs, and re-run the calculation."
+            });
+        }
+
+        private static void EvaluatePlateFlooding(
+            DesignMetrics m,
+            List<DesignFinding> findings)
+        {
+            if (!IsImpingementPlate(m) || m.PercentFlood <= ImpingementPlateRecommendedFloodPercent)
+                return;
+
+            findings.Add(new DesignFinding
+            {
+                Code = "PLATE_FLOODING_HIGH",
+                Severity = FindingSeverity.Warning,
+                Symptom =
+                    $"Plate flooding is {m.PercentFlood:F1}%, above the recommended {ImpingementPlateRecommendedFloodPercent:F0}%.",
+                Diagnosis =
+                    "Operating close to flooding risks liquid carryover and unstable plate hydraulics.",
+                Recommendation =
+                    "Increase column diameter or reduce gas velocity, then re-run the calculation."
+            });
         }
 
         private static void EvaluatePackingHeightPlausibility(
@@ -192,16 +286,29 @@ namespace WetScrubber.Business.Diagnostics
             DesignMetrics m,
             List<DesignFinding> findings)
         {
-            double? ceiling = m.ScrubberType switch
-            {
-                "Packed Tower" => PackedTowerPressureDropCeilingPa,
-                "Venturi Scrubber" => VenturiPressureDropCeilingPa,
-                "Spray Tower" => SprayTowerPressureDropCeilingPa,
-                _ => null
-            };
+            double? ceiling =
+                IsWetCyclone(m) ? WetCyclonePressureDropCeilingPa
+                : IsImpingementPlate(m) ? ImpingementPlatePressureDropCeilingPa
+                : IsJetEjector(m) ? JetEjectorPressureDropCeilingPa
+                : m.ScrubberType switch
+                {
+                    "Packed Tower" => PackedTowerPressureDropCeilingPa,
+                    "Venturi Scrubber" => VenturiPressureDropCeilingPa,
+                    "Spray Tower" => SprayTowerPressureDropCeilingPa,
+                    _ => null
+                };
 
             if (ceiling.HasValue && m.PressureDrop > ceiling.Value)
             {
+                string recommendation =
+                    IsWetCyclone(m)
+                        ? "Consider a larger inlet area (lower inlet velocity) or several cyclones in parallel, then recalculate."
+                    : IsImpingementPlate(m)
+                        ? "Consider a larger column diameter, larger open area, or fewer plates, then recalculate."
+                    : IsJetEjector(m)
+                        ? "Review nozzle size and motive-liquid pressure, then recalculate."
+                    : "Consider a larger tower diameter or lower-pressure-drop packing.";
+
                 findings.Add(new DesignFinding
                 {
                     Code = "PRESSURE_DROP_HIGH",
@@ -210,8 +317,7 @@ namespace WetScrubber.Business.Diagnostics
                         $"Total pressure drop is {m.PressureDrop:F0} Pa, above the typical range for a {m.ScrubberType.ToLowerInvariant()} ({ceiling.Value:F0} Pa).",
                     Diagnosis =
                         "Excess fan energy cost, with possible hydraulic operating concerns.",
-                    Recommendation =
-                        "Consider a larger tower diameter or lower-pressure-drop packing."
+                    Recommendation = recommendation
                 });
             }
         }
@@ -227,12 +333,27 @@ namespace WetScrubber.Business.Diagnostics
 
             if (m.RemovalEfficiency < target)
             {
+                // An L/G suggestion is meaningless for a particulate-only cyclone.
                 double? suggested =
-                    (m.ActualLGRatio > 0 && m.RemovalEfficiency > 0)
+                    (!IsWetCyclone(m) && m.ActualLGRatio > 0 && m.RemovalEfficiency > 0)
                         ? m.ActualLGRatio
                             * (target / m.RemovalEfficiency)
                             * RemovalEfficiencySuggestionMargin
                         : null;
+
+                string diagnosis =
+                    IsWetCyclone(m)
+                        ? "The calculated particle cut diameter is too large to meet the stated collection target."
+                        : "The calculated mass-transfer performance is insufficient to meet the stated pollutant removal target.";
+
+                string recommendation =
+                    IsWetCyclone(m)
+                        ? "Reduce the cut diameter by raising inlet velocity (within limits), using a smaller-diameter cyclone, or adding cyclones in parallel, then re-run the calculation."
+                    : IsImpingementPlate(m)
+                        ? "Add plates and/or increase the L/G ratio, then re-run the calculation."
+                    : IsJetEjector(m)
+                        ? "Increase the motive-liquid rate or reactivity of the scrubbing liquid, then re-run the calculation."
+                    : "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.";
 
                 findings.Add(new DesignFinding
                 {
@@ -240,10 +361,8 @@ namespace WetScrubber.Business.Diagnostics
                     Severity = FindingSeverity.Critical,
                     Symptom =
                         $"Removal efficiency is {m.RemovalEfficiency:F2}%, below the target of {target:F2}%.",
-                    Diagnosis =
-                        "The calculated mass-transfer performance is insufficient to meet the stated pollutant removal target.",
-                    Recommendation =
-                        "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.",
+                    Diagnosis = diagnosis,
+                    Recommendation = recommendation,
                     AffectedFields = new[] { LiquidToGasRatioField },
                     SuggestedValue = suggested,
                     SuggestedValueLabel = suggested is double s

@@ -2,6 +2,13 @@
 @{
     ViewData["Title"] = Model.DesignName;
     ViewData["ActivePage"] = "NewDesign";
+    var ddType = Model.ScrubberType ?? string.Empty;
+    var ddIsVenturi = ddType.Contains("Venturi", StringComparison.OrdinalIgnoreCase);
+    var ddIsWetCyclone = ddType.Contains("Cyclone", StringComparison.OrdinalIgnoreCase);
+    var ddIsImpingement = ddType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
+    var ddIsJetEjector = ddType.Contains("Ejector", StringComparison.OrdinalIgnoreCase);
+    var ddIsParticulateOnly = ddIsVenturi || ddIsWetCyclone;
+    var ddIsPreview = ddIsWetCyclone || ddIsImpingement || ddIsJetEjector;
 }
 
 @section Styles {
@@ -92,6 +99,23 @@
     </div>
 </div>
 
+<!-- ── Preview notice (types 4-6) ─────────────────────────────── -->
+@if (ddIsPreview)
+{
+    <div class="dd-banner dd-banner-warn">
+        <div class="dd-banner-main">
+            <div>
+                <div class="dd-banner-title">Preview — not yet validated</div>
+                <div class="dd-banner-text">
+                    @if (ddIsWetCyclone) { <text>Wet cyclone models particulate collection only; gas absorption is not modeled.</text> }
+                    @if (ddIsImpingement) { <text>Impingement plate results are screening estimates until benchmarks pass.</text> }
+                    @if (ddIsJetEjector) { <text>Jet ejector results are screening estimates; correlations are unvalidated.</text>  }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <!-- ── Previous results banner ────────────────────────────────── -->
 @if (Model.HasResults)
 {
@@ -103,9 +127,9 @@
             <div>
                 <div class="dd-banner-title">Calculation results available</div>
                 <div class="dd-banner-text">
-                    Tower: <strong>@Model.TowerDiameter</strong> <span class="dd-unit">m</span> dia × <strong>@Model.TowerHeight</strong> <span class="dd-unit">m</span> height
+                    @(ddIsWetCyclone ? "Cyclone" : ddIsVenturi ? "Body" : "Tower"): <strong>@Model.TowerDiameter</strong> <span class="dd-unit">m</span> dia × <strong>@Model.TowerHeight</strong> <span class="dd-unit">m</span> height
                     <span class="dd-sep">|</span>
-                    Removal: <strong>@Model.RemovalEfficiency.ToString("F1")</strong><span class="dd-unit">%</span>
+                    @(ddIsParticulateOnly ? "Collection" : "Removal"): <strong>@Model.RemovalEfficiency.ToString("F1")</strong><span class="dd-unit">%</span>
                     <span class="dd-sep">|</span>
                     ΔP: <strong>@Model.PressureDrop.ToString("F0")</strong> <span class="dd-unit">Pa</span>
                 </div>
@@ -291,9 +315,23 @@
         </div>
         <h4>Ready to calculate</h4>
         <p>
-            All inputs are saved. Click <strong>Run Calculation</strong> to compute tower
-            dimensions, removal efficiency, pressure drop, and power requirements using
-            Souders-Brown, Colburn NTU/HTU, and Billet-Schultes methods.
+            @if (ddIsWetCyclone)
+            {
+                <text>All inputs are saved. Click <strong>Run Calculation</strong> to compute cyclone
+                dimensions, cut diameter, particle collection efficiency, pressure drop, and power
+                requirements using Lapple ratios and fractional-efficiency methods.</text>
+            }
+            else if (ddIsImpingement || ddIsJetEjector)
+            {
+                <text>All inputs are saved. Click <strong>Run Calculation</strong> to compute a
+                preview screening estimate of dimensions, removal, pressure drop, and power requirements.</text>
+            }
+            else
+            {
+                <text>All inputs are saved. Click <strong>Run Calculation</strong> to compute tower
+                dimensions, removal efficiency, pressure drop, and power requirements using
+                Souders-Brown, Colburn NTU/HTU, and Billet-Schultes methods.</text>
+            }
         </p>
         <form asp-controller="Scrubber" asp-action="RunCalculation"
               asp-route-id="@Model.DesignId" method="post">

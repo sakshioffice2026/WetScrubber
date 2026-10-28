@@ -55,7 +55,7 @@ namespace WetScrubber.Business.Reports
 
             BuildDiagnosticsSection(sb, design);
 
-            BuildEngineeringSummary(sb);
+            BuildEngineeringSummary(sb, design);
 
             BuildDisclaimer(sb);
 
@@ -73,6 +73,17 @@ namespace WetScrubber.Business.Reports
             sb.AppendLine($"Scrubber Type : {design.ScrubberType}");
             sb.AppendLine($"Shell Material : {design.ShellMaterial}");
             sb.AppendLine($"Internal Material : {design.InternalMaterial}");
+            if (design.ScrubberType is ScrubberType.WetCyclone
+                or ScrubberType.JetEjectorScrubber
+                or ScrubberType.ImpingementPlate)
+            {
+                sb.AppendLine("Model Status : PREVIEW - not yet validated");
+            }
+
+            if (design.ScrubberType == ScrubberType.WetCyclone)
+            {
+                sb.AppendLine("Model Scope : Particulate collection only; gas absorption not modeled");
+            }
 
             sb.AppendLine();
         }
@@ -150,11 +161,17 @@ namespace WetScrubber.Business.Reports
             // Replace with your Geometry properties.
             //
 
-            sb.AppendLine($"Tower Diameter : {geometry.TowerDiameter}");
+            var isCyclone = design.ScrubberType == ScrubberType.WetCyclone;
+            var hasPacking = design.ScrubberType is not (ScrubberType.WetCyclone
+                or ScrubberType.JetEjectorScrubber
+                or ScrubberType.ImpingementPlate);
 
-            sb.AppendLine($"Tower Height : {geometry.TowerHeight}");
+            sb.AppendLine($"{(isCyclone ? "Cyclone Body Diameter" : "Tower Diameter")} : {geometry.TowerDiameter}");
 
-            sb.AppendLine($"Packing Height : {geometry.PackingHeight}");
+            sb.AppendLine($"{(isCyclone ? "Cyclone Total Height" : "Tower Height")} : {geometry.TowerHeight}");
+
+            if (hasPacking)
+                sb.AppendLine($"Packing Height : {geometry.PackingHeight}");
 
             sb.AppendLine($"Pressure Drop : {geometry.PressureDrop}");
 
@@ -187,7 +204,12 @@ namespace WetScrubber.Business.Reports
                 SolidsLoadingWtPercent = geometry.SolidsLoadingWtPercent,
                 InletTemperatureC = design.GasStream?.InletTemperature ?? 0.0,
                 ShellMaterial = design.ShellMaterial.ToString(),
-                InternalMaterial = design.InternalMaterial.ToString()
+                InternalMaterial = design.InternalMaterial.ToString(),
+             
+                IsParticulateOnly = design.ScrubberType == ScrubberType.WetCyclone,
+                IsPreview = design.ScrubberType is ScrubberType.WetCyclone
+                    or ScrubberType.JetEjectorScrubber
+                    or ScrubberType.ImpingementPlate
             };
 
             var findings = _diagnosticsEngine.Evaluate(metrics);
@@ -215,11 +237,15 @@ namespace WetScrubber.Business.Reports
             ScrubberType.PackedTower => "Packed Tower",
             ScrubberType.VenturiScrubber => "Venturi Scrubber",
             ScrubberType.SprayTower => "Spray Tower",
+            ScrubberType.WetCyclone => "Wet Cyclone",
+            ScrubberType.JetEjectorScrubber => "Jet Ejector Scrubber",
+            ScrubberType.ImpingementPlate => "Impingement Plate",
             _ => type.ToString()
         };
 
         private static void BuildEngineeringSummary(
-            StringBuilder sb)
+            StringBuilder sb,
+            ScrubberDesign design)
         {
             sb.AppendLine("ENGINEERING SUMMARY");
             sb.AppendLine("--------------------------------------------");
@@ -230,7 +256,19 @@ namespace WetScrubber.Business.Reports
 
             sb.AppendLine();
 
-            sb.AppendLine("All engineering values originate from");
+            var isPreview = design.ScrubberType is ScrubberType.WetCyclone
+                or ScrubberType.JetEjectorScrubber
+                or ScrubberType.ImpingementPlate;
+
+            if (isPreview)
+            {
+                sb.AppendLine("This scrubber type is in PREVIEW:");
+                sb.AppendLine("its models are screening estimates and");
+                sb.AppendLine("have not yet passed validation benchmarks.");
+            }
+            else
+
+                sb.AppendLine("All engineering values originate from");
             sb.AppendLine("validated mathematical models and");
             sb.AppendLine("industry design correlations.");
 

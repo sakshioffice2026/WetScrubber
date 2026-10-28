@@ -15,9 +15,16 @@ namespace WetScrubber.Business.Flowsheet
         public double GasDensityKgM3 { get; set; } = 1.2;
         public double PackingSpecificAreaM2M3 { get; set; } = 250;
         public double PackingNominalSizeM { get; set; } = 0.025;
+        // 1 = Packed Tower (default). Types 4–6 (Preview) are not valid for this ODE unit.
+        public int ScrubberTypeId { get; set; } = 1;
+
+
 
         public FlowsheetPorts Process(FlowsheetPorts inlet)
         {
+            if (ScrubberTypeId is 4 or 5 or 6)
+                throw new InvalidOperationException(
+                    $"Unit '{Name}': scrubber type {ScrubberTypeId} (Preview) is not supported by the packed-bed ODE unit. Use the engine-backed unit.");
             var gasIn = inlet.Gas;
             var liquidIn = inlet.Liquid;
 

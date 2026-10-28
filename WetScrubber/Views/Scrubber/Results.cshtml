@@ -7,6 +7,11 @@
     var isPackedTower = scrubberType.Contains("Packed", StringComparison.OrdinalIgnoreCase);
     var isSprayTower = scrubberType.Contains("Spray", StringComparison.OrdinalIgnoreCase);
     var isVenturi = scrubberType.Contains("Venturi", StringComparison.OrdinalIgnoreCase);
+    var isWetCyclone = scrubberType.Contains("Cyclone", StringComparison.OrdinalIgnoreCase);
+    var isImpingement = scrubberType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
+    var isJetEjector = scrubberType.Contains("Ejector", StringComparison.OrdinalIgnoreCase);
+    var isParticulateOnly = isVenturi || isWetCyclone;
+    var isPreviewType = isWetCyclone || isImpingement || isJetEjector;
 }
 
 @section Styles {
@@ -32,6 +37,15 @@
 
 @if (TempData["Success"] != null) { <div style="background:#e8f5e9;border-left:4px solid #00d28c;padding:12px;margin-bottom:16px;border-radius:4px;">✓ @TempData["Success"]</div> }
 @if (TempData["Error"] != null) { <div style="background:#ffebee;border-left:4px solid #ff6b6b;padding:12px;margin-bottom:16px;border-radius:4px;">✗ @TempData["Error"]</div> }
+@if (isPreviewType)
+{
+    <div style="background:#fff8e1;border-left:4px solid #f59e0b;padding:12px;margin-bottom:16px;border-radius:4px;color:#7c4a03;font-size:13px;">
+        <strong>Preview — not yet validated.</strong>
+        @if (isWetCyclone) { <span> Particulate collection only; gas absorption is not modeled for this scrubber type.</span> }
+        @if (isImpingement) { <span> Plate hydraulics and stage removal are screening estimates until benchmarks pass.</span> }
+        @if (isJetEjector) { <span> Screening-level estimate; entrainment and mass-transfer correlations are unvalidated.</span> }
+    </div>
+}
 
 <div class="results-header-card">
     <div class="results-header-left">
@@ -48,36 +62,31 @@
 </div>
 <partial name="_DesignActionBar" model="design" />
 
-@if (!calcResult!.IsFeasible)
-{
-    <div class="results-data-card" style="margin-bottom:20px;border-left:4px solid #dc3545;"><div class="results-data-header"><div class="results-data-title">Design Feasibility Warning</div></div><div class="results-data-body"><p style="margin:0;color:#842029;">@(calcResult.InfeasibilityReason ?? "One or more design checks failed. Review the calculation notes below.")</p></div></div>
-}
-
 <section class="kpi-section">
     <div class="kpi-section-title">Process &amp; Operating Performance</div>
     <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 results-kpi-row">
         <div class="col"><div class="result-kpi h-100 kpi-emerald">
-            <div class="result-kpi-label">@(isVenturi ? "Particle Collection Efficiency" : design.Pollutants.Count > 1 ? "Overall Removal (concentration-weighted)" : "Removal Efficiency")</div>
+            <div class="result-kpi-label">@(isParticulateOnly ? "Particle Collection Estimate" : "Removal Efficiency")</div>
             <div class="result-kpi-value">@calcResult!.RemovalEfficiency.ToString("F2")<span class="result-kpi-unit">%</span></div>
             @{ var targetEff = design.Pollutants.FirstOrDefault()?.TargetRemovalEfficiency ?? 0.0; }
-            <div class="result-kpi-sub">@(isVenturi ? "Johnstone particle-collection model; not gas absorption" : design.Pollutants.Count > 1 ? $"{design.Pollutants.Count} pollutants; per-pollutant targets are checked in the notes below" : calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
+            <div class="result-kpi-sub">@(isVenturi ? "Particle-impaction screening estimate; not gas absorption" : isWetCyclone ? "Fractional-efficiency estimate (cut diameter based); not gas absorption" : isPreviewType ? "Preview estimate; not yet validated" : calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
         </div></div>
         <div class="col"><div class="result-kpi h-100 kpi-indigo">
-            <div class="result-kpi-label">@(isPackedTower ? "Pressure Drop Across Packing" : isSprayTower ? "Spray Tower Pressure Drop" : isVenturi ? "Venturi Pressure Drop" : "Pressure Drop")</div>
+            <div class="result-kpi-label">@(isPackedTower ? "Pressure Drop Across Packing" : isSprayTower ? "Spray Tower Pressure Drop" : isVenturi ? "Venturi Pressure Drop" : isWetCyclone ? "Cyclone Pressure Drop" : isImpingement ? "Total Plate Pressure Drop" : isJetEjector ? "Ejector Pressure Drop" : "Pressure Drop")</div>
             <div class="result-kpi-value">@calcResult.PressureDrop.ToString("N0")<span class="result-kpi-unit">Pa</span></div>
-            <div class="result-kpi-sub">@(isPackedTower ? "Packing-bed pressure loss" : isSprayTower ? "Preliminary tower loss estimate" : isVenturi ? "Calvert correlation" : "Calculated pressure loss")</div>
+            <div class="result-kpi-sub">@(isPackedTower ? "Packing-bed pressure loss" : isSprayTower ? "Preliminary tower loss estimate" : isVenturi ? "Momentum-based throat estimate" : isWetCyclone ? "Velocity-head based estimate" : isImpingement ? "Sum across plates in series" : isJetEjector ? "Screening estimate" : "Calculated pressure loss")</div>
         </div></div>
         <div class="col"><div class="result-kpi h-100 kpi-sky">
-            <div class="result-kpi-label">@(isVenturi ? "Throat Gas Velocity" : "Gas Velocity")</div>
+            <div class="result-kpi-label">@(isVenturi ? "Throat Gas Velocity" : isWetCyclone ? "Inlet Gas Velocity" : isImpingement ? "Hole Gas Velocity" : "Gas Velocity")</div>
             <div class="result-kpi-value">@calcResult.GasVelocity.ToString("F2")<span class="result-kpi-unit">m/s</span></div>
-            <div class="result-kpi-sub">@(isVenturi ? "At the venturi throat" : "Based on installed geometry")</div>
+            <div class="result-kpi-sub">@(isVenturi ? "At the venturi throat" : isWetCyclone ? "At the cyclone inlet" : isImpingement ? "Through plate openings" : "Based on installed geometry")</div>
         </div></div>
-        @if (calcResult.UsesFloodingMetrics && isPackedTower)
+        @if (calcResult.UsesFloodingMetrics && (isPackedTower || (isImpingement && calcResult.PercentFlood > 0)))
         {
             <div class="col"><div class="result-kpi h-100 kpi-amber@(calcResult.ExceedsRecommendedFlood ? " kpi-warn" : "")">
                 <div class="result-kpi-label">Flooding</div>
                 <div class="result-kpi-value">@calcResult.PercentFlood.ToString("F1")<span class="result-kpi-unit">%</span></div>
-                <div class="result-kpi-sub">@(calcResult.ExceedsRecommendedFlood ? "Above recommended 70% limit" : $"Flood velocity: {calcResult.FloodingGasVelocity:F2} m/s")</div>
+                <div class="result-kpi-sub">@(calcResult.ExceedsRecommendedFlood ? "Above recommended 70% limit" : isImpingement ? "Plate flooding approach" : $"Flood velocity: {calcResult.FloodingGasVelocity:F2} m/s")</div>
             </div></div>
         }
         <div class="col"><div class="result-kpi h-100 kpi-purple">
@@ -92,8 +101,8 @@
 <section class="kpi-section">
     <div class="kpi-section-title">@(isPackedTower ? "Tower & Packing Geometry" : "Scrubber Geometry")</div>
     <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 results-kpi-row">
-        <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">@(isVenturi ? "Body Diameter (estimated)" : "Tower Diameter")</div><div class="result-kpi-value">@calcResult.TowerDiameter.ToString("F3")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">Installed / selected diameter</div></div></div>
-        <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">@(isVenturi ? "Body Height (estimated)" : "Tower Height")</div><div class="result-kpi-value">@calcResult.TowerHeight.ToString("F2")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">@(isPackedTower ? "Including freeboard and bed allowances" : isSprayTower ? "Droplet-model spray height (gas-film screening)" : "Estimated scrubber body height")</div></div></div>
+        <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">@(isVenturi ? "Body Diameter (estimated)" : isWetCyclone ? "Cyclone Body Diameter" : "Tower Diameter")</div><div class="result-kpi-value">@calcResult.TowerDiameter.ToString("F3")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">@(isWetCyclone ? "Sized from inlet velocity and Lapple ratios" : "Installed / selected diameter")</div></div></div>
+        <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">@(isVenturi ? "Body Height (estimated)" : isWetCyclone ? "Cyclone Total Height" : isImpingement ? "Column Height (estimated)" : "Tower Height")</div><div class="result-kpi-value">@calcResult.TowerHeight.ToString("F2")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">@(isPackedTower ? "Including freeboard and bed allowances" : isSprayTower ? "Screening height estimate" : isWetCyclone ? "Geometry-ratio estimate" : "Estimated scrubber body height")</div></div></div>
         @if (isPackedTower && calcResult.UsesPackingMetrics && calcResult.PackingHeight > 0)
         {
             <div class="col"><div class="result-kpi h-100 kpi-blue"><div class="result-kpi-label">Packing Height</div><div class="result-kpi-value">@calcResult.PackingHeight.ToString("F2")<span class="result-kpi-unit">m</span></div><div class="result-kpi-sub">@(calcResult.NumberOfBeds > 1 ? $"{calcResult.NumberOfBeds} beds × {calcResult.BedHeight:F2} m" : "Packed-bed height")</div></div></div>
@@ -132,6 +141,11 @@ else if (isSprayTower && calcResult.SprayTowerNTU > 0)
         @foreach (var warning in calcResult.Warnings) { <p style="margin:0 0 8px;color:#7c4a03;font-size:13px;">• @warning</p> }
     </div></div>
 }
+@if (!calcResult.IsFeasible)
+{
+    <div class="results-data-card" style="margin-bottom:20px;border-left:4px solid #dc3545;"><div class="results-data-header"><div class="results-data-title">Design Feasibility Warning</div></div><div class="results-data-body"><p style="margin:0;color:#842029;">@(calcResult.InfeasibilityReason ?? "One or more design checks failed. Review the calculation notes above.")</p></div></div>
+}
+
 <div class="results-data-card" style="margin-bottom:20px;">
     <div class="results-data-header"><div class="results-data-title">Design Summary</div><div class="results-data-sub">Inputs and selected design parameters</div></div>
     <div class="results-data-body">
@@ -150,8 +164,8 @@ else if (isSprayTower && calcResult.SprayTowerNTU > 0)
         <form id="recordOutcomeForm" method="post" action="/Scrubber/RecordDesignOutcome">
             @Html.AntiForgeryToken()
             <input type="hidden" name="designId" value="@design.DesignId" />
-            <div class="data-row"><span class="data-label">Measured Removal Efficiency (%)</span><input type="number" step="0.01" id="measuredRemovalEfficiency" name="measuredRemovalEfficiency" required placeholder="Predicted @calcResult.RemovalEfficiency.ToString("F2")" style="width:160px;padding:6px;" /></div>
-            <div class="data-row"><span class="data-label">Measured Pressure Drop (Pa)</span><input type="number" step="0.01" id="measuredPressureDrop" name="measuredPressureDrop" placeholder="Predicted @calcResult.PressureDrop.ToString("F2")" style="width:160px;padding:6px;" /></div>
+            <div class="data-row"><span class="data-label">Measured Removal Efficiency (%)</span><input type="number" step="0.01" id="measuredRemovalEfficiency" name="measuredRemovalEfficiency" required value="@calcResult.RemovalEfficiency.ToString("F2")" style="width:160px;padding:6px;" /></div>
+            <div class="data-row"><span class="data-label">Measured Pressure Drop (Pa)</span><input type="number" step="0.01" id="measuredPressureDrop" name="measuredPressureDrop" value="@calcResult.PressureDrop.ToString("F2")" style="width:160px;padding:6px;" /></div>
             <div class="data-row"><span class="data-label">Measured Gas Flow Rate (m³/hr)</span><input type="number" step="0.01" id="measuredGasFlowRate" name="measuredGasFlowRate" value="@design.ActualFlowRate.ToString("F2")" style="width:160px;padding:6px;" /></div>
             <div class="data-row"><span class="data-label">Measured Liquid-to-Gas Ratio</span><input type="number" step="0.01" id="measuredLiquidToGasRatio" name="measuredLiquidToGasRatio" value="@calcResult.ActualLGRatio.ToString("F2")" style="width:160px;padding:6px;" /></div>
             <div class="data-row"><span class="data-label">Field Notes</span><textarea id="fieldNotes" name="fieldNotes" style="width:100%;min-height:60px;padding:6px;"></textarea></div>

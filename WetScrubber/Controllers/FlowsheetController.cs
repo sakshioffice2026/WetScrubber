@@ -395,7 +395,8 @@ namespace WetScrubber.Controllers
                     LiquidInletTempC = Get("LiquidInletTempC", 25),
                     GasDensityKgM3 = Get("GasDensityKgM3", 1.2),
                     PackingSpecificAreaM2M3 = Get("PackingSpecificAreaM2M3", 250),
-                    PackingNominalSizeM = Get("PackingNominalSizeM", 0.025)
+                     PackingNominalSizeM = Get("PackingNominalSizeM", 0.025),
+                    ScrubberTypeId = (int)Get("ScrubberTypeId", 1)
                 },
                 _ => throw new InvalidOperationException($"Unknown unit type '{entity.Type}'")
             };
