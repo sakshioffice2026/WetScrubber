@@ -108,7 +108,7 @@ namespace WetScrubber.Business.Reports
 
             foreach (var p in gas.Pollutants ?? new System.Collections.Generic.List<PollutantStream>())
             {
-                sb.AppendLine($"Pollutant (id {p.PollutantType}) inlet concentration : {p.InletConcentration:N2}");
+                sb.AppendLine($"Pollutant (id {p.PollutantType}) inlet concentration : {p.InletConcentration:N2} mg/Nm³");
                 sb.AppendLine($"Pollutant (id {p.PollutantType}) target removal : {p.TargetRemovalEfficiency:N2} %");
             }
 
@@ -132,7 +132,7 @@ namespace WetScrubber.Business.Reports
 
             sb.AppendLine($"Chemical Formula : {liquid.ScrubbingLiquid?.Formula}");
 
-            sb.AppendLine($"Concentration : {liquid.Concentration:N2}");
+            sb.AppendLine($"Concentration : {liquid.Concentration:N2} % wt");
 
             sb.AppendLine($"Operating pH : {liquid.pH:N2}");
 
@@ -165,16 +165,16 @@ namespace WetScrubber.Business.Reports
               
                 or ScrubberType.ImpingementPlate);
 
-            sb.AppendLine($"{(isCyclone ? "Cyclone Body Diameter" : "Tower Diameter")} : {geometry.TowerDiameter}");
+            sb.AppendLine($"{(isCyclone ? "Cyclone Body Diameter" : "Tower Diameter")} : {geometry.TowerDiameter:N2} m");
 
-            sb.AppendLine($"{(isCyclone ? "Cyclone Total Height" : "Tower Height")} : {geometry.TowerHeight}");
+            sb.AppendLine($"{(isCyclone ? "Cyclone Total Height" : "Tower Height")} : {geometry.TowerHeight:N2} m");
 
             if (hasPacking)
                 sb.AppendLine($"Packing Height : {geometry.PackingHeight}");
 
-            sb.AppendLine($"Pressure Drop : {geometry.PressureDrop}");
+            sb.AppendLine($"Pressure Drop : {geometry.PressureDrop:N0} Pa");
 
-            sb.AppendLine($"Removal Efficiency : {geometry.RemovalEfficiency}");
+            sb.AppendLine($"Removal Efficiency : {geometry.RemovalEfficiency:N2} %");
 
             sb.AppendLine();
         }

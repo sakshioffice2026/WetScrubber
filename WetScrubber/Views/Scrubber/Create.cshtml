@@ -389,6 +389,31 @@
             </div>
         </div>
 
+        <!-- IMPINGEMENT PLATE INPUTS (shown only for Impingement Plate) -->
+        <div class="step-block" id="sec-plate" style="@(Model.ScrubberType == ScrubberType.ImpingementPlate ? "" : "display:none")">
+            <div class="step-heading"><span class="step-badge">Plate</span> Impingement Plate Inputs</div>
+            <div class="fg2">
+                <div class="form-group">
+                    <label asp-for="ImpingementPlateColumnDiameterM">Column Diameter</label>
+                    <div class="input-unit">
+                        <input asp-for="ImpingementPlateColumnDiameterM" type="number" step="any" placeholder="0" />
+                        <span class="unit-badge">m</span>
+                    </div>
+                    <span class="field-hint">0 = auto-size to recommended flooding.</span>
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.ImpingementPlateColumnDiameterM)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="ImpingementPlateStages">Number of Plate Stages</label>
+                    <div class="input-unit">
+                        <input asp-for="ImpingementPlateStages" type="number" step="1" placeholder="3" />
+                        <span class="unit-badge">stages</span>
+                    </div>
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.ImpingementPlateStages)</span>
+                </div>
+            </div>
+        </div>
+
         <!-- WET CYCLONE INPUTS (shown only for Wet Cyclone) -->
         <div class="step-block" id="sec-cyclone" style="@(Model.ScrubberType == ScrubberType.WetCyclone ? "" : "display:none")">
             <div class="step-heading"><span class="step-badge">Cyclone</span> Wet Cyclone Inputs</div>
@@ -605,6 +630,7 @@
 
             function toggleCyclone() {
                 $('#sec-cyclone').toggle($('#ScrubberType').val() === '4');
+                $('#sec-plate').toggle($('#ScrubberType').val() === '6');
             }
             $('#ScrubberType').on('change', toggleCyclone);
             toggleCyclone();

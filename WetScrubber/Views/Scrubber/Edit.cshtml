@@ -400,6 +400,36 @@
     </div>
 
     <!-- ═══════════════════════════════════════════════════════
+         IMPINGEMENT PLATE INPUTS (shown only for Impingement Plate)
+    ════════════════════════════════════════════════════════ -->
+    <div class="form-card" id="sec-plate" style="@(Model.ScrubberType == ScrubberType.ImpingementPlate ? "" : "display:none")">
+        <div class="form-card-header">
+            <div class="form-card-icon">
+                <svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 2a4 4 0 110 8A4 4 0 018 4z" /></svg>
+            </div>
+            <div>
+                <div class="form-card-title">Impingement Plate Inputs</div>
+                <div class="form-card-sub">Column diameter and plate stages</div>
+            </div>
+        </div>
+        <div class="form-card-body">
+            <div class="fg3">
+                <div class="form-group">
+                    <label asp-for="ImpingementPlateColumnDiameterM">Column diameter <span class="unit">(m, 0 = auto-size)</span></label>
+                    <input asp-for="ImpingementPlateColumnDiameterM" type="number" step="any" placeholder="0" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.ImpingementPlateColumnDiameterM)</span>
+                </div>
+
+                <div class="form-group">
+                    <label asp-for="ImpingementPlateStages">Plate stages <span class="unit">(stages)</span></label>
+                    <input asp-for="ImpingementPlateStages" type="number" step="1" placeholder="3" />
+                    <span class="field-error">@Html.ValidationMessageFor(m => m.ImpingementPlateStages)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
          WET CYCLONE INPUTS (shown only for Wet Cyclone)
     ════════════════════════════════════════════════════════ -->
     <div class="form-card" id="sec-cyclone" style="@(Model.ScrubberType == ScrubberType.WetCyclone ? "" : "display:none")">
@@ -598,6 +628,7 @@
         $(function () {
             function toggleCyclone() {
                 $('#sec-cyclone').toggle($('#ScrubberType').val() === '4');
+                $('#sec-plate').toggle($('#ScrubberType').val() === '6');
             }
             $('.type-card').on('click', function () {
                 $('#ScrubberType').val($(this).data('value'));

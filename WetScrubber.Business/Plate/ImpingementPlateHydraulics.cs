@@ -376,7 +376,7 @@ namespace WetScrubber.Business.Plate
             // Limit flags
             r.IsWeeping = r.HoleFFactor < input.MinHoleFFactor;
             r.IsFlooding = r.PercentFlood > 100.0;
-            r.ExceedsRecommendedFlood = r.PercentFlood > input.RecommendedFloodPercent;
+            r.ExceedsRecommendedFlood = r.PercentFlood > input.RecommendedFloodPercent + 0.05;
             r.ExcessiveBackup = r.BackupRatio > input.MaxBackupRatio;
 
             return r;
