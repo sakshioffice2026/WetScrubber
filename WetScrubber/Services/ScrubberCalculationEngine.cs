@@ -3215,6 +3215,10 @@ namespace WetScrubber.Services
             RequirePositiveInput(nameof(particleDensityKgM3), particleDensityKgM3);
             RequirePositiveInput(nameof(particleDiameterMicron), particleDiameterMicron);
             RequirePositiveInput(nameof(liquidDensityKgM3), liquidDensityKgM3);
+            RequirePositiveInput(nameof(liquidViscosityPas), liquidViscosityPas);
+            RequirePositiveInput(nameof(surfaceTensionNm), surfaceTensionNm);
+            RequirePositiveInput(nameof(gasTemperatureK), gasTemperatureK);
+            RequirePositiveInput(nameof(gasPressurePa), gasPressurePa);
             RequirePositiveInput(nameof(gasViscosityPas), gasViscosityPas);
 
             double throatArea = gasFlowRateM3S / throatVelocityMs;
@@ -3229,14 +3233,10 @@ namespace WetScrubber.Services
                     particleDiameterM: particleDiameterMicron * 1e-6,
                     particleDensityKgM3: particleDensityKgM3,
                     gasViscosityPas: gasViscosityPas,
-                    liquidDensityKgM3: liquidDensityKgM3,
-                                      liquidViscosityPas:
-                        liquidViscosityPas > 0.0 ? liquidViscosityPas : 1.0e-3,
-                    surfaceTensionNm:
-                        surfaceTensionNm > 0.0 ? surfaceTensionNm : 0.072,
-                    gasTemperatureK:
-                        gasTemperatureK > 0.0 ? gasTemperatureK : VenturiCollectionModel.DefaultTemperatureK,
-                    gasPressurePa:
+                    liquidViscosityPas: liquidViscosityPas,
+                    surfaceTensionNm: surfaceTensionNm,
+                    gasTemperatureK: gasTemperatureK,
+                    gasPressurePa: gasPressurePa,
                         gasPressurePa > 0.0 ? gasPressurePa : VenturiCollectionModel.DefaultPressurePa,
                     geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
             if (!double.IsFinite(collection.CollectionEfficiencyPercent) ||
@@ -3336,34 +3336,21 @@ namespace WetScrubber.Services
         }
 
         private double GetVanTHoffTempCoeff(
-            string? pollutantCode,
-            double defaultTempCoeff)
+    string? pollutantCode,
+    double defaultTempCoeff)
         {
-            if (_henrysLawLookup == null ||
-                pollutantCode == null)
-            {
+            if (pollutantCode == null)
                 return defaultTempCoeff;
-            }
 
-            {
-                var data =
-                    _henrysLawLookup
-                        .GetByPollutantCode(
-                            pollutantCode);
+            double? heatOfSolutionKJmol =
+                _henrysLawLookup?.GetByPollutantCode(pollutantCode)?.HeatOfSolutionKJmol
+                ?? HeatOfAbsorption.TryGetKJPerMol(pollutantCode);
 
-                if (data?.HeatOfSolutionKJmol == null)
-                    return defaultTempCoeff;
-
-                return
-                    -(
-                        data
-                            .HeatOfSolutionKJmol
-                            .Value *
-                        1000.0
-                    ) /
-                    GasConstant;
-            }
+            return heatOfSolutionKJmol.HasValue
+                ? -(heatOfSolutionKJmol.Value * 1000.0) / GasConstant
+                : defaultTempCoeff;
         }
+        
 
         private double GetSoluteActivityCoefficient(
             string? pollutantCode,
@@ -3377,8 +3364,8 @@ namespace WetScrubber.Services
             }
 
             {
-                double xSolute =
-                    Math.Min(
+                const double xSolute = 1.0e-6;
+                Math.Min(
                         Math.Max(
                             inletConcentrationPpm,
                             0.0) /

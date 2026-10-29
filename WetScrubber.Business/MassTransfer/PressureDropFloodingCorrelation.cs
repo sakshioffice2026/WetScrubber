@@ -8,7 +8,9 @@ namespace WetScrubber.Business.MassTransfer
         public double FloodingGasVelocityMS { get; set; }         // m/s superficial (SSH-type, ring/saddle)
         public double ActualGasVelocityMS { get; set; }
         public double PercentFlood { get; set; }
-        public bool ExceedsRecommendedFlood { get; set; }         // true if >70% flood
+        public double PercentFloodUpperBound { get; set; }          // PercentFlood x 1.30 (screening uncertainty)
+        public bool ExceedsRecommendedFloodUpperBound { get; set; }
+        public string FloodingModelNote { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -140,15 +142,19 @@ namespace WetScrubber.Business.MassTransfer
             // Dry-bed pressure drop, Ergun (1952)
             //   dP/dz = 150*(1-eps)^2*muG*uG/(eps^3*dp^2)
             //         + 1.75*(1-eps)*rhoG*uG^2/(eps^3*dp)
+            // Equivalent particle diameter from specific area: d = 6(1-eps)/aT
+            double dEq = 6.0 * (1.0 - eps) / aT;
             double viscousTerm = 150.0 * Math.Pow(1 - eps, 2) * muG * uG
-                / (Math.Pow(eps, 3) * dp * dp);
+                / (Math.Pow(eps, 3) * dEq * dEq);
             double inertialTerm = 1.75 * (1 - eps) * rhoG * uG * uG
-                / (Math.Pow(eps, 3) * dp);
+                / (Math.Pow(eps, 3) * dEq);
             double dryDeltaPPerM = viscousTerm + inertialTerm;
 
             double uGf = FloodingVelocity(aT, eps, L / G, rhoG, rhoL, muL, sshIntercept);
 
             double percentFlood = uG / uGf * 100.0;
+
+            const double floodingUncertaintyFraction = 0.30;
 
             return new PressureDropResult
             {
@@ -156,8 +162,13 @@ namespace WetScrubber.Business.MassTransfer
                 FloodingGasVelocityMS = uGf,
                 ActualGasVelocityMS = uG,
                 PercentFlood = percentFlood,
-                ExceedsRecommendedFlood = percentFlood > RecommendedFloodCeilingPercent
-            };
+                ExceedsRecommendedFlood = percentFlood > RecommendedFloodCeilingPercent,
+                PercentFloodUpperBound = percentFlood * (1.0 + floodingUncertaintyFraction),
+                ExceedsRecommendedFloodUpperBound =
+                    percentFlood * (1.0 + floodingUncertaintyFraction) > RecommendedFloodCeilingPercent,
+                FloodingModelNote = FloodingCorrelationNote
+            
+        };
         }
     }
 }

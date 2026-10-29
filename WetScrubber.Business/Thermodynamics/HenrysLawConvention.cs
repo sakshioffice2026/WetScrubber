@@ -53,7 +53,7 @@ namespace WetScrubber.Business.Thermodynamics
 
             public double? IonicStrengthMolPerL { get; set; }
 
-            /// <summary>Setchenow coefficient (L/mol, natural-log basis) actually used, if any.</summary>
+            /// <summary>Setchenow coefficient (L/mol, log10 basis: log10(H_salt/H) = k*I) actually used, if any.</summary>
             public double? SaltingOutCoefficientLPerMol { get; set; }
 
             /// <summary>Multiplier on the volatility-form H (y/x or Cg/Cl) from the Setchenow effect.</summary>
@@ -71,7 +71,7 @@ namespace WetScrubber.Business.Thermodynamics
         ///   LiquidReferenced: H(T) = H25 * exp( -C * (1/T - 1/Tref) )
         ///   GasReferenced:    H(T) = H25 * exp( +C * (1/T - 1/Tref) )
         /// fallbackTempCoeffK has the same meaning as C.
-        /// Salting-out (Setchenow, ln(H_volatility,salt / H_volatility) = k * I) is applied
+        /// Salting-out (Setchenow, log10(H_volatility,salt / H_volatility) = k * I) is applied
         /// only when saltingOutCoefficientLPerMol is supplied by the caller.
         /// </summary>
         public static HenrysConstantResult GetCorrectedConstant(
@@ -137,7 +137,7 @@ namespace WetScrubber.Business.Thermodynamics
                             throw new ArgumentException(
                                 "Setchenow coefficient must be finite.", nameof(saltingOutCoefficientLPerMol));
 
-                        double factor = Math.Exp(k * ionic);
+                        double factor = Math.Pow(10.0, k * ionic);
                         if (double.IsNaN(factor) || double.IsInfinity(factor) || factor <= 0)
                             throw new PropertyOutOfBoundsException(
                                 "SaltingOutFactor", factor, double.Epsilon, double.MaxValue);
@@ -198,5 +198,16 @@ namespace WetScrubber.Business.Thermodynamics
 
             return 1.0 / henryValue;
         }
+    }
+
+    public static class HenrysLawConventionExtensions
+    {
+        public static HenryConvention ToHenryConvention(this HenrysLawConvention convention) => convention switch
+        {
+            HenrysLawConvention.LiquidReferenced => HenryConvention.YOverX,
+            HenrysLawConvention.GasReferenced => HenryConvention.XOverY,
+            _ => throw new ArgumentException(
+                "Henry's law convention MUST be explicitly declared.", nameof(convention))
+        };
     }
 }

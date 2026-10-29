@@ -10,6 +10,8 @@ namespace WetScrubber.Business.MassTransfer
         public double WettedAreaM2M3 { get; set; }        // aW
         public double GasFilmCoeffKmolM2SPa { get; set; }  // kG, partial-pressure basis
         public double LiquidFilmCoeffMS { get; set; }      // kL, concentration basis
+
+        public double WettedAreaFraction { get; set; }     // aW/aT
     }
 
     public sealed record GasPhaseProperties(
@@ -182,6 +184,7 @@ namespace WetScrubber.Business.MassTransfer
             return new OndaResult
             {
                 WettedAreaM2M3 = aW,
+                WettedAreaFraction = aWOverAt,
                 GasFilmCoeffKmolM2SPa = kG,
                 LiquidFilmCoeffMS = kL
             };

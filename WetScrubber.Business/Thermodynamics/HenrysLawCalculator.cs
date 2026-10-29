@@ -43,10 +43,12 @@ namespace WetScrubber.Business.Thermodynamics
 
             double correctedH = h25 * Math.Exp(-tempCoeffK * (1.0 / temperatureK - 1.0 / ReferenceTempK));
 
-            if (double.IsNaN(correctedH) || double.IsInfinity(correctedH))
-                return AbsoluteMinimum;
+            if (double.IsNaN(correctedH) || double.IsInfinity(correctedH)
+    || correctedH < AbsoluteMinimum || correctedH > AbsoluteMaximum)
+                throw new WetScrubber.Business.Exceptions.PropertyOutOfBoundsException(
+                    "CorrectedHenrysConstant", correctedH, AbsoluteMinimum, AbsoluteMaximum);
 
-            return Math.Min(Math.Max(correctedH, AbsoluteMinimum), AbsoluteMaximum);
+            return correctedH;
         }
     }
 }
