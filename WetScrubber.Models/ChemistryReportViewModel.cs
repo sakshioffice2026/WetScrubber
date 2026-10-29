@@ -27,7 +27,7 @@ namespace WetScrubber.Models
         public double TowerAreaM2 { get; set; } = 2.55;
         public double InletGasDensityKgM3 { get; set; } = 1.2;
         public double InletGasViscosityPas { get; set; } = 0.000018;
-        public double InletGasDiffusivityM2S { get; set; } = 0.0000001;
+        public double InletGasDiffusivityM2S { get; set; } = 0.000013;
 
         // ── Liquid stream ──
         [Range(0.0001, 1000000, ErrorMessage = "Must be > 0")]
@@ -38,7 +38,7 @@ namespace WetScrubber.Models
         public double InletLiquidViscosityPas { get; set; } = 0.001;
         public double InletLiquidDiffusivityM2S { get; set; } = 0.0000000018;
 
-        [Range(0, 100, ErrorMessage = "0–100 mol/L")]
+        [Range(0, 20, ErrorMessage = "0–20 mol/L")]
         public double ReagentConcentrationMolPerL { get; set; } = 0.5;
 
         [Range(0.000001, 1000, ErrorMessage = "Must be > 0")]
@@ -69,6 +69,23 @@ namespace WetScrubber.Models
         public bool IncludeReactiveAbsorption { get; set; } = false;
         public double? ReactionRateConstantS_Inv { get; set; }
         public double? BulkReagentConcentrationMolL { get; set; }
+
+
+        // ── Reagent chemistry (optional; used when reactive absorption is on) ──
+        [Range(0, 14, ErrorMessage = "0–14")]
+        public double? ReagentControlPh { get; set; }
+
+        [Range(0, 10, ErrorMessage = "mol/L")]
+        public double ReagentKaMolPerL { get; set; } = 0;
+
+        [Range(0, 1, ErrorMessage = "0–1 mole fraction")]
+        public double InletCo2MoleFraction { get; set; } = 0;
+
+        [Range(0, 1, ErrorMessage = "0–1")]
+        public double Co2AbsorbedFraction { get; set; } = 0;
+
+        [Range(0, 1, ErrorMessage = "0–1")]
+        public double SulfiteOxidizedFraction { get; set; } = 0;
 
         // Dropdown sources (populated by ChemistryUIService).
         public List<Pollutant> Pollutants { get; set; } = new();

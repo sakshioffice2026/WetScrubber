@@ -31,6 +31,20 @@ namespace WetScrubber.Business.Thermodynamics
 
         /// <summary>Minimum outlet-liquid pH for a strong-base reagent. NaN disables the check.</summary>
         public double MinOutletPH { get; set; } = ReagentSufficiencyService.DefaultMinOutletPH;
+
+        public string? PollutantCode { get; set; }
+
+        /// <summary>Inlet CO2 mole fraction (dry basis).</summary>
+        public double InletCo2MoleFraction { get; set; } = 0.0;
+
+        /// <summary>Fraction (0-1) of inlet CO2 assumed absorbed. Screening input.</summary>
+        public double Co2AbsorbedFraction { get; set; } = 0.0;
+
+        /// <summary>Design recirculation pH. NaN = use StoichiometricRatio and worst-case CO2 (2 eq/mol).</summary>
+        public double ControlPh { get; set; } = double.NaN;
+
+        /// <summary>Fraction (0-1) of absorbed S(IV) oxidized to sulfate.</summary>
+        public double SulfiteOxidizedFraction { get; set; } = 0.0;
     }
 
     public sealed class ReagentSufficiencyResult
@@ -56,6 +70,7 @@ namespace WetScrubber.Business.Thermodynamics
         public double EnhancementDesign { get; set; } = 1.0;
 
         public bool EnhancementIsUpperBound { get; set; }
+        public double Co2ReagentEqPerM3Gas { get; set; }
         public List<string> Notes { get; } = new();
     }
 
@@ -83,8 +98,38 @@ namespace WetScrubber.Business.Thermodynamics
 
             double dy = Math.Max(input.InletGasMoleFraction - input.OutletGasMoleFraction, 0.0);
 
+            bool so2Caustic = input.Reagent == ReagentKind.Caustic
+                && string.Equals(input.PollutantCode?.Trim(), "SO2", StringComparison.OrdinalIgnoreCase);
+
+            double eqPerMolPollutant = so2Caustic && !double.IsNaN(input.ControlPh)
+                ? AcidBaseSpeciation.DiproticBaseEquivalentsPerMol(
+                    input.ControlPh,
+                    AcidBaseSpeciation.PKa1SulfurousAcid,
+                    AcidBaseSpeciation.PKa2SulfurousAcid)
+                : input.StoichiometricRatio;
+
+            double co2EqPerM3Gas = 0.0;
+            if (input.Reagent == ReagentKind.Caustic
+                && input.InletCo2MoleFraction > 0.0
+                && input.Co2AbsorbedFraction > 0.0)
+            {
+                double eqPerMolCo2 = double.IsNaN(input.ControlPh)
+                    ? 2.0
+                    : AcidBaseSpeciation.DiproticBaseEquivalentsPerMol(
+                        input.ControlPh,
+                        AcidBaseSpeciation.PKa1CarbonicAcid,
+                        AcidBaseSpeciation.PKa2CarbonicAcid);
+
+                co2EqPerM3Gas = Math.Min(input.Co2AbsorbedFraction, 1.0)
+                    * input.InletCo2MoleFraction * input.GasKmolPerM3 * eqPerMolCo2;
+                r.Co2ReagentEqPerM3Gas = co2EqPerM3Gas;
+                r.Notes.Add(
+                    $"REAGENT: CO2 co-absorption adds {co2EqPerM3Gas:E3} kmol eq/m3 gas "
+                    + "(screening input; no CO2 kinetic model).");
+            }
+
             // kmol of reagent equivalents required per m3 of gas.
-            double requiredEqPerM3Gas = input.StoichiometricRatio * dy * input.GasKmolPerM3;
+            double requiredEqPerM3Gas = eqPerMolPollutant * dy * input.GasKmolPerM3 + co2EqPerM3Gas;
 
             r.MinimumLiquidToGasLPerM3 = requiredEqPerM3Gas / input.ReagentEquivalentsPerL * 1000.0;
             r.RequiredLiquidToGasLPerM3 = r.MinimumLiquidToGasLPerM3 * Math.Max(input.Margin, 1.0);
@@ -107,6 +152,29 @@ namespace WetScrubber.Business.Thermodynamics
             {
                 double ohMolL = Math.Max(r.ResidualReagentEqPerL, 1e-14);
                 r.OutletPH = 14.0 + Math.Log10(ohMolL);
+
+                if (so2Caustic)
+                {
+                    double sAbsMolPerL = dy * input.GasKmolPerM3 * 1000.0 / input.LiquidToGasLPerM3;
+                    double cAbsMolPerL = input.InletCo2MoleFraction > 0.0
+                        ? Math.Min(Math.Max(input.Co2AbsorbedFraction, 0.0), 1.0)
+                            * input.InletCo2MoleFraction * input.GasKmolPerM3 * 1000.0
+                            / input.LiquidToGasLPerM3
+                        : 0.0;
+                    double ox = Math.Min(Math.Max(input.SulfiteOxidizedFraction, 0.0), 1.0);
+
+                    double solvedPh = AcidBaseSpeciation.SolvePh(
+                        input.ReagentEquivalentsPerL,
+                        sAbsMolPerL * (1.0 - ox),
+                        cAbsMolPerL,
+                        sAbsMolPerL * ox);
+
+                    if (double.IsNaN(solvedPh))
+                        r.Notes.Add("REAGENT: charge-balance pH outside the ideal 0-14 range; strong-base estimate used.");
+                    else
+                        r.OutletPH = solvedPh;
+                }
+
                 if (!double.IsNaN(input.MinOutletPH) && r.OutletPH < input.MinOutletPH)
                     residualLow = true;
             }

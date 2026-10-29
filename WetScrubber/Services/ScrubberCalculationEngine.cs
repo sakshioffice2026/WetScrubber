@@ -2432,7 +2432,8 @@ namespace WetScrubber.Services
                         InletGasMoleFraction = y1,
                         OutletGasMoleFraction = y2,
                         GasKmolPerM3 = gasKmolPerM3,
-                        LiquidToGasLPerM3 = vm.LiquidToGasRatio
+                        LiquidToGasLPerM3 = vm.LiquidToGasRatio,
+                        PollutantCode = code
                     });
 
             return new ReactiveEquilibriumBasis(

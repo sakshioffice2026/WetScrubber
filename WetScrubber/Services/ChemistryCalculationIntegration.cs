@@ -408,6 +408,7 @@ namespace WetScrubber.Business.Services
                             new ReagentSufficiencyInput
                             {
                                 Reagent = input.Reagent,
+                                PollutantCode = input.PollutantCode,
                                 ReagentEquivalentsPerL =
                                     input.ReagentEquivalentsPerL,
                                 StoichiometricRatio =
@@ -421,6 +422,7 @@ namespace WetScrubber.Business.Services
                                 EnhancementTemplate =
                                     new ReactiveEnhancementInput
                                     {
+
                                         PollutantCode = input.PollutantCode,
                                         Reagent = input.Reagent,
                                         ReagentConcentrationEqPerL =
@@ -518,6 +520,11 @@ namespace WetScrubber.Business.Services
                 result.AllFindings = findings;
                 return result;
             }
+            if (!(input.Packing.TowerAreaM2 > 0.0))
+                throw new ArgumentOutOfRangeException(
+                    nameof(input),
+                    input.Packing.TowerAreaM2,
+                    "Packing.TowerAreaM2 must be positive.");
 
             // The tower solver's temperature argument represents the initial
             // liquid temperature. The solver then propagates the liquid
@@ -530,16 +537,17 @@ namespace WetScrubber.Business.Services
             result.TowerSolverResult =
                 EnhancedPackedTowerSolver.SolveWithDiagnostics(
                     input.PackingHeightM,
-                    input.LayerDiscretization,
-                    input.InletGasFlowKmolPerHr,
-                    liquidFlowKmolPerHr,
+                                        input.LayerDiscretization,
+                    input.InletGasFlowKmolPerHr / input.Packing.TowerAreaM2,
+                    liquidFlowKmolPerHr / input.Packing.TowerAreaM2,
 
-                    // Liquid mass flow is derived directly from the physical
-                    // liquid molar flow and the liquid molecular basis.
+                    // Liquid mass flux (kg/m2/hr) from the molar flow and
+                    // the liquid molecular basis.
                     CalculateLiquidMassFlowKgPerHr(
                         liquidFlowKmolPerHr,
                         input.SolventCode,
-                        input.SolventMolecularWeightKgPerKmol),
+                        input.SolventMolecularWeightKgPerKmol)
+                        / input.Packing.TowerAreaM2,
 
                     input.LiquidSpecificHeatKJKgK,
 
