@@ -9,6 +9,8 @@ namespace WetScrubber.Business.MassTransfer
         public double ActualGasVelocityMS { get; set; }
         public double PercentFlood { get; set; }
         public double PercentFloodUpperBound { get; set; }          // PercentFlood x 1.30 (screening uncertainty)
+
+        public bool ExceedsRecommendedFlood { get; set; }
         public bool ExceedsRecommendedFloodUpperBound { get; set; }
         public string FloodingModelNote { get; set; } = string.Empty;
     }

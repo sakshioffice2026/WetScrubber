@@ -3226,19 +3226,19 @@ namespace WetScrubber.Services
 
             // Johnstone efficiency, Calvert pressure drop and Nukiyama-Tanasawa
             // droplet size (see VenturiCollectionModel for the correlations).
-            var collection =
-                VenturiCollectionModel.Calculate(
-                    throatVelocityMs: throatVelocityMs,
-                    liquidToGasRatioLM3: liquidToGasRatioLM3,
-                    particleDiameterM: particleDiameterMicron * 1e-6,
-                    particleDensityKgM3: particleDensityKgM3,
-                    gasViscosityPas: gasViscosityPas,
-                    liquidViscosityPas: liquidViscosityPas,
-                    surfaceTensionNm: surfaceTensionNm,
-                    gasTemperatureK: gasTemperatureK,
-                    gasPressurePa: gasPressurePa,
-                        gasPressurePa > 0.0 ? gasPressurePa : VenturiCollectionModel.DefaultPressurePa,
-                    geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
+                        var collection =
+                            VenturiCollectionModel.Calculate(
+                                throatVelocityMs: throatVelocityMs,
+                                liquidToGasRatioLM3: liquidToGasRatioLM3,
+                                particleDiameterM: particleDiameterMicron * 1e-6,
+                                particleDensityKgM3: particleDensityKgM3,
+                                gasViscosityPas: gasViscosityPas,
+                                liquidDensityKgM3: liquidDensityKgM3,
+                                liquidViscosityPas: liquidViscosityPas,
+                                surfaceTensionNm: surfaceTensionNm,
+                                gasTemperatureK: gasTemperatureK,
+                                gasPressurePa: gasPressurePa > 0.0 ? gasPressurePa : VenturiCollectionModel.DefaultPressurePa,
+                                geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
             if (!double.IsFinite(collection.CollectionEfficiencyPercent) ||
                 collection.CollectionEfficiencyPercent < 0.0 ||
                 collection.CollectionEfficiencyPercent > 100.0)
