@@ -2707,9 +2707,10 @@ namespace WetScrubber.Services
                         throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                     double effectiveHenry =
-                        GetEffectiveHenrysLawConstant(
+                      GetEffectiveHenrysLawConstant(
                             pollutant,
                             vm.LiquidTemperature,
+                            GetSolventMolarConcMolM3(vm),
                             vm.InletPressure / 1000.0);
 
                     double molarVolume =
