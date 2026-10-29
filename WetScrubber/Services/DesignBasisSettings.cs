@@ -55,6 +55,7 @@ namespace WetScrubber.Services
         public const double DefaultImpingementPlateDischargeCoefficient = WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultOrificeCoefficient;
         public const double DefaultImpingementPlateCapacityFactorMPerS = WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultFloodCapacityFactorMs;
         public const double DefaultImpingementPlateMurphreeEfficiency = 0.50;
+        public const double DefaultImpingementPlateReactiveRemovalCeilingPercent = 99.9;
         public const double DefaultImpingementPlateParticleDensityKgM3 = 1500.0;
         public const double DefaultImpingementPlateParticleGeometricStdDev = 2.0;
         public const double DefaultImpingementPlateStokesNumberAt50Percent = 0.5;
@@ -95,6 +96,9 @@ namespace WetScrubber.Services
 
         public static double ImpingementPlateMurphreeEfficiency { get; private set; }
             = DefaultImpingementPlateMurphreeEfficiency;
+
+        public static double ImpingementPlateReactiveRemovalCeilingPercent { get; private set; }
+            = DefaultImpingementPlateReactiveRemovalCeilingPercent;
 
         public static double ImpingementPlateParticleDensityKgM3 { get; private set; }
             = DefaultImpingementPlateParticleDensityKgM3;
@@ -162,6 +166,13 @@ namespace WetScrubber.Services
                 DefaultImpingementPlateMurphreeEfficiency,
                 0.05,
                 1.0);
+
+            ImpingementPlateReactiveRemovalCeilingPercent = Read(
+                section,
+                nameof(ImpingementPlateReactiveRemovalCeilingPercent),
+                DefaultImpingementPlateReactiveRemovalCeilingPercent,
+                50.0,
+                100.0);
 
             ImpingementPlateParticleDensityKgM3 = Read(
                 section,

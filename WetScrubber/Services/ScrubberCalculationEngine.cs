@@ -848,8 +848,20 @@ namespace WetScrubber.Services
                     liquidDensityKgM3:
                         vm.LiquidDensity,
 
-                    gasViscosityPas:
-                        vm.GasViscosity
+                                     gasViscosityPas:
+                        vm.GasViscosity,
+
+                    liquidViscosityPas:
+                        vm.LiquidViscosity / 1000.0,
+
+                    surfaceTensionNm:
+                        vm.LiquidSurfaceTensionNM,
+
+                    gasTemperatureK:
+                        vm.InletTemperature + 273.15,
+
+                    gasPressurePa:
+                        vm.InletPressure
                 );
 
             result.TowerDiameter =
@@ -1058,8 +1070,8 @@ namespace WetScrubber.Services
 
             result.Warnings.Add(
                 "CYCLONE MODEL: cut diameter and fractional efficiency are the Lapple correlation, " +
-               "pressure drop is Shepherd-Lapple; no wet-wall or spray enhancement is applied.");
-            "Model is not yet validated against benchmarks. Verify against vendor data before final design.");
+                "pressure drop is Shepherd-Lapple; no wet-wall or spray enhancement is applied. " +
+                "Model is not yet validated against benchmarks. Verify against vendor data before final design.");
 
             result.Warnings.Add(
                 "CYCLONE SCOPE: this is a particle-collection model and does not predict absorption/removal of " +
@@ -1359,10 +1371,16 @@ namespace WetScrubber.Services
                     ? vm.ImpingementPlateLiquidFlowM3Hr
                     : gasFlowM3Hr * vm.LiquidToGasRatio / 1000.0;
 
+            var plateDensityPollutant =
+                vm.Pollutants?.FirstOrDefault();
+
             double gasDensity =
-                vm.ImpingementPlateGasDensityKgM3 > 0.0
-                    ? vm.ImpingementPlateGasDensityKgM3
-                    : vm.GasDensity;
+                GetActualGasDensity(
+                    vm.GasDensity,
+                    vm.InletTemperature + 273.15,
+                    vm.InletPressure,
+                    plateDensityPollutant?.PollutantType,
+                    plateDensityPollutant?.InletConcentration ?? 0.0);
 
             double liquidDensity =
                 vm.ImpingementPlateLiquidDensityKgM3 > 0.0
@@ -1553,7 +1571,7 @@ namespace WetScrubber.Services
                     totalPressureDropPa,
 
                 // Generic result fields consumed by the existing results view.
-                GasVelocity = Math.Round(hydraulics.NetVelocityMs, 3),
+                GasVelocity = Math.Round(hydraulics.HoleVelocityMs, 3),
                 PressureDrop = Math.Round(totalPressureDropPa, 2),
                 SystemPressureDrop = Math.Round(totalPressureDropPa, 2),
                 TowerHeight = Math.Round(
@@ -1592,6 +1610,35 @@ namespace WetScrubber.Services
                     !hydraulics.IsFlooding &&
                     !hydraulics.ExcessiveBackup
             };
+
+            if (plateReactiveBasis.UseReactiveEquilibrium)
+            {
+                double plateCeilingPercent =
+                    DesignBasisSettings.ImpingementPlateReactiveRemovalCeilingPercent;
+
+                result.ImpingementPlateRemovalIsReactiveUpperBound = true;
+
+                if (result.RemovalEfficiency > plateCeilingPercent)
+                {
+                    result.RemovalEfficiency = plateCeilingPercent;
+                    result.ImpingementPlateRemovalEfficiencyPercent = plateCeilingPercent;
+
+                    result.Warnings.Add(
+                        $"REMOVAL CEILING: reactive upper-bound removal capped at " +
+                        $"{plateCeilingPercent:F2}% (configurable screening ceiling).");
+                }
+            }
+
+            result.FanPowerKW = Math.Round(
+                CalculateFanPower(gasFlowM3S, result.SystemPressureDrop),
+                2);
+
+            result.PumpPowerKW = Math.Round(
+                CalculatePumpPower(
+                    liquidFlowM3Hr,
+                    result.TowerHeight + DesignBasisSettings.PackedPumpHeadOffsetM,
+                    liquidDensity),
+                2);
 
             result.Warnings.Add(
                 "PRELIMINARY PLATE MODEL: hydraulic correlations and default " +
@@ -3150,7 +3197,11 @@ namespace WetScrubber.Services
             double particleDensityKgM3,
             double particleDiameterMicron,
             double liquidDensityKgM3 = 1000,
-            double gasViscosityPas = 1.81e-5)
+                        double gasViscosityPas = 1.81e-5,
+            double liquidViscosityPas = 1.0e-3,
+            double surfaceTensionNm = 0.072,
+            double gasTemperatureK = 293.15,
+            double gasPressurePa = 101325.0)
         {
             RequirePositiveInput(nameof(gasFlowRateM3S), gasFlowRateM3S);
             RequirePositiveInput(nameof(throatVelocityMs), throatVelocityMs);
@@ -3174,6 +3225,14 @@ namespace WetScrubber.Services
                     particleDensityKgM3: particleDensityKgM3,
                     gasViscosityPas: gasViscosityPas,
                     liquidDensityKgM3: liquidDensityKgM3,
+                                      liquidViscosityPas:
+                        liquidViscosityPas > 0.0 ? liquidViscosityPas : 1.0e-3,
+                    surfaceTensionNm:
+                        surfaceTensionNm > 0.0 ? surfaceTensionNm : 0.072,
+                    gasTemperatureK:
+                        gasTemperatureK > 0.0 ? gasTemperatureK : VenturiCollectionModel.DefaultTemperatureK,
+                    gasPressurePa:
+                        gasPressurePa > 0.0 ? gasPressurePa : VenturiCollectionModel.DefaultPressurePa,
                     geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
             if (!double.IsFinite(collection.CollectionEfficiencyPercent) ||
                 collection.CollectionEfficiencyPercent < 0.0 ||
@@ -3635,6 +3694,7 @@ namespace WetScrubber.Services
         public double ImpingementPlateCutDiameterMicron { get; set; }
         public double ImpingementPlatePredictedCutDiameterMicron { get; set; }
         public double ImpingementPlateParticulateEfficiencyPercent { get; set; }
+        public bool ImpingementPlateRemovalIsReactiveUpperBound { get; set; }
         public List<string> Warnings { get; set; } = new();
 
         // ── Wet cyclone results (zero / null for other scrubber types) ──

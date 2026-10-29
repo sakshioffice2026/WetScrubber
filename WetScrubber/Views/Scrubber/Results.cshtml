@@ -67,10 +67,10 @@
             <div class="result-kpi-label">@(isParticulateOnly ? "Particle Collection Estimate" : "Removal Efficiency")</div>
             <div class="result-kpi-value">@calcResult!.RemovalEfficiency.ToString("F2")<span class="result-kpi-unit">%</span></div>
             @{ var targetEff = design.Pollutants.FirstOrDefault()?.TargetRemovalEfficiency ?? 0.0; }
-            <div class="result-kpi-sub">@(isVenturi ? "Particle-impaction screening estimate; not gas absorption" : isWetCyclone ? "Fractional-efficiency estimate (cut diameter based); not gas absorption" : isPreviewType ? "Preview estimate; not yet validated" : calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
+            <div class="result-kpi-sub">@(isVenturi ? "Particle-impaction screening estimate; not gas absorption" : isWetCyclone ? "Fractional-efficiency estimate (cut diameter based); not gas absorption" : (isImpingement && calcResult.ImpingementPlateRemovalIsReactiveUpperBound) ? "Reactive upper bound; actual removal will be lower" : isPreviewType ? "Preview estimate; not yet validated" : calcResult.RemovalEfficiency >= targetEff - 0.005 ? $"Target {targetEff:F2}% achieved" : $"Below target of {targetEff:F2}%")</div>
         </div></div>
         <div class="col"><div class="result-kpi h-100 kpi-indigo">
-            
+            <div class="result-kpi-label">@(isPackedTower ? "Pressure Drop Across Packing" : isSprayTower ? "Spray Tower Pressure Drop" : isVenturi ? "Venturi Pressure Drop" : isWetCyclone ? "Cyclone Pressure Drop" : isImpingement ? "Total Plate Pressure Drop" : "Pressure Drop")</div>
             <div class="result-kpi-value">@calcResult.PressureDrop.ToString("N0")<span class="result-kpi-unit">Pa</span></div>
            
         </div></div>
@@ -85,6 +85,15 @@
                 <div class="result-kpi-label">Flooding</div>
                 <div class="result-kpi-value">@calcResult.PercentFlood.ToString("F1")<span class="result-kpi-unit">%</span></div>
                 <div class="result-kpi-sub">@(calcResult.ExceedsRecommendedFlood ? "Above recommended 70% limit" : isImpingement ? "Plate flooding approach" : $"Flood velocity: {calcResult.FloodingGasVelocity:F2} m/s")</div>
+            </div></div>
+        }
+        @if (isImpingement && calcResult.ImpingementPlateParticulateEfficiencyPercent > 0)
+        {
+            <div class="col"><div class="result-kpi h-100 kpi-teal">
+                <div class="result-kpi-label">Particulate Efficiency</div>
+                <div class="result-kpi-value">@calcResult.ImpingementPlateParticulateEfficiencyPercent.ToString("F2")<span class="result-kpi-unit">%</span></div>
+                <div class="result-kpi-sub">Stokes-number impaction screen; not yet validated</div>
+                @if (calcResult.ImpingementPlatePredictedCutDiameterMicron > 0) { <div class="result-kpi-sub">Predicted cut diameter: @calcResult.ImpingementPlatePredictedCutDiameterMicron.ToString("F2") µm</div> }
             </div></div>
         }
         <div class="col"><div class="result-kpi h-100 kpi-purple">
