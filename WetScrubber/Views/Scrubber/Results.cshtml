@@ -10,7 +10,7 @@
     var isWetCyclone = scrubberType.Contains("Cyclone", StringComparison.OrdinalIgnoreCase);
     var isImpingement = scrubberType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
         var isParticulateOnly = isVenturi || isWetCyclone;
-    var isPreviewType = isWetCyclone || isImpingement;
+    var isPreviewType = isImpingement;
 }
 
 @section Styles {

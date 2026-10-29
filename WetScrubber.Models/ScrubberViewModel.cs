@@ -219,8 +219,8 @@ namespace WetScrubber.Models
         [Display(Name = "Number of Impingement Plate Stages")]
         public int ImpingementPlateStages { get; set; } = 3;
 
-        [Range(0.1, 20)]
-        [Display(Name = "Column Diameter (m)")]
+        [Range(0, 20)]
+        [Display(Name = "Column Diameter (m, 0 = auto-size)")]
         public double ImpingementPlateColumnDiameterM { get; set; } = 1.8;
 
         [Range(0, 10000000)]
@@ -246,6 +246,10 @@ namespace WetScrubber.Models
         [Range(0.1, 500)]
         [Display(Name = "Cut Diameter (micron)")]
         public double ImpingementPlateCutDiameterMicron { get; set; } = 5.0;
+
+        [Range(0.1, 1.0)]
+        [Display(Name = "Plate Murphree Efficiency")]
+        public double ImpingementPlateMurphreeEfficiency { get; set; } = 0.50;
 
         public CreateDesignViewModel Clone()
         {
@@ -307,7 +311,8 @@ namespace WetScrubber.Models
                 ImpingementPlateGasDensityKgM3 = this.ImpingementPlateGasDensityKgM3,
                 ImpingementPlateLiquidDensityKgM3 = this.ImpingementPlateLiquidDensityKgM3,
                 ImpingementPlateTargetRemovalPercent = this.ImpingementPlateTargetRemovalPercent,
-                ImpingementPlateCutDiameterMicron = this.ImpingementPlateCutDiameterMicron
+                ImpingementPlateCutDiameterMicron = this.ImpingementPlateCutDiameterMicron,
+                ImpingementPlateMurphreeEfficiency = this.ImpingementPlateMurphreeEfficiency
             };
         }
     }
@@ -382,8 +387,8 @@ namespace WetScrubber.Models
         public double MolecularWeight { get; set; } = 64;
 
         [Range(0, 100)]
-        [Display(Name = "Henry's Law Constant")]
-        public double HenrysLawConstant { get; set; } = 0.83;
+        [Display(Name = "Henry's Law Constant (dimensionless Cg/Cl)")]
+        public double HenrysLawConstant { get; set; } = 0.034;
     }
 
     // ============================================================

@@ -20,7 +20,7 @@ namespace WetScrubber.Business.Plate
         public ParticleSizeDistribution? Distribution { get; set; }
 
         /// <summary>Stokes number at 50% collection; screening default, not validated.</summary>
-        public double StokesNumberAt50Percent { get; set; } = 0.5;
+        public double StokesNumberAt50Percent { get; set; } = 0.24;
 
         /// <summary>Apply Cunningham slip correction to particle relaxation time.</summary>
         public bool ApplyCunninghamSlip { get; set; }
@@ -57,14 +57,14 @@ namespace WetScrubber.Business.Plate
 
     /// <summary>
     /// Inertial impaction screening model.
-    /// Stk = rho_p * d_p^2 * Cc * U / (18 * mu_g * L)
-    /// eta(d) = Stk / (Stk + Stk50)
+    /// Stk = rho_p * d_p^2 * Cc * U / (9 * mu_g * Dj)   (Dj = jet/hole diameter)
+    /// eta(d) = 1 / (1 + (Stk50 / Stk)^2)
     /// Overall efficiency is mass-weighted using the shared FractionalEfficiency helper.
     /// The Stk50 default and curve shape are unvalidated placeholders requiring benchmark confirmation.
     /// </summary>
     public static class ImpingementPlateParticulate
     {
-        public const double DefaultStokesNumberAt50Percent = 0.5;
+        public const double DefaultStokesNumberAt50Percent = 0.24;
 
         public static PlateParticulateResult Evaluate(PlateParticulateInput input)
         {
@@ -105,8 +105,9 @@ namespace WetScrubber.Business.Plate
                     : 1.0;
                 double stokes = input.ParticleDensityKgM3 * diameterM * diameterM * slip *
                     input.CharacteristicGasVelocityMs /
-                    (18.0 * input.GasViscosityPas * input.CharacteristicLengthM);
-                return stokes / (stokes + input.StokesNumberAt50Percent);
+                    (9.0 * input.GasViscosityPas * input.CharacteristicLengthM);
+                double ratio = input.StokesNumberAt50Percent / stokes;
+                return 1.0 / (1.0 + ratio * ratio);
             };
 
             FractionalEfficiencyResult fractional =

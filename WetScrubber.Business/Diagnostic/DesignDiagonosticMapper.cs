@@ -53,9 +53,10 @@ namespace WetScrubber.Business.Diagnostics
                 ShellMaterial = design.ShellMaterial.ToString(),
                 InternalMaterial = design.InternalMaterial.ToString(),
                 IsParticulateOnly = design.ScrubberType == ScrubberType.WetCyclone,
-                IsPreview = design.ScrubberType is ScrubberType.WetCyclone
-                 
-                    or ScrubberType.ImpingementPlate
+                IsPreview = design.ScrubberType == ScrubberType.ImpingementPlate
+
+
+                    
             };
 
             return engine.Evaluate(metrics);

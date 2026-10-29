@@ -73,9 +73,8 @@ namespace WetScrubber.Business.Reports
             sb.AppendLine($"Scrubber Type : {design.ScrubberType}");
             sb.AppendLine($"Shell Material : {design.ShellMaterial}");
             sb.AppendLine($"Internal Material : {design.InternalMaterial}");
-            if (design.ScrubberType is ScrubberType.WetCyclone
-             
-                or ScrubberType.ImpingementPlate)
+            if (design.ScrubberType == ScrubberType.ImpingementPlate)
+
             {
                 sb.AppendLine("Model Status : PREVIEW - not yet validated");
             }
@@ -207,9 +206,7 @@ namespace WetScrubber.Business.Reports
                 InternalMaterial = design.InternalMaterial.ToString(),
              
                 IsParticulateOnly = design.ScrubberType == ScrubberType.WetCyclone,
-                IsPreview = design.ScrubberType is ScrubberType.WetCyclone
-        
-                    or ScrubberType.ImpingementPlate
+                IsPreview = design.ScrubberType == ScrubberType.ImpingementPlate
             };
 
             var findings = _diagnosticsEngine.Evaluate(metrics);

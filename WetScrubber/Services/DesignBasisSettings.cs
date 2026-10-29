@@ -49,11 +49,15 @@ namespace WetScrubber.Services
         public const double DefaultCycloneVelocityHardMaxMs = 35.0;
         public const double DefaultCyclonePressureDropCeilingPa = 2500.0;
         // Impingement plate settings (provisional; require engineering validation).
-        public const double DefaultImpingementPlateRecommendedFloodPercent = 70.0;
-        public const double DefaultImpingementPlatePressureDropCeilingPa = 3000.0;
-        public const double DefaultImpingementPlateHoleAreaFraction = 0.10;
-        public const double DefaultImpingementPlateDischargeCoefficient = 0.70;
-        public const double DefaultImpingementPlateCapacityFactorMPerS = 0.08;
+        public const double DefaultImpingementPlateRecommendedFloodPercent = WetScrubber.Business.Plate.ImpingementPlateHydraulics.RecommendedFloodPercent;
+        public const double DefaultImpingementPlatePressureDropCeilingPa = WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultPressureDropCeilingPa;
+        public const double DefaultImpingementPlateHoleAreaFraction = WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultOpenAreaFraction;
+        public const double DefaultImpingementPlateDischargeCoefficient = WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultOrificeCoefficient;
+        public const double DefaultImpingementPlateCapacityFactorMPerS = WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultFloodCapacityFactorMs;
+        public const double DefaultImpingementPlateMurphreeEfficiency = 0.50;
+        public const double DefaultImpingementPlateParticleDensityKgM3 = 1500.0;
+        public const double DefaultImpingementPlateParticleGeometricStdDev = 2.0;
+        public const double DefaultImpingementPlateStokesNumberAt50Percent = 0.5;
         public const int DefaultCycloneSizeBinCount = 20;
 
         public static double PackedPumpHeadOffsetM { get; private set; } = DefaultPackedPumpHeadOffsetM;
@@ -88,6 +92,18 @@ namespace WetScrubber.Services
 
         public static double ImpingementPlateCapacityFactorMPerS { get; private set; }
             = DefaultImpingementPlateCapacityFactorMPerS;
+
+        public static double ImpingementPlateMurphreeEfficiency { get; private set; }
+            = DefaultImpingementPlateMurphreeEfficiency;
+
+        public static double ImpingementPlateParticleDensityKgM3 { get; private set; }
+            = DefaultImpingementPlateParticleDensityKgM3;
+
+        public static double ImpingementPlateParticleGeometricStdDev { get; private set; }
+            = DefaultImpingementPlateParticleGeometricStdDev;
+
+        public static double ImpingementPlateStokesNumberAt50Percent { get; private set; }
+            = DefaultImpingementPlateStokesNumberAt50Percent;
         public static double CycloneVelocityWarnMinMs { get; private set; } = DefaultCycloneVelocityWarnMinMs;
         public static double CycloneVelocityWarnMaxMs { get; private set; } = DefaultCycloneVelocityWarnMaxMs;
         public static double CycloneVelocityHardMinMs { get; private set; } = DefaultCycloneVelocityHardMinMs;
@@ -139,6 +155,34 @@ namespace WetScrubber.Services
                 DefaultImpingementPlateCapacityFactorMPerS,
                 0.01,
                 1.0);
+
+            ImpingementPlateMurphreeEfficiency = Read(
+                section,
+                nameof(ImpingementPlateMurphreeEfficiency),
+                DefaultImpingementPlateMurphreeEfficiency,
+                0.05,
+                1.0);
+
+            ImpingementPlateParticleDensityKgM3 = Read(
+                section,
+                nameof(ImpingementPlateParticleDensityKgM3),
+                DefaultImpingementPlateParticleDensityKgM3,
+                100.0,
+                20000.0);
+
+            ImpingementPlateParticleGeometricStdDev = Read(
+                section,
+                nameof(ImpingementPlateParticleGeometricStdDev),
+                DefaultImpingementPlateParticleGeometricStdDev,
+                1.0,
+                10.0);
+
+            ImpingementPlateStokesNumberAt50Percent = Read(
+                section,
+                nameof(ImpingementPlateStokesNumberAt50Percent),
+                DefaultImpingementPlateStokesNumberAt50Percent,
+                0.05,
+                5.0);
             SumpAndTopAllowanceM = Read(section, nameof(SumpAndTopAllowanceM), DefaultSumpAndTopAllowanceM, 0.0, 10.0);
             SprayTowerAuxiliaryPressureDropPa = Read(section, nameof(SprayTowerAuxiliaryPressureDropPa), DefaultSprayTowerAuxiliaryPressureDropPa, 0.0, 5000.0);
             DefaultVoidFraction = Read(section, nameof(DefaultVoidFraction), DefaultDefaultVoidFraction, 0.30, 0.99);

@@ -22,7 +22,7 @@ namespace WetScrubber.Business.Cyclone
 
         /// <summary>
         /// Lapple (1951) conventional cyclone: a/D = 0.5, b/D = 0.25, De/D = 0.5,
-        /// S/D = 0.125, h/D = 1.5, z/D = 2.5, B/D = 0.25.
+        /// S/D = 0.625, h/D = 2.0, z/D = 2.0, B/D = 0.25.
         /// Status: standard textbook ratios (Cooper and Alley); confirm against the cited edition.
         /// </summary>
         public static CycloneRatios Lapple { get; } = new CycloneRatios
@@ -32,9 +32,9 @@ namespace WetScrubber.Business.Cyclone
             InletHeight = 0.5,
             InletWidth = 0.25,
             GasOutletDiameter = 0.5,
-            OutletLength = 0.125,
-            CylinderHeight = 1.5,
-            ConeHeight = 2.5,
+            OutletLength = 0.625,
+            CylinderHeight = 2.0,
+            ConeHeight = 2.0,
             DustOutletDiameter = 0.25
         };
     }

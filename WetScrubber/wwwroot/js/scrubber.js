@@ -232,7 +232,7 @@ $(document).ready(function () {
         if (type === '1') return 'Packed Tower: recommended 2–10 L/m³';
         else if (type === '2') return 'Venturi: recommended 0.5–3 L/m³';
         else if (type === '3') return 'Spray Tower: recommended 1–3 L/m³';
-        else if (type === '4') return 'Wet Cyclone (Preview): particulate only; L/G range not yet validated';
+        else if (type === '4') return 'Wet Cyclone: particulate only';
 
         else if (type === '6') return 'Impingement Plate (Preview): L/G range not yet validated';
         return 'Typical range: 1–5 L/m³';

@@ -7,7 +7,7 @@
     var ddIsWetCyclone = ddType.Contains("Cyclone", StringComparison.OrdinalIgnoreCase);
     var ddIsImpingement = ddType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
     var ddIsParticulateOnly = ddIsVenturi || ddIsWetCyclone;
-    var ddIsPreview = ddIsWetCyclone || ddIsImpingement;
+    var ddIsPreview = ddIsImpingement;
 }
 
 @section Styles {

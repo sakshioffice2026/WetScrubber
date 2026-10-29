@@ -8,12 +8,13 @@
     /// Uses SI units. Correlations are screening estimates and require
     /// validation against authoritative design data before production use.
     /// </summary>
+    [Obsolete("Superseded by ImpingementPlateHydraulics.Evaluate; not used by the calculation engine.")]
     public sealed class ImpingementPlateModel
     {
-        private const double RecommendedFloodPercent = 70.0;
-        private const double ProvisionalPressureDropLimitPa = 3000.0;
-        private const double DefaultDischargeCoefficient = 0.7;
-        private const double DefaultPlateHoleAreaFraction = 0.10;
+        private const double RecommendedFloodPercent = ImpingementPlateHydraulics.RecommendedFloodPercent;
+        private const double ProvisionalPressureDropLimitPa = ImpingementPlateHydraulics.DefaultPressureDropCeilingPa;
+        private const double DefaultDischargeCoefficient = ImpingementPlateHydraulics.DefaultOrificeCoefficient;
+        private const double DefaultPlateHoleAreaFraction = ImpingementPlateHydraulics.DefaultOpenAreaFraction;
         private const double DefaultLiquidDensityKgPerM3 = 1000.0;
         private const double DefaultGasDensityKgPerM3 = 1.2;
         private const double DefaultGravityMPerS2 = 9.80665;
@@ -172,7 +173,7 @@
         {
             // Simplified Souders–Brown-style screening estimate.
             // The capacity constant is provisional and must be calibrated.
-            const double provisionalCapacityFactorMPerS = 0.08;
+            const double provisionalCapacityFactorMPerS = ImpingementPlateHydraulics.DefaultFloodCapacityFactorMs;
 
             double densityTerm =
                 (liquidDensityKgPerM3 - gasDensityKgPerM3)

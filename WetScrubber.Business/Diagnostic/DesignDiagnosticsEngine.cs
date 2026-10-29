@@ -27,11 +27,13 @@ namespace WetScrubber.Business.Diagnostics
         // PROVISIONAL screening ceilings for types 4–6. Not source-verified;
         // each needs a cited source and range before the validation gate.
         private const double WetCyclonePressureDropCeilingPa = 2500.0;
-        private const double ImpingementPlatePressureDropCeilingPa = 3000.0;
+        private const double ImpingementPlatePressureDropCeilingPa =
+            WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultPressureDropCeilingPa;
 
 
         // Same recommended flooding limit the Results view already displays.
-        private const double ImpingementPlateRecommendedFloodPercent = 70.0;
+        private const double ImpingementPlateRecommendedFloodPercent =
+            WetScrubber.Business.Plate.ImpingementPlateHydraulics.RecommendedFloodPercent;
 
         private const double PackingHeightSuggestionMultiple = 1.5;
         private const double AbsorptionFactorSuggestionMargin = 1.05;
@@ -89,9 +91,8 @@ namespace WetScrubber.Business.Diagnostics
         private static bool IsWetCyclone(DesignMetrics m) => TypeContains(m, "Cyclone");
         private static bool IsImpingementPlate(DesignMetrics m) => TypeContains(m, "Impingement");
 
-
         private static bool IsPreviewType(DesignMetrics m) =>
-            m.IsPreview || IsWetCyclone(m) || IsImpingementPlate(m);
+                   m.IsPreview || IsImpingementPlate(m);
 
         private static void EvaluatePreviewAndScope(
             DesignMetrics m,

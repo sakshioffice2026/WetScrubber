@@ -19,11 +19,11 @@ namespace WetScrubber.Business.Plate
 
         // Plate geometry
         public double ColumnDiameterM { get; set; }
-        public double WeirLengthFraction { get; set; } = 0.7;     // Lw / D
-        public double OpenAreaFraction { get; set; } = 0.10;      // hole area / active area
-        public double HoleDiameterM { get; set; } = 0.005;
-        public double WeirHeightM { get; set; } = 0.05;
-        public double TraySpacingM { get; set; } = 0.45;
+        public double WeirLengthFraction { get; set; } = ImpingementPlateHydraulics.DefaultWeirLengthFraction;     // Lw / D
+        public double OpenAreaFraction { get; set; } = ImpingementPlateHydraulics.DefaultOpenAreaFraction;      // hole area / active area
+        public double HoleDiameterM { get; set; } = ImpingementPlateHydraulics.DefaultHoleDiameterM;
+        public double WeirHeightM { get; set; } = ImpingementPlateHydraulics.DefaultWeirHeightM;
+        public double TraySpacingM { get; set; } = ImpingementPlateHydraulics.DefaultTraySpacingM;
 
         // Correlation parameters (UNCONFIRMED defaults)
         public double OrificeCoefficient { get; set; } = ImpingementPlateHydraulics.DefaultOrificeCoefficient;
@@ -105,6 +105,14 @@ namespace WetScrubber.Business.Plate
         public const double DefaultMinHoleFFactor = 6.0;
         public const double DefaultMaxBackupRatio = 0.50;
         public const double RecommendedFloodPercent = 70.0;
+
+        // Shared geometry defaults and screening ceiling (single source of truth).
+        public const double DefaultWeirLengthFraction = 0.7;
+        public const double DefaultOpenAreaFraction = 0.10;
+        public const double DefaultHoleDiameterM = 0.005;
+        public const double DefaultWeirHeightM = 0.05;
+        public const double DefaultTraySpacingM = 0.45;
+        public const double DefaultPressureDropCeilingPa = 3000.0;
 
         public const double WeirCrestCoefficient = 0.666;
         public const double SurfaceTensionHeadCoefficient = 6.0;

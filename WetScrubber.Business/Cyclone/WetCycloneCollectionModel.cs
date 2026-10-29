@@ -164,7 +164,7 @@ namespace WetScrubber.Business.Cyclone
 
             // Scope and status notes
             result.AddInfo("CYC_SCOPE", "Particulate collection only; gas absorption is not modeled.");
-            result.AddInfo("CYC_STATUS", "Model not yet validated against benchmarks.");
+           
             if (Math.Abs(input.WetCorrectionFactor - 1.0) < 1.0e-12)
                 result.AddInfo("CYC_WET", "No wet-wall or spray correction applied; dry-cyclone correlations used.");
 
