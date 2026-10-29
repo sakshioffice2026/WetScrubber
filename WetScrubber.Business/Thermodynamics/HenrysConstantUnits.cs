@@ -14,7 +14,7 @@ namespace WetScrubber.Business.Thermodynamics
         // Bounds for H_yx (mole-fraction ratio). Do NOT apply to H_cc.
         public const double MinimumH = 0.001;
         public const double MaximumH = 1.0e5;
-
+        public const double MinimumPhysicalH = 1.0e-12;
         // Bounds for H_cc (dimensionless Cg/Cl). Very soluble gases such as
         // HCl legitimately sit far below 0.001.
         public const double MinimumHcc = 1.0e-12;
@@ -26,8 +26,8 @@ namespace WetScrubber.Business.Thermodynamics
         /// <summary>Clamp for H_yx values.</summary>
         public static double Clamp(double h)
         {
-            if (double.IsNaN(h) || double.IsInfinity(h)) return MinimumH;
-            return Math.Min(Math.Max(h, MinimumH), MaximumH);
+            if (double.IsNaN(h) || double.IsInfinity(h)) return MinimumPhysicalH;
+            return Math.Min(Math.Max(h, MinimumPhysicalH), MaximumH);
         }
 
         /// <summary>Clamp for H_cc (Cg/Cl) values.</summary>
@@ -37,16 +37,24 @@ namespace WetScrubber.Business.Thermodynamics
             return Math.Min(Math.Max(h, MinimumHcc), MaximumHcc);
         }
 
-        public static double CgOverClToMoleFractionRatio(double hCgCl, double tempK, double pressureKPa)
+        public static double CgOverClToMoleFractionRatio(
+    double hCgCl,
+    double tempK,
+    double pressureKPa,
+    double solventMolarConcMolM3 = WaterMolarConcMolM3)
         {
             double pressurePa = Math.Max(pressureKPa, 1e-6) * 1000.0;
-            return hCgCl * WaterMolarConcMolM3 * GasConstantJmolK * Math.Max(tempK, 1e-6) / pressurePa;
+            return hCgCl * solventMolarConcMolM3 * GasConstantJmolK * Math.Max(tempK, 1e-6) / pressurePa;
         }
 
-        public static double MoleFractionRatioToCgOverCl(double hYX, double tempK, double pressureKPa)
+        public static double MoleFractionRatioToCgOverCl(
+            double hYX,
+            double tempK,
+            double pressureKPa,
+            double solventMolarConcMolM3 = WaterMolarConcMolM3)
         {
             double pressurePa = Math.Max(pressureKPa, 1e-6) * 1000.0;
-            double denom = WaterMolarConcMolM3 * GasConstantJmolK * Math.Max(tempK, 1e-6);
+            double denom = solventMolarConcMolM3 * GasConstantJmolK * Math.Max(tempK, 1e-6);
             return hYX * pressurePa / denom;
         }
     }

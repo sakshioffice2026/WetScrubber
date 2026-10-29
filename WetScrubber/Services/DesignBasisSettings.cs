@@ -37,6 +37,10 @@ namespace WetScrubber.Services
         public const double DefaultSprayTowerRemovalCoefficient = 0.5;
         public const double DefaultSprayTowerHeightPerM3S = 5.0;
         public const double DefaultSprayTowerBaseHeightM = 2.0;
+        public const double DefaultSprayTowerDropletDiameterM = 0.001;
+        public const double DefaultSprayTowerRelativeVelocityMs = 2.0;
+        public const double DefaultSprayTowerHeightCapM = 15.0;
+        public const double DefaultSprayTowerLossCoefficient = 1.5;
         public const double DefaultVenturiDiameterFactor = 2.5;
         public const double DefaultVenturiHeightFactor = 8.0;
         public const double DefaultVenturiParticleGeometricStdDev = 1.0;
@@ -69,6 +73,10 @@ namespace WetScrubber.Services
         public static double SprayTowerAuxiliaryPressureDropPa { get; private set; } = DefaultSprayTowerAuxiliaryPressureDropPa;
         public static double DefaultVoidFraction { get; private set; } = DefaultDefaultVoidFraction;
         public static double DefaultLiquidSurfaceTensionNM { get; private set; } = DefaultDefaultLiquidSurfaceTensionNM;
+        public static double SprayTowerDropletDiameterM { get; private set; } = DefaultSprayTowerDropletDiameterM;
+        public static double SprayTowerRelativeVelocityMs { get; private set; } = DefaultSprayTowerRelativeVelocityMs;
+        public static double SprayTowerHeightCapM { get; private set; } = DefaultSprayTowerHeightCapM;
+        public static double SprayTowerLossCoefficient { get; private set; } = DefaultSprayTowerLossCoefficient;
         public static double SprayTowerDesignVelocityMs { get; private set; } = DefaultSprayTowerDesignVelocityMs;
         public static double SprayTowerRemovalCoefficient { get; private set; } = DefaultSprayTowerRemovalCoefficient;
         public static double SprayTowerHeightPerM3S { get; private set; } = DefaultSprayTowerHeightPerM3S;
@@ -194,6 +202,10 @@ namespace WetScrubber.Services
                 DefaultImpingementPlateStokesNumberAt50Percent,
                 0.05,
                 5.0);
+            SprayTowerDropletDiameterM = Read(section, nameof(SprayTowerDropletDiameterM), DefaultSprayTowerDropletDiameterM, 0.0002, 0.005);
+            SprayTowerRelativeVelocityMs = Read(section, nameof(SprayTowerRelativeVelocityMs), DefaultSprayTowerRelativeVelocityMs, 0.1, 10.0);
+            SprayTowerHeightCapM = Read(section, nameof(SprayTowerHeightCapM), DefaultSprayTowerHeightCapM, 1.0, 50.0);
+            SprayTowerLossCoefficient = Read(section, nameof(SprayTowerLossCoefficient), DefaultSprayTowerLossCoefficient, 0.1, 10.0);
             SumpAndTopAllowanceM = Read(section, nameof(SumpAndTopAllowanceM), DefaultSumpAndTopAllowanceM, 0.0, 10.0);
             SprayTowerAuxiliaryPressureDropPa = Read(section, nameof(SprayTowerAuxiliaryPressureDropPa), DefaultSprayTowerAuxiliaryPressureDropPa, 0.0, 5000.0);
             DefaultVoidFraction = Read(section, nameof(DefaultVoidFraction), DefaultDefaultVoidFraction, 0.30, 0.99);

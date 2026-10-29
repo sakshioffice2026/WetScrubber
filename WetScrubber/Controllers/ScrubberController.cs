@@ -1304,7 +1304,7 @@ namespace WetScrubber.Controllers
                 InletTemperature = d.GasStream?.InletTemperature ?? 150,
                 InletPressure = d.GasStream?.InletPressure ?? 101325,
                 MoistureContent = d.GasStream?.MoistureContent ?? 0,
-                GasDensity = d.GasStream?.GasDensity > 0 ? d.GasStream.GasDensity : 1.2,
+                GasDensity = d.GasStream?.GasDensity > 0 ? d.GasStream.GasDensity : 1.293,
                 GasViscosity = d.GasStream?.GasViscosity > 0 ? d.GasStream.GasViscosity : 1.85e-5,
                 LiquidType = d.LiquidSpec?.LiquidType ?? 2,   // 2 = Caustic Soda (scrubbingliquids.Id)
                 LiquidConcentration = d.LiquidSpec?.Concentration ?? 10,

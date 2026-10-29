@@ -25,7 +25,13 @@ namespace WetScrubber.Business.Thermodynamics
             double temperatureC,
             double fallbackTempCoeffK)
         {
-            double h25 = referenceHenrysConstantAt25C <= 0 ? 0.83 : referenceHenrysConstantAt25C;
+            if (double.IsNaN(referenceHenrysConstantAt25C) || double.IsInfinity(referenceHenrysConstantAt25C) || referenceHenrysConstantAt25C <= 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(referenceHenrysConstantAt25C),
+                    referenceHenrysConstantAt25C,
+                    "Reference Henry's constant at 25 C must be positive and finite.");
+
+            double h25 = referenceHenrysConstantAt25C;
 
             double tempCoeffK = heatOfSolutionKJmol.HasValue
                 ? -(heatOfSolutionKJmol.Value * 1000.0) / GasConstant

@@ -189,9 +189,10 @@ namespace WetScrubber.Services
                 pollutant.InletConcentration);
 
             double henrysTemp =
-                GetEffectiveHenrysLawConstant(
+                   GetEffectiveHenrysLawConstant(
                     pollutant,
                     vm.LiquidTemperature,
+                    GetSolventMolarConcMolM3(vm),
                     vm.InletPressure / 1000.0);
 
             bool ratingMode =
@@ -632,7 +633,7 @@ namespace WetScrubber.Services
                         vm.GasDensity, vm.InletTemperature + 273.15, vm.InletPressure,
                         multiPollutant.PollutantType, multiPollutant.InletConcentration);
                     double pollutantHenry = GetEffectiveHenrysLawConstant(
-                        multiPollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
+                        multiPollutant, vm.LiquidTemperature, GetSolventMolarConcMolM3(vm), vm.InletPressure / 1000.0);
                     var pollutantReactiveBasis = GetReactiveEquilibriumBasis(multiPollutant, vm);
                     double pollutantEquilibrium = pollutantReactiveBasis.UseReactiveEquilibrium
                         ? HenrysConstantUnits.MinimumH : pollutantHenry;
@@ -1140,10 +1141,11 @@ namespace WetScrubber.Services
             double actualGasVelocity = gasFlowM3S / areaM2;
             double liquidFlowM3S = vm.LiquidToGasRatio * gasFlowM3S / 1000.0;
             double liquidFlux = liquidFlowM3S / areaM2;
-            const double dropletDiameterM = 0.001;
-            const double relativeVelocityMS = 2.0;
-            const double towerHeightCapM = 15.0;
-            const double lossCoefficient = 1.5;
+            double dropletDiameterM = DesignBasisSettings.SprayTowerDropletDiameterM;
+            double relativeVelocityMS = DesignBasisSettings.SprayTowerRelativeVelocityMs;
+            double towerHeightCapM = DesignBasisSettings.SprayTowerHeightCapM;
+            double lossCoefficient = DesignBasisSettings.SprayTowerLossCoefficient;
+            
 
             var pollutantInputs = vm.Pollutants;
             var densityBasisPollutant = pollutantInputs.FirstOrDefault();
@@ -1186,8 +1188,8 @@ namespace WetScrubber.Services
                 double effectiveHenry =
                          GetReactiveEquilibriumBasis(pollutant, vm).UseReactiveEquilibrium
                             ? HenrysConstantUnits.MinimumH
-                            : GetEffectiveHenrysLawConstant(
-                                pollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
+                                : GetEffectiveHenrysLawConstant(
+                                pollutant, vm.LiquidTemperature, GetSolventMolarConcMolM3(vm), vm.InletPressure / 1000.0);
                 double molarLG = CalculateMolarLiquidToGasRatio(
                     vm.LiquidToGasRatio, vm.LiquidDensity, vm.InletTemperature,
                     vm.InletPressure, vm.LiquidMolecularWeightGMol);
@@ -1503,11 +1505,11 @@ namespace WetScrubber.Services
             foreach (var candidate in platePollutants)
             {
                 double candidateHenry =
-                    GetEffectiveHenrysLawConstant(
+                     GetEffectiveHenrysLawConstant(
                         candidate,
                         vm.LiquidTemperature,
+                        GetSolventMolarConcMolM3(vm),
                         vm.InletPressure / 1000.0);
-
                 var candidateReactive =
                     GetReactiveEquilibriumBasis(candidate, vm);
 
@@ -2883,9 +2885,10 @@ namespace WetScrubber.Services
                         throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                     double effectiveHenry =
-                        GetEffectiveHenrysLawConstant(
+                          GetEffectiveHenrysLawConstant(
                             pollutant,
                             vm.LiquidTemperature,
+                            GetSolventMolarConcMolM3(vm),
                             vm.InletPressure / 1000.0);
 
                     double molarVolume =
@@ -3281,9 +3284,10 @@ namespace WetScrubber.Services
         //  PHASE 1 — effective Henry's Law
         // ════════════════════════════════════════════════════════════
         private double GetEffectiveHenrysLawConstant(
-            PollutantInputViewModel pollutant,
-            double liquidTemperatureC,
-            double pressureKPa = 101.325)
+    PollutantInputViewModel pollutant,
+    double liquidTemperatureC,
+    double solventMolarConcMolM3,
+    double pressureKPa = 101.325)
         {
             string? pollutantCode =
                 _componentLookup?
@@ -3313,7 +3317,20 @@ namespace WetScrubber.Services
                         H_T * gamma,
                         liquidTemperatureC +
                             273.15,
-                        pressureKPa);
+                        pressureKPa,
+                        solventMolarConcMolM3);
+        }
+
+        private static double GetSolventMolarConcMolM3(CreateDesignViewModel vm)
+        {
+            if (!IsPositiveFinite(vm.LiquidDensity) ||
+                !IsPositiveFinite(vm.LiquidMolecularWeightGMol))
+            {
+                throw new InvalidOperationException(
+                    "Liquid density and liquid molecular weight must be positive and finite.");
+            }
+
+            return 1000.0 * vm.LiquidDensity / vm.LiquidMolecularWeightGMol;
         }
 
         private double GetVanTHoffTempCoeff(

@@ -52,7 +52,7 @@ namespace WetScrubber.Models
 
         [Range(0.1, 5, ErrorMessage = "Must be between 0.1 and 5 kg/m³")]
         [Display(Name = "Gas Density (kg/m³)")]
-        public double GasDensity { get; set; } = 1.2;
+        public double GasDensity { get; set; } = 1.293;
 
         [Range(0.000001, 0.001, ErrorMessage = "Typical range: 0.000010 to 0.000050 Pa·s")]
         [Display(Name = "Gas Viscosity (Pa·s)")]

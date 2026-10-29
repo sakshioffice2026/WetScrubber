@@ -19,7 +19,7 @@ namespace WetScrubber.Database
         public double InletTemperature { get; set; }
         public double InletPressure { get; set; } = 101325;
         public double MoistureContent { get; set; }
-        public double GasDensity { get; set; } = 1.2;
+        public double GasDensity { get; set; } = 1.293;
         public double GasViscosity { get; set; } = 0.0000185;
 
         // ── Navigation ───────────────────────────────────────────
