@@ -1389,75 +1389,75 @@ namespace WetScrubber.Services
             double totalPressureDropPa =
                 hydraulics.PressureDropPerPlatePa * stages;
 
-            // ── Gas absorption screening (Kremser, equilibrium stages) ──
-            // Fraction absorbed = (A^(N+1) - A) / (A^(N+1) - 1), A = (L/G)molar / H.
-            // N = plate count x assumed stage efficiency. The efficiency is an
-            // UNCONFIRMED screening value; replace with vendor/benchmark data.
-            const double plateStageEfficiency = 0.50;
-            double effectiveStages = stages * plateStageEfficiency;
+            // Gas absorption: Kremser equilibrium-stage model with a
+            // Murphree plate efficiency (screening value, not validated).
+            const double plateMurphreeEfficiency = 0.50;
 
-            double inletTotalAbs = 0.0;
-            double removedTotalAbs = 0.0;
-            bool absorptionComputed = false;
-            var absorptionNotes = new List<string>();
+            var platePollutant =
+                vm.Pollutants?.FirstOrDefault()
+                ?? new PollutantInputViewModel();
 
-            if (vm.Pollutants != null &&
-                IsPositiveFinite(vm.LiquidMolecularWeightGMol))
+            double plateHenry =
+                GetEffectiveHenrysLawConstant(
+                    platePollutant,
+                    vm.LiquidTemperature,
+                    vm.InletPressure / 1000.0);
+
+            var plateReactiveBasis =
+                GetReactiveEquilibriumBasis(platePollutant, vm);
+
+            if (plateReactiveBasis.UseReactiveEquilibrium)
+                plateHenry = HenrysConstantUnits.MinimumH;
+
+            double plateMolarLG =
+                CalculateMolarLiquidToGasRatio(
+                    gasFlowM3Hr > 0.0
+                        ? liquidFlowM3Hr * 1000.0 / gasFlowM3Hr
+                        : 0.0,
+                    liquidDensity,
+                    vm.InletTemperature,
+                    vm.InletPressure,
+                    vm.LiquidMolecularWeightGMol);
+
+            double plateAbsorptionFactor =
+                IsPositiveFinite(plateHenry)
+                    ? plateMolarLG / plateHenry
+                    : 0.0;
+
+            double plateEffectiveStages =
+                stages * plateMurphreeEfficiency;
+
+            double plateRemovalFraction = 0.0;
+
+            if (IsPositiveFinite(plateAbsorptionFactor))
             {
-                double molarLG =
-                    CalculateMolarLiquidToGasRatio(
-                        vm.LiquidToGasRatio,
-                        liquidDensity,
-                        vm.InletTemperature,
-                        vm.InletPressure,
-                        vm.LiquidMolecularWeightGMol);
-
-                foreach (var pol in vm.Pollutants)
+                if (Math.Abs(plateAbsorptionFactor - 1.0) < 1e-9)
                 {
-                    if (!(pol.InletConcentration > 0.0))
-                        continue;
+                    plateRemovalFraction =
+                        plateEffectiveStages / (plateEffectiveStages + 1.0);
+                }
+                else
+                {
+                    double aPow =
+                        Math.Pow(plateAbsorptionFactor,
+                                 plateEffectiveStages + 1.0);
 
-                    double henry =
-                        GetEffectiveHenrysLawConstant(
-                            pol,
-                            vm.LiquidTemperature,
-                            vm.InletPressure / 1000.0);
-
-                    if (!IsPositiveFinite(henry) || !IsPositiveFinite(molarLG))
-                        continue;
-
-                    double a = molarLG / henry;
-                    double fraction;
-
-                    if (Math.Abs(a - 1.0) < 1e-9)
-                    {
-                        fraction = effectiveStages / (effectiveStages + 1.0);
-                    }
-                    else
-                    {
-                        double aN1 = Math.Pow(a, effectiveStages + 1.0);
-                        fraction = (aN1 - a) / (aN1 - 1.0);
-                    }
-
-                    if (double.IsNaN(fraction) || double.IsInfinity(fraction))
-                        continue;
-
-                    fraction = Math.Max(0.0, Math.Min(1.0, fraction));
-
-                    inletTotalAbs += pol.InletConcentration;
-                    removedTotalAbs += pol.InletConcentration * fraction;
-                    absorptionComputed = true;
-
-                    absorptionNotes.Add(
-                        $"absorption factor A = {a:F2}, effective stages = " +
-                        $"{effectiveStages:F1}, removal = {fraction * 100.0:F1}%");
+                    plateRemovalFraction =
+                        (aPow - plateAbsorptionFactor) / (aPow - 1.0);
                 }
             }
 
-            double absorptionRemovalPercent =
-                absorptionComputed && inletTotalAbs > 0.0
-                    ? Math.Round(100.0 * removedTotalAbs / inletTotalAbs, 2)
-                    : 0.0;
+            if (double.IsNaN(plateRemovalFraction) ||
+                double.IsInfinity(plateRemovalFraction))
+            {
+                plateRemovalFraction = 0.0;
+            }
+
+            plateRemovalFraction =
+                Math.Max(0.0, Math.Min(1.0, plateRemovalFraction));
+
+            double plateRemovalPercent =
+                Math.Round(100.0 * plateRemovalFraction, 2);
 
             var result = new CalculationResult
             {
@@ -1481,7 +1481,7 @@ namespace WetScrubber.Services
                     totalPressureDropPa,
 
                 // Generic result fields consumed by the existing results view.
-                GasVelocity = Math.Round(hydraulics.HoleVelocityMs, 3),
+                GasVelocity = Math.Round(hydraulics.NetVelocityMs, 3),
                 PressureDrop = Math.Round(totalPressureDropPa, 2),
                 SystemPressureDrop = Math.Round(totalPressureDropPa, 2),
                 TowerHeight = Math.Round(stages * 0.45, 2),
@@ -1490,9 +1490,6 @@ namespace WetScrubber.Services
                 ActualLGRatio = gasFlowM3Hr > 0.0
                     ? liquidFlowM3Hr * 1000.0 / gasFlowM3Hr
                     : 0.0,
-
-                FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, totalPressureDropPa), 2),
-                PumpPowerKW = Math.Round(CalculatePumpPower(liquidFlowM3Hr, DesignBasisSettings.SprayTowerPumpHeadM, liquidDensity), 2),
 
                 PercentFlood = Math.Round(hydraulics.PercentFlood, 2),
                 FloodingGasVelocity =
@@ -1508,15 +1505,15 @@ namespace WetScrubber.Services
                 HTU = 0.0,
                 MinLGRatio = 0.0,
 
-                // No plate removal correlation is connected to the supplied
-                // particle-size distribution or gas-absorption inputs here.
-                RemovalEfficiency = absorptionRemovalPercent,
-                ImpingementPlateRemovalEfficiencyPercent = absorptionRemovalPercent,
+                // Gas absorption removal from the Kremser / Murphree screen.
+                RemovalEfficiency = plateRemovalPercent,
+                AbsorptionFactor = plateAbsorptionFactor,
+                ImpingementPlateRemovalEfficiencyPercent = plateRemovalPercent,
                 ImpingementPlateCutDiameterMicron =
                     vm.ImpingementPlateCutDiameterMicron,
 
                 ModelValidationStatus = "NotYetValidated",
-                GasAbsorptionNotModeled = !absorptionComputed,
+                GasAbsorptionNotModeled = false,
 
                 IsFeasible =
                     !hydraulics.IsFlooding &&
@@ -1528,19 +1525,19 @@ namespace WetScrubber.Services
                 "geometry parameters require validation against authoritative " +
                 "design data or vendor benchmarks.");
 
-            if (absorptionComputed)
+            result.Warnings.Add(
+                $"REMOVAL EFFICIENCY: gas absorption screened with a Kremser " +
+                $"equilibrium-stage model ({stages} plates x " +
+                $"{plateMurphreeEfficiency:P0} Murphree efficiency, absorption " +
+                $"factor {plateAbsorptionFactor:F3}). Plate efficiency is a " +
+                $"provisional value and requires validation.");
+
+            if (plateReactiveBasis.UseReactiveEquilibrium)
             {
                 result.Warnings.Add(
-                    "GAS ABSORPTION SCREEN: Kremser equilibrium-stage estimate with an " +
-                    $"assumed {plateStageEfficiency * 100.0:F0}% plate stage efficiency " +
-                    "(unconfirmed). Liquid-phase reaction, gas-film resistance and " +
-                    "entrainment are not modeled; " + string.Join("; ", absorptionNotes) + ".");
-            }
-            else
-            {
-                result.Warnings.Add(
-                    "REMOVAL EFFICIENCY: gas absorption could not be computed from the " +
-                    "supplied inputs, so removal is reported as 0 (not calculated).");
+                    "UPPER BOUND: the reagent is treated as instantaneous and " +
+                    "irreversible (effective equilibrium slope at its minimum); " +
+                    "plate removal is optimistic.");
             }
 
             result.Warnings.Add(

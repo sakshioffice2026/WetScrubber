@@ -348,7 +348,7 @@ namespace WetScrubber.Business.Diagnostics
                     IsWetCyclone(m)
                         ? "Reduce the cut diameter by raising inlet velocity (within limits), using a smaller-diameter cyclone, or adding cyclones in parallel, then re-run the calculation."
                     : IsImpingementPlate(m)
-                        ? "Add plates and/or increase the L/G ratio, then re-run the calculation."
+                        ? "Increase the L/G ratio (absorption factor must exceed 1 for high removal), add plates, or use a more soluble reagent, then re-run the calculation."
                                        : "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.";
 
                 findings.Add(new DesignFinding
