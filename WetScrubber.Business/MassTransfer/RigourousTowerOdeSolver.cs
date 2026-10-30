@@ -31,6 +31,8 @@ namespace WetScrubber.Business.MassTransfer
         private const int MaxStepCount = 20000;
         private const int MaxPicardIterations = 300;
         private const double Relaxation = 0.7;
+        private const int AndersonDepth = 8;
+        private const double TempScaleK = 100.0;
         private const double TolTemperatureK = 1e-4;
         private const double TolMolarRelative = 1e-6;
         private const double RKPaKmol = 8.314462;     // kPa*m3/(kmol*K)
@@ -140,6 +142,8 @@ namespace WetScrubber.Business.MassTransfer
             bool converged = false;
             int iter;
             double resT = 0.0, resN = 0.0;
+            var mixer = new AndersonMixer(AndersonDepth, Relaxation);
+            double bestMetric = double.MaxValue;
 
             for (iter = 1; iter <= MaxPicardIterations; iter++)
             {
@@ -200,11 +204,60 @@ namespace WetScrubber.Business.MassTransfer
                         resN = Math.Max(resN, Math.Abs(nlNew[i][k] - nl[i][k]) / scale);
                 }
 
-                for (int k = 0; k <= n; k++)
-                    tl[k] += Relaxation * (tlNew[k] - tl[k]);
-                for (int i = 0; i < m; i++)
+                bool profileConverged = resT < TolTemperatureK && resN < TolMolarRelative;
+                if (profileConverged)
+                {
                     for (int k = 0; k <= n; k++)
-                        nl[i][k] += Relaxation * (nlNew[i][k] - nl[i][k]);
+                        tl[k] = tlNew[k];
+                    for (int i = 0; i < m; i++)
+                        for (int k = 0; k <= n; k++)
+                            nl[i][k] = nlNew[i][k];
+                }
+                else
+                {
+                    double metric = Math.Max(resT / TolTemperatureK, resN / TolMolarRelative);
+                    if (metric < bestMetric) bestMetric = metric;
+                    else if (metric > 10.0 * bestMetric) mixer.Reset();
+
+                    int andLen = (m + 1) * (n + 1);
+                    var andX = new double[andLen];
+                    var andF = new double[andLen];
+                    int andIdx = 0;
+                    for (int i = 0; i < m; i++)
+                    {
+                        double sc = Math.Max(ctx.NgIn[i], 1e-30);
+                        for (int k = 0; k <= n; k++)
+                        {
+                            andX[andIdx] = nl[i][k] / sc;
+                            andF[andIdx] = (nlNew[i][k] - nl[i][k]) / sc;
+                            andIdx++;
+                        }
+                    }
+                    for (int k = 0; k <= n; k++)
+                    {
+                        andX[andIdx] = tl[k] / TempScaleK;
+                        andF[andIdx] = (tlNew[k] - tl[k]) / TempScaleK;
+                        andIdx++;
+                    }
+
+                    var andNext = mixer.Next(andX, andF);
+
+                    andIdx = 0;
+                    for (int i = 0; i < m; i++)
+                    {
+                        double sc = Math.Max(ctx.NgIn[i], 1e-30);
+                        for (int k = 0; k <= n; k++)
+                        {
+                            nl[i][k] = Math.Max(0.0, andNext[andIdx] * sc);
+                            andIdx++;
+                        }
+                    }
+                    for (int k = 0; k <= n; k++)
+                    {
+                        tl[k] = Math.Max(1.0, andNext[andIdx] * TempScaleK);
+                        andIdx++;
+                    }
+                }
 
                 ng = ngNew;
                 tg = tgNew;
@@ -520,6 +573,176 @@ namespace WetScrubber.Business.MassTransfer
         }
 
         private static double Lerp(double a, double b, double f) => a + (b - a) * f;
+
+        /// <summary>
+        /// Anderson acceleration (type II) for the fixed-point map x -> g(x).
+        /// Plain successive substitution diverges or stalls when the column is
+        /// strongly equilibrium-limited (H*G/L &gt;&gt; 1); Anderson mixing uses the
+        /// last few residuals to take a quasi-Newton step instead.
+        /// </summary>
+        private sealed class AndersonMixer
+        {
+            private readonly int _depth;
+            private readonly double _beta;
+            private readonly List<double[]> _dX = new();
+            private readonly List<double[]> _dF = new();
+            private double[] _xPrev;
+            private double[] _fPrev;
+
+            public AndersonMixer(int depth, double beta)
+            {
+                _depth = depth;
+                _beta = beta;
+            }
+
+            public void Reset()
+            {
+                _dX.Clear();
+                _dF.Clear();
+                _xPrev = null;
+                _fPrev = null;
+            }
+
+            public double[] Next(double[] x, double[] f)
+            {
+                int len = x.Length;
+
+                if (_xPrev != null)
+                {
+                    var dx = new double[len];
+                    var df = new double[len];
+                    for (int j = 0; j < len; j++)
+                    {
+                        dx[j] = x[j] - _xPrev[j];
+                        df[j] = f[j] - _fPrev[j];
+                    }
+                    _dX.Add(dx);
+                    _dF.Add(df);
+                    if (_dX.Count > _depth)
+                    {
+                        _dX.RemoveAt(0);
+                        _dF.RemoveAt(0);
+                    }
+                }
+
+                _xPrev = (double[])x.Clone();
+                _fPrev = (double[])f.Clone();
+
+                var plain = new double[len];
+                for (int j = 0; j < len; j++) plain[j] = x[j] + _beta * f[j];
+
+                int mk = _dF.Count;
+                if (mk == 0) return plain;
+
+                var a = new double[mk, mk];
+                var b = new double[mk];
+                for (int p = 0; p < mk; p++)
+                {
+                    var fp = _dF[p];
+                    for (int q = p; q < mk; q++)
+                    {
+                        var fq = _dF[q];
+                        double s = 0.0;
+                        for (int j = 0; j < len; j++) s += fp[j] * fq[j];
+                        a[p, q] = s;
+                        a[q, p] = s;
+                    }
+                    double sb = 0.0;
+                    for (int j = 0; j < len; j++) sb += fp[j] * f[j];
+                    b[p] = sb;
+                }
+
+                double maxDiag = 0.0;
+                for (int p = 0; p < mk; p++) maxDiag = Math.Max(maxDiag, a[p, p]);
+                if (!(maxDiag > 0.0))
+                {
+                    _dX.Clear();
+                    _dF.Clear();
+                    return plain;
+                }
+                for (int p = 0; p < mk; p++) a[p, p] += 1e-10 * maxDiag;
+
+                var gamma = SolveLinear(a, b, mk);
+                if (gamma == null)
+                {
+                    _dX.Clear();
+                    _dF.Clear();
+                    return plain;
+                }
+
+                var next = (double[])plain.Clone();
+                for (int p = 0; p < mk; p++)
+                {
+                    double g = gamma[p];
+                    var dxp = _dX[p];
+                    var dfp = _dF[p];
+                    for (int j = 0; j < len; j++)
+                        next[j] -= g * (dxp[j] + _beta * dfp[j]);
+                }
+
+                for (int j = 0; j < len; j++)
+                {
+                    if (double.IsNaN(next[j]) || double.IsInfinity(next[j]))
+                    {
+                        _dX.Clear();
+                        _dF.Clear();
+                        return plain;
+                    }
+                }
+
+                return next;
+            }
+        }
+
+        private static double[] SolveLinear(double[,] a, double[] b, int n)
+        {
+            var mtx = new double[n, n + 1];
+            for (int i = 0; i < n; i++)
+            {
+                for (int j = 0; j < n; j++) mtx[i, j] = a[i, j];
+                mtx[i, n] = b[i];
+            }
+
+            for (int c = 0; c < n; c++)
+            {
+                int piv = c;
+                double best = Math.Abs(mtx[c, c]);
+                for (int r = c + 1; r < n; r++)
+                {
+                    if (Math.Abs(mtx[r, c]) > best)
+                    {
+                        best = Math.Abs(mtx[r, c]);
+                        piv = r;
+                    }
+                }
+                if (!(best > 1e-300)) return null;
+
+                if (piv != c)
+                {
+                    for (int j = c; j <= n; j++)
+                    {
+                        double tmp = mtx[c, j];
+                        mtx[c, j] = mtx[piv, j];
+                        mtx[piv, j] = tmp;
+                    }
+                }
+
+                for (int r = c + 1; r < n; r++)
+                {
+                    double fct = mtx[r, c] / mtx[c, c];
+                    for (int j = c; j <= n; j++) mtx[r, j] -= fct * mtx[c, j];
+                }
+            }
+
+            var x = new double[n];
+            for (int i = n - 1; i >= 0; i--)
+            {
+                double s = mtx[i, n];
+                for (int j = i + 1; j < n; j++) s -= mtx[i, j] * x[j];
+                x[i] = s / mtx[i, i];
+            }
+            return x;
+        }
 
         private static double[] Axpy(double[] s, double a, double[] k)
         {

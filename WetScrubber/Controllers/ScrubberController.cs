@@ -71,6 +71,41 @@ namespace WetScrubber.Controllers
             return null;
         }
 
+        // ── GET /Scrubber/New ─────────────────────────────────────
+        [HttpGet]
+        public async Task<IActionResult> New()
+        {
+            var redirect = RedirectIfNotLoggedIn();
+            if (redirect != null) return redirect;
+
+            var userId = GetUserId()!.Value;
+            var projects = await _dbContext.Projects
+                .Where(p => p.CreatedByUserId == userId)
+                .OrderByDescending(p => p.UpdatedAt)
+                .Select(p => new ProjectSummaryViewModel
+                {
+                    ProjectId = p.ProjectId,
+                    ProjectNumber = p.ProjectNumber,
+                    ProjectName = p.ProjectName,
+                    ClientName = p.ClientName,
+                    Status = p.Status,
+                    DesignCount = p.Designs.Count,
+                    UpdatedAt = p.UpdatedAt
+                })
+                .ToListAsync();
+
+            if (projects.Count == 0)
+            {
+                TempData["Error"] = "Create a project first, then add a design to it.";
+                return RedirectToAction("Create", "Project");
+            }
+
+            if (projects.Count == 1)
+                return RedirectToAction(nameof(Create), new { projectId = projects[0].ProjectId });
+
+            return View(projects);
+        }
+
         // ── GET /Scrubber/Create?projectId=5 ─────────────────────
         [HttpGet]
         public async Task<IActionResult> Create(int projectId)

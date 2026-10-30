@@ -1,0 +1,276 @@
+@using WetScrubber.Database.Enums
+@model List<WetScrubber.Models.ProjectSummaryViewModel>
+
+@{
+    ViewData["Title"]      = "New Design";
+    ViewData["ActivePage"] = "NewDesign";
+
+    var activeProjects = Model.Where(p => p.Status != ProjectStatus.Archived).ToList();
+    var recent = activeProjects.OrderByDescending(p => p.UpdatedAt).Take(4).ToList();
+
+    int CountOf(ProjectStatus s) => Model.Count(p => p.Status == s);
+
+    string Label(ProjectStatus s) => s switch
+    {
+        ProjectStatus.InProgress => "In Progress",
+        ProjectStatus.Completed  => "Completed",
+        ProjectStatus.Archived   => "Archived",
+        _                        => "Draft"
+    };
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+}
+
+@section TopbarActions {
+    <a asp-controller="Project" asp-action="Create" class="btn-new">
+        <svg viewBox="0 0 16 16" width="13" height="13">
+            <path d="M8 1v14M1 8h14" stroke="#0b1120" stroke-width="2" fill="none" />
+        </svg>
+        New Project
+    </a>
+}
+
+<style>
+    .pl-wrap { max-width: 980px; margin: 0 auto; padding: 8px 4px 40px; }
+    .pl-head h2 { margin: 0 0 4px; font-size: 1.5rem; }
+    .pl-head p { margin: 0 0 18px; opacity: .65; }
+
+    .pl-search { position: relative; margin-bottom: 14px; }
+    .pl-search input {
+        width: 100%; box-sizing: border-box; padding: 14px 90px 14px 44px; font-size: 1rem;
+        border: 1px solid rgba(100,116,139,.35); border-radius: 12px; background: #fff; outline: none;
+        transition: border-color .15s, box-shadow .15s;
+    }
+    .pl-search input:focus { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
+    .pl-search svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; opacity: .5; }
+    .pl-kbd {
+        position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: .75rem; opacity: .55;
+        border: 1px solid rgba(100,116,139,.4); border-radius: 6px; padding: 2px 7px;
+    }
+
+    .pl-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .pl-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pl-chip {
+        border: 1px solid rgba(100,116,139,.35); background: #fff; border-radius: 999px; padding: 6px 14px;
+        font-size: .85rem; cursor: pointer; transition: all .15s;
+    }
+    .pl-chip:hover { border-color: #10b981; }
+    .pl-chip.on { background: #10b981; border-color: #10b981; color: #fff; }
+    .pl-chip small { opacity: .75; margin-left: 4px; }
+    .pl-sort { display: flex; align-items: center; gap: 8px; font-size: .85rem; opacity: .9; }
+    .pl-sort select { padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(100,116,139,.35); background: #fff; }
+
+    .pl-section-title { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; opacity: .55; margin: 6px 0 10px; }
+
+    .pl-recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 22px; }
+    .pl-card {
+        display: block; padding: 14px 16px; border: 1px solid rgba(100,116,139,.28); border-radius: 12px; background: #fff;
+        text-decoration: none; color: inherit; transition: all .15s;
+    }
+    .pl-card:hover { border-color: #10b981; box-shadow: 0 6px 18px rgba(15,23,42,.08); transform: translateY(-1px); }
+    .pl-card .num { font-size: .75rem; opacity: .6; }
+    .pl-card .nm { font-weight: 600; margin: 3px 0 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .pl-card .cl { font-size: .85rem; opacity: .65; }
+
+    .pl-list { border: 1px solid rgba(100,116,139,.28); border-radius: 12px; background: #fff; overflow: hidden; }
+    .pl-row {
+        display: grid; grid-template-columns: 130px 1fr 120px 70px 110px 20px; gap: 12px; align-items: center;
+        padding: 12px 16px; border-bottom: 1px solid rgba(100,116,139,.15); text-decoration: none; color: inherit;
+        transition: background .12s;
+    }
+    .pl-row[hidden] { display: none; }
+    .pl-row:last-child { border-bottom: 0; }
+    .pl-row:hover { background: rgba(16,185,129,.07); }
+    .pl-row .rnum { font-size: .82rem; font-weight: 600; opacity: .75; }
+    .pl-row .rname { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pl-row .rclient { font-size: .83rem; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pl-row .rdes, .pl-row .rdate { font-size: .82rem; opacity: .65; white-space: nowrap; }
+    .pl-row .rgo { opacity: .35; transition: transform .12s, opacity .12s; }
+    .pl-row:hover .rgo { opacity: 1; transform: translateX(3px); color: #10b981; }
+
+    .pl-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: .85rem; opacity: .85; }
+    .pl-more { border: 1px solid rgba(100,116,139,.35); background: #fff; border-radius: 10px; padding: 8px 18px; cursor: pointer; }
+    .pl-more:hover { border-color: #10b981; }
+    .pl-empty { text-align: center; padding: 48px 12px; opacity: .7; display: none; }
+    .pl-create { display: inline-block; margin-top: 14px; font-size: .9rem; }
+
+    @@media (max-width: 760px) {
+        .pl-row { grid-template-columns: 1fr 90px 18px; }
+        .pl-row .rnum, .pl-row .rdes, .pl-row .rdate { display: none; }
+    }
+</style>
+
+<div class="pl-wrap">
+    <div class="pl-head">
+        <h2>Start a new design</h2>
+        <p>Search or pick the project this design belongs to.</p>
+    </div>
+
+    <div class="pl-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        <input id="pl-q" type="text" autocomplete="off" autofocus placeholder="Search by project number, name or client..." />
+        <span class="pl-kbd">/</span>
+    </div>
+
+    <div class="pl-bar">
+        <div class="pl-chips">
+            <button type="button" class="pl-chip on" data-status="all">All<small>@activeProjects.Count</small></button>
+            <button type="button" class="pl-chip" data-status="inprogress">In Progress<small>@CountOf(ProjectStatus.InProgress)</small></button>
+            <button type="button" class="pl-chip" data-status="draft">Draft<small>@CountOf(ProjectStatus.Draft)</small></button>
+            <button type="button" class="pl-chip" data-status="completed">Completed<small>@CountOf(ProjectStatus.Completed)</small></button>
+            <button type="button" class="pl-chip" data-status="archived">Archived<small>@CountOf(ProjectStatus.Archived)</small></button>
+        </div>
+        <label class="pl-sort">Sort
+            <select id="pl-sort">
+                <option value="updated">Recently updated</option>
+                <option value="name">Name A&ndash;Z</option>
+                <option value="number">Project number</option>
+                <option value="designs">Most designs</option>
+            </select>
+        </label>
+    </div>
+
+    @if (recent.Count >= 3 && activeProjects.Count >= 6)
+    {
+        <div id="pl-recent-block">
+            <div class="pl-section-title">Recently updated</div>
+            <div class="pl-recent">
+                @foreach (var p in recent)
+                {
+                    <a class="pl-card" asp-controller="Scrubber" asp-action="Create" asp-route-projectId="@p.ProjectId">
+                        <div class="num">@p.ProjectNumber</div>
+                        <div class="nm">@p.ProjectName</div>
+                        <div class="cl">@p.ClientName</div>
+                    </a>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="pl-section-title" id="pl-title">All projects</div>
+
+    <div class="pl-list" id="pl-list">
+        @foreach (var p in Model)
+        {
+            <a class="pl-row"
+               asp-controller="Scrubber" asp-action="Create" asp-route-projectId="@p.ProjectId"
+               data-status="@p.Status.ToString().ToLowerInvariant()"
+               data-search="@((p.ProjectNumber + " " + p.ProjectName + " " + p.ClientName).ToLowerInvariant())"
+               data-name="@p.ProjectName.ToLowerInvariant()"
+               data-number="@p.ProjectNumber.ToLowerInvariant()"
+               data-designs="@p.DesignCount"
+               data-updated="@p.UpdatedAt.ToString("yyyyMMddHHmmss")">
+                <span class="rnum">@p.ProjectNumber</span>
+                <span>
+                    <div class="rname">@p.ProjectName</div>
+                    <div class="rclient">@p.ClientName</div>
+                </span>
+                <span><span class="status-badge badge-@p.Status.ToString().ToLowerInvariant()">@Label(p.Status)</span></span>
+                <span class="rdes">@p.DesignCount design@(p.DesignCount == 1 ? "" : "s")</span>
+                <span class="rdate">@p.UpdatedAt.ToString("dd MMM yyyy")</span>
+                <span class="rgo">&rsaquo;</span>
+            </a>
+        }
+    </div>
+
+    <div class="pl-empty" id="pl-empty">
+        <div style="font-size:1.05rem;font-weight:600;margin-bottom:6px;">No matching projects</div>
+        <div>Try a different search or status, or create a new project.</div>
+    </div>
+
+    <div class="pl-foot">
+        <span id="pl-count"></span>
+        <button type="button" class="pl-more" id="pl-more" style="display:none;">Show more</button>
+    </div>
+
+</div>
+
+<script>
+    (function () {
+        var PAGE = 15;
+        var list = document.getElementById('pl-list');
+        var rows = Array.prototype.slice.call(list.querySelectorAll('.pl-row'));
+        var q = document.getElementById('pl-q');
+        var sortSel = document.getElementById('pl-sort');
+        var chips = document.querySelectorAll('.pl-chip');
+        var countEl = document.getElementById('pl-count');
+        var moreBtn = document.getElementById('pl-more');
+        var emptyEl = document.getElementById('pl-empty');
+        var recentEl = document.getElementById('pl-recent-block');
+        var titleEl = document.getElementById('pl-title');
+        var status = 'all';
+        var shown = PAGE;
+
+        function compare(a, b) {
+            switch (sortSel.value) {
+                case 'name':    return a.dataset.name.localeCompare(b.dataset.name);
+                case 'number':  return a.dataset.number.localeCompare(b.dataset.number, undefined, { numeric: true });
+                case 'designs': return Number(b.dataset.designs) - Number(a.dataset.designs);
+                default:        return Number(b.dataset.updated) - Number(a.dataset.updated);
+            }
+        }
+
+        function apply(reset) {
+            if (reset) shown = PAGE;
+
+            var terms = q.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+
+            var visible = rows.filter(function (r) {
+                var st = r.dataset.status;
+                if (status === 'all') { if (st === 'archived') return false; }
+                else if (st !== status) return false;
+                return terms.every(function (t) { return r.dataset.search.indexOf(t) !== -1; });
+            });
+
+            visible.sort(compare);
+            visible.forEach(function (r) { list.appendChild(r); });
+
+            rows.forEach(function (r) { r.hidden = true; });
+            visible.slice(0, shown).forEach(function (r) { r.hidden = false; });
+
+            var total = visible.length;
+            var showing = Math.min(shown, total);
+            countEl.textContent = total === 0 ? '' : 'Showing ' + showing + ' of ' + total + ' project' + (total === 1 ? '' : 's');
+            moreBtn.style.display = total > shown ? '' : 'none';
+            emptyEl.style.display = total === 0 ? 'block' : 'none';
+            list.style.display = total === 0 ? 'none' : '';
+
+            var filtering = terms.length > 0 || status !== 'all';
+            if (recentEl) recentEl.style.display = filtering ? 'none' : '';
+            titleEl.textContent = terms.length > 0 ? 'Search results' : 'All projects';
+        }
+
+        q.addEventListener('input', function () { apply(true); });
+        sortSel.addEventListener('change', function () { apply(true); });
+        moreBtn.addEventListener('click', function () { shown += PAGE; apply(false); });
+
+        chips.forEach(function (c) {
+            c.addEventListener('click', function () {
+                chips.forEach(function (x) { x.classList.remove('on'); });
+                c.classList.add('on');
+                status = c.dataset.status;
+                apply(true);
+            });
+        });
+
+        q.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                var first = rows.filter(function (r) { return !r.hidden; })[0];
+                if (first) window.location.href = first.href;
+            }
+            if (e.key === 'Escape') { q.value = ''; apply(true); }
+        });
+
+        document.addEventListener('keydown', function (e) {
+            var tag = (document.activeElement && document.activeElement.tagName) || '';
+            if (e.key === '/' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+                e.preventDefault();
+                q.focus();
+            }
+        });
+
+        apply(true);
+    })();
+</script>

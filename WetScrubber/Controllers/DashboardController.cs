@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using WetScrubber.Database;
+using WetScrubber.Database.Enums;
 using WetScrubber.Models;
 
 namespace WetScrubber.Controllers
@@ -18,13 +20,10 @@ namespace WetScrubber.Controllers
         // ── GET /Dashboard/Index ──────────────────────────────────
         public async Task<IActionResult> Index()
         {
-            // ── Session auth check ────────────────────────────────
-            // If user is not logged in redirect to login page
             var userId = HttpContext.Session.GetInt32("UserId");
             if (userId == null)
                 return RedirectToAction("Login", "Account");
 
-            // ── Load logged-in user from DB ───────────────────────
             var user = await _dbContext.Users
                                        .Include(u => u.Role)
                                        .FirstOrDefaultAsync(u => u.UserId == userId);
@@ -35,58 +34,158 @@ namespace WetScrubber.Controllers
                 return RedirectToAction("Login", "Account");
             }
 
-            // ── KPI: Total Projects for this user ─────────────────
+            var now = DateTime.UtcNow;
+            var designsQ = _dbContext.ScrubberDesigns
+                                     .Where(d => d.Project.CreatedByUserId == userId);
+
+            // ── KPIs ──────────────────────────────────────────────
             var totalProjects = await _dbContext.Projects
-                                                .CountAsync(p => p.CreatedByUserId == userId);
+                .CountAsync(p => p.CreatedByUserId == userId);
 
-            // ── KPI: Total Designs across user's projects ─────────
-            var totalDesigns = await _dbContext.ScrubberDesigns
-                                               .CountAsync(d => d.Project.CreatedByUserId == userId);
+            var activeProjects = await _dbContext.Projects
+                .CountAsync(p => p.CreatedByUserId == userId &&
+                                 p.Status == ProjectStatus.InProgress);
 
-            // ── Chart: Designs per month (last 6 months) ──────────
-            var sixMonthsAgo = DateTime.UtcNow.AddMonths(-5);
+            var totalDesigns = await designsQ.CountAsync();
 
-            var designsByMonth = await _dbContext.ScrubberDesigns
-                .Where(d => d.Project.CreatedByUserId == userId
-                         && d.CreatedAt >= sixMonthsAgo)
-                .GroupBy(d => new { d.CreatedAt.Year, d.CreatedAt.Month })
-                .Select(g => new
-                {
-                    Year  = g.Key.Year,
-                    Month = g.Key.Month,
-                    Count = g.Count()
-                })
-                .OrderBy(g => g.Year)
-                .ThenBy(g => g.Month)
+            var flowsheetCount = await _dbContext.Flowsheets
+                .CountAsync(f => f.Project.CreatedByUserId == userId);
+
+            // ── Review pipeline ───────────────────────────────────
+            var statusCounts = await designsQ
+                .GroupBy(d => d.ReviewStatus)
+                .Select(g => new { Status = g.Key, Count = g.Count() })
                 .ToListAsync();
 
-            // Build full 6-month series (fill missing months with 0)
-            var monthLabels = new List<string>();
-            var monthValues = new List<int>();
+            int StatusCount(DesignReviewStatus s) =>
+                statusCounts.Where(x => x.Status == s).Select(x => x.Count).FirstOrDefault();
 
-            for (int i = 5; i >= 0; i--)
+            // ── Action queue (needs attention) ────────────────────
+            var staleCutoff = now.AddDays(-14);
+
+            var attentionRaw = await designsQ
+                .Where(d => d.ReviewStatus == DesignReviewStatus.ChangesRequested
+                         || d.ReviewStatus == DesignReviewStatus.UnderReview
+                         || (d.ReviewStatus == DesignReviewStatus.Draft && d.UpdatedAt < staleCutoff))
+                .Select(d => new
+                {
+                    d.DesignId,
+                    d.DesignName,
+                    d.Project.ProjectNumber,
+                    d.Project.ProjectName,
+                    d.ReviewStatus,
+                    d.UpdatedAt
+                })
+                .OrderBy(x => x.UpdatedAt)
+                .Take(60)
+                .ToListAsync();
+
+            var attention = attentionRaw
+                .Select(x => new
+                {
+                    Item = new AttentionItem
+                    {
+                        DesignId = x.DesignId,
+                        DesignName = x.DesignName,
+                        ProjectNumber = x.ProjectNumber,
+                        ProjectName = x.ProjectName,
+                        Kind = x.ReviewStatus == DesignReviewStatus.ChangesRequested ? "changes"
+                                      : x.ReviewStatus == DesignReviewStatus.UnderReview ? "review"
+                                      : "stale",
+                        AgeDays = Math.Max(0, (int)(now - x.UpdatedAt).TotalDays)
+                    },
+                    Priority = x.ReviewStatus == DesignReviewStatus.ChangesRequested ? 0
+                             : x.ReviewStatus == DesignReviewStatus.UnderReview ? 1
+                             : 2,
+                    x.UpdatedAt
+                })
+                .OrderBy(x => x.Priority)
+                .ThenBy(x => x.UpdatedAt)
+                .Take(6)
+                .Select(x => x.Item)
+                .ToList();
+
+            // ── Activity heatmap (last 26 weeks) ──────────────────
+            var heatStart = now.Date.AddDays(-(26 * 7));
+
+            var stamps = await designsQ
+                .Where(d => d.CreatedAt >= heatStart || d.UpdatedAt >= heatStart)
+                .Select(d => new { d.CreatedAt, d.UpdatedAt })
+                .ToListAsync();
+
+            var activity = new Dictionary<string, int>();
+            void Bump(DateTime dt)
             {
-                var date  = DateTime.UtcNow.AddMonths(-i);
-                var label = date.ToString("MMM");
-                var count = designsByMonth
-                    .FirstOrDefault(x => x.Year == date.Year && x.Month == date.Month)?.Count ?? 0;
-
-                monthLabels.Add(label);
-                monthValues.Add(count);
+                if (dt < heatStart) return;
+                var key = dt.ToString("yyyy-MM-dd");
+                activity.TryGetValue(key, out var current);
+                activity[key] = current + 1;
             }
 
-            // ── Scrubber type breakdown ───────────────────────────
-            var scrubberTypes = await _dbContext.ScrubberDesigns
-                .Where(d => d.Project.CreatedByUserId == userId)
+            foreach (var s in stamps)
+            {
+                Bump(s.CreatedAt);
+                if (s.UpdatedAt.Date != s.CreatedAt.Date) Bump(s.UpdatedAt);
+            }
+
+            var thisWeek = stamps.Count(s => s.CreatedAt >= now.AddDays(-7));
+            var lastWeek = stamps.Count(s => s.CreatedAt >= now.AddDays(-14) &&
+                                             s.CreatedAt < now.AddDays(-7));
+
+            // ── Operating envelope (gas flow vs target removal) ───
+            var envelopeRaw = await designsQ
+                .Where(d => d.GasStream != null)
+                .Select(d => new
+                {
+                    d.DesignId,
+                    d.DesignName,
+                    ProjectName = d.Project.ProjectName,
+                    d.ScrubberType,
+                    d.ReviewStatus,
+                    Flow = d.GasStream!.ActualFlowRate,
+                    Removal = d.GasStream!.Pollutants.Max(p => (double?)p.TargetRemovalEfficiency) ?? 0.0
+                })
+                .OrderByDescending(x => x.DesignId)
+                .Take(300)
+                .ToListAsync();
+
+            // ── Pollutant mix ─────────────────────────────────────
+            var mixRaw = await _dbContext.PollutantStreams
+                .Where(ps => ps.GasStream.Design.Project.CreatedByUserId == userId)
+                .GroupBy(ps => ps.PollutantType)
+                .Select(g => new { Type = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var pollutantNames = await _dbContext.Pollutants
+                .Select(p => new { p.Id, p.Code, p.DisplayName })
+                .ToListAsync();
+
+            var pollutantMix = mixRaw
+                .OrderByDescending(x => x.Count)
+                .Take(8)
+                .Select(x =>
+                {
+                    var match = pollutantNames.FirstOrDefault(p => p.Id == x.Type);
+                    return new PollutantShare
+                    {
+                        Code = match?.Code ?? ("#" + x.Type),
+                        Name = match?.DisplayName ?? ("Pollutant " + x.Type),
+                        Count = x.Count
+                    };
+                })
+                .ToList();
+
+            // ── Scrubber type breakdown (kept for legend colours) ─
+            var scrubberTypes = await designsQ
                 .GroupBy(d => d.ScrubberType)
                 .Select(g => new ScrubberTypeStat
                 {
                     TypeName = g.Key.ToString(),
-                    Count    = g.Count()
+                    Count = g.Count()
                 })
                 .ToListAsync();
 
-            // ── Recent projects (last 5) ──────────────────────────
+            // ── Recent projects ───────────────────────────────────
             var recentProjects = await _dbContext.Projects
                 .Where(p => p.CreatedByUserId == userId)
                 .Include(p => p.Designs)
@@ -94,23 +193,50 @@ namespace WetScrubber.Controllers
                 .Take(5)
                 .ToListAsync();
 
-            // ── Build ViewModel ───────────────────────────────────
+            // ── Client payload ────────────────────────────────────
+            var data = new
+            {
+                today = now.ToString("yyyy-MM-dd"),
+                activity,
+                envelope = envelopeRaw.Select(e => new
+                {
+                    id = e.DesignId,
+                    name = e.DesignName,
+                    project = e.ProjectName,
+                    type = e.ScrubberType.ToString(),
+                    status = e.ReviewStatus.ToString(),
+                    flow = e.Flow,
+                    removal = e.Removal
+                }),
+                mix = pollutantMix.Select(m => new { code = m.Code, name = m.Name, count = m.Count })
+            };
+
             var vm = new DashboardViewModel
             {
-                UserFullName   = user.FullName,
-                UserInitials   = GetInitials(user.FullName),
-                UserRole       = user.Role?.RoleName ?? "Engineer",
-                UserJobTitle   = user.JobTitle,
-                UserCompany    = user.Company,
-                LastLoginAt    = user.LastLoginAt,
+                UserFullName = user.FullName,
+                UserInitials = GetInitials(user.FullName),
+                UserRole = user.Role?.RoleName ?? "Engineer",
+                UserJobTitle = user.JobTitle,
+                UserCompany = user.Company,
+                LastLoginAt = user.LastLoginAt,
 
-                TotalProjects  = totalProjects,
-                TotalDesigns   = totalDesigns,
+                TotalProjects = totalProjects,
+                ActiveProjects = activeProjects,
+                TotalDesigns = totalDesigns,
+                FlowsheetCount = flowsheetCount,
+                DesignsThisWeek = thisWeek,
+                DesignsLastWeek = lastWeek,
 
-                ChartMonths    = string.Join(",", monthLabels),
-                ChartValues    = string.Join(",", monthValues),
+                DraftCount = StatusCount(DesignReviewStatus.Draft),
+                UnderReviewCount = StatusCount(DesignReviewStatus.UnderReview),
+                ChangesRequestedCount = StatusCount(DesignReviewStatus.ChangesRequested),
+                ApprovedCount = StatusCount(DesignReviewStatus.Approved),
 
-                ScrubberTypes  = scrubberTypes,
+                Attention = attention,
+                PollutantMix = pollutantMix,
+                DataJson = JsonSerializer.Serialize(data),
+
+                ScrubberTypes = scrubberTypes,
                 RecentProjects = recentProjects
             };
 
