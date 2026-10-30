@@ -63,7 +63,7 @@
         <div class="search-wrap">
             <svg viewBox="0 0 16 16"><path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398l3.85 3.85a1 1 0 001.415-1.414l-3.868-3.834zm-5.242.656a5 5 0 110-10 5 5 0 010 10z" /></svg>
             <input type="text" name="search" id="liveSearch" class="search-input"
-                   placeholder="Search by name, number or client…"
+                   placeholder="Search by name or client…"
                    value="@Model.SearchTerm" />
         </div>
         <select name="status" id="statusFilter" class="filter-select">
@@ -95,7 +95,7 @@
                     {
                         <a href="/Scrubber/Create?projectId=@q.ProjectId"
                            style="display:block;padding:9px 14px;font-size:13px;color:#0b1120;text-decoration:none;border-bottom:1px solid #f3f4f6;">
-                            <strong style="font-family:monospace;color:#00a870;">@q.ProjectNumber</strong> &nbsp;@q.ProjectName
+                            @q.ProjectName
                         </a>
                     }
                 </div>
@@ -121,7 +121,6 @@
             <table class="proj-table">
                 <thead>
                     <tr>
-                        <th>Project #</th>
                         <th>Name</th>
                         <th>Client</th>
                         <th>Engineer</th>
@@ -141,7 +140,6 @@
                         else                                            { badgeClass = "badge-draft";      statusLabel = "Draft"; }
 
                         <tr data-href="/Project/Detail/@p.ProjectId">
-                            <td><span class="proj-number">@p.ProjectNumber</span></td>
                             <td><span class="proj-name">@p.ProjectName</span></td>
                             <td><span class="proj-client">@p.ClientName</span></td>
                             <td style="color:#888;">@p.EngineerName</td>

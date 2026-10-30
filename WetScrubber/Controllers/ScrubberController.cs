@@ -208,12 +208,6 @@ namespace WetScrubber.Controllers
                 return RedirectToAction("Index", "Project");
             }
 
-            if (design.IsLocked)
-            {
-                TempData["Error"] = "This design is approved and locked. Use 'Redesign as per AI narrative' to start a new revision.";
-                return RedirectToAction(nameof(DesignDetail), new { id });
-            }
-
             // Reuse BuildCreateViewModel then layer on the ids the edit form needs.
             var b = BuildCreateViewModel(design);
             var vm = new EditDesignViewModel
@@ -284,12 +278,6 @@ namespace WetScrubber.Controllers
             {
                 TempData["Error"] = "Design not found.";
                 return RedirectToAction("Index", "Project");
-            }
-
-            if (design.IsLocked)
-            {
-                TempData["Error"] = "This design is approved and locked. Use 'Redesign as per AI narrative' to start a new revision.";
-                return RedirectToAction(nameof(DesignDetail), new { id = design.DesignId });
             }
 
             if (!ModelState.IsValid)

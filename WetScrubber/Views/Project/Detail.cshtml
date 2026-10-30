@@ -26,13 +26,12 @@
 <div class="breadcrumb">
     <a asp-controller="Project" asp-action="Index">Projects</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <span>@Model.ProjectNumber</span>
+    <span>@Model.ProjectName</span>
 </div>
 
 <!-- Header card -->
 <div class="detail-header-card">
     <div>
-        <div class="detail-number">@Model.ProjectNumber</div>
         <div class="detail-title">@Model.ProjectName</div>
         <div class="detail-meta">
             @if (!string.IsNullOrEmpty(Model.ClientName))

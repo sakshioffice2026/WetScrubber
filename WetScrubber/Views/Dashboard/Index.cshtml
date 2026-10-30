@@ -150,7 +150,6 @@
             <table class="projects-table">
                 <thead>
                     <tr>
-                        <th>Project #</th>
                         <th>Name</th>
                         <th>Client</th>
                         <th style="text-align:center;">Designs</th>
@@ -168,7 +167,6 @@
                         else { badgeClass = "badge-draft"; statusLabel = "Draft"; }
 
                         <tr data-href="/Project/Detail/@p.ProjectId" style="cursor:pointer;">
-                            <td><span class="proj-number">@p.ProjectNumber</span></td>
                             <td><span class="proj-name">@p.ProjectName</span></td>
                             <td><span class="proj-client">@p.ClientName</span></td>
                             <td class="proj-count" style="text-align:center;">@p.Designs.Count</td>

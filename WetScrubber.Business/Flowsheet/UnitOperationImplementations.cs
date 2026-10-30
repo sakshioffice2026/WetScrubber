@@ -69,12 +69,25 @@ namespace WetScrubber.Business.Flowsheet
 
             var result = MultiPollutantOdeSolver.SolveOde(odeInput);
 
+            // The ODE solver returns outlet concentration in kg/m3, but the
+            // flowsheet stream carries ppm. Convert back with the ideal gas
+            // law (same basis the solver used for the inlet conversion):
+            //   ppm = C[kg/m3] / MW * R * T / P[kPa] * 1e6
+            const double RKPaKmol = 8.314462;   // kPa*m3/(kmol*K)
+            double pKPa = gasIn.PressurePa / 1000.0;
+            var outletPpm = new Dictionary<string, double>();
+            foreach (var kv in result.OutletConcKgM3)
+            {
+                double mw = MolWeight(kv.Key);
+                outletPpm[kv.Key] = kv.Value / mw * RKPaKmol * result.OutletGasTemperatureK / pKPa * 1e6;
+            }
+
             var gasOut = new ProcessStream
             {
                 ActualFlowM3Hr = gasIn.ActualFlowM3Hr,
                 TemperatureC = result.OutletGasTemperatureK - 273.15,
                 PressurePa = gasIn.PressurePa,
-                PollutantPpmByCode = result.OutletConcKgM3
+                PollutantPpmByCode = outletPpm
             };
 
             var liquidOut = new LiquidStream
@@ -97,15 +110,22 @@ namespace WetScrubber.Business.Flowsheet
                 "SO2" => 64,
                 "H2S" => 34,
                 "NH3" => 17,
+                "HCl" => 36.5,
+                "Cl2" => 71,
                 _ => 50
             };
 
         private double Henry(string code) =>
             code switch
             {
-                "SO2" => 1.5e5,
-                "H2S" => 9.7e4,
-                "NH3" => 58,
+                // y/x basis in water at 25 C, derived from the seeded Sander
+                // Cg/Cl values: y/x = (Cg/Cl) * (rho/M)_water * (R*T/P)
+                //                   = (Cg/Cl) * 55.5 * 24.46
+                "SO2" => 46.0,     // Cg/Cl 0.034
+                "H2S" => 543.0,    // Cg/Cl 0.40
+                "NH3" => 0.94,     // Cg/Cl 0.00069
+                "HCl" => 0.027,    // Cg/Cl 0.00002
+                "Cl2" => 896.0,    // Cg/Cl 0.66
                 _ => 1e5
             };
 

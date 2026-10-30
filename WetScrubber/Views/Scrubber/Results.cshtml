@@ -53,7 +53,7 @@
 <div class="breadcrumb">
     <a asp-controller="Project" asp-action="Index">Projects</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <a asp-controller="Project" asp-action="Detail" asp-route-id="@design!.ProjectId">@design.ProjectNumber</a>
+    <a asp-controller="Project" asp-action="Detail" asp-route-id="@design!.ProjectId">@design.ProjectName</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
     <a asp-controller="Scrubber" asp-action="DesignDetail" asp-route-id="@design.DesignId">@design.DesignName</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
@@ -73,7 +73,7 @@
     <div class="results-header-left">
         <div class="results-badge-type">@scrubberType</div>
         <div class="results-title">@design!.DesignName — Calculation Results</div>
-        <div class="results-subtitle">@design.ProjectNumber · @design.ProjectName · Calculated @DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") UTC</div>
+        <div class="results-subtitle">@design.ProjectName · Calculated @DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") UTC</div>
     </div>
     <div class="results-header-actions">
         <form asp-controller="Scrubber" asp-action="RunCalculation" asp-route-id="@design.DesignId" method="post" style="margin:0;" data-ws-loading="Re-running calculation…">

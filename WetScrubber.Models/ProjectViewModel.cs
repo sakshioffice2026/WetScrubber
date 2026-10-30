@@ -12,13 +12,13 @@ namespace WetScrubber.Models
         public List<ProjectSummaryViewModel> Projects { get; set; } = new();
 
         // Stats for top cards
-        public int TotalProjects    { get; set; }
-        public int ActiveProjects   { get; set; }
+        public int TotalProjects { get; set; }
+        public int ActiveProjects { get; set; }
         public int CompletedProjects { get; set; }
-        public int TotalDesigns     { get; set; }
+        public int TotalDesigns { get; set; }
 
         // Search / filter state (to keep form values on postback)
-        public string? SearchTerm   { get; set; }
+        public string? SearchTerm { get; set; }
         public string? StatusFilter { get; set; }
     }
 
@@ -27,16 +27,16 @@ namespace WetScrubber.Models
     // ============================================================
     public class ProjectSummaryViewModel
     {
-        public int    ProjectId     { get; set; }
+        public int ProjectId { get; set; }
         public string ProjectNumber { get; set; } = string.Empty;
-        public string ProjectName   { get; set; } = string.Empty;
-        public string ClientName    { get; set; } = string.Empty;
-        public string EngineerName  { get; set; } = string.Empty;
+        public string ProjectName { get; set; } = string.Empty;
+        public string ClientName { get; set; } = string.Empty;
+        public string EngineerName { get; set; } = string.Empty;
         public ProjectStatus Status { get; set; }
         public UnitSystem UnitSystem { get; set; }
-        public int    DesignCount   { get; set; }
-        public DateTime CreatedAt   { get; set; }
-        public DateTime UpdatedAt   { get; set; }
+        public int DesignCount { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
 
     // ============================================================
@@ -44,10 +44,8 @@ namespace WetScrubber.Models
     // ============================================================
     public class CreateProjectViewModel
     {
-        [Required(ErrorMessage = "Project number is required")]
-        [MaxLength(50, ErrorMessage = "Max 50 characters")]
-        [Display(Name = "Project Number")]
-        public string ProjectNumber { get; set; } = string.Empty;
+        // Generated automatically by the server; not shown on the form
+        public string? ProjectNumber { get; set; }
 
         [Required(ErrorMessage = "Project name is required")]
         [MaxLength(200, ErrorMessage = "Max 200 characters")]
@@ -76,10 +74,8 @@ namespace WetScrubber.Models
     {
         public int ProjectId { get; set; }
 
-        [Required(ErrorMessage = "Project number is required")]
-        [MaxLength(50)]
-        [Display(Name = "Project Number")]
-        public string ProjectNumber { get; set; } = string.Empty;
+        // System managed; not shown or edited on the form
+        public string? ProjectNumber { get; set; }
 
         [Required(ErrorMessage = "Project name is required")]
         [MaxLength(200)]
@@ -110,22 +106,22 @@ namespace WetScrubber.Models
     // ============================================================
     public class ProjectDetailViewModel
     {
-        public int    ProjectId     { get; set; }
+        public int ProjectId { get; set; }
         public string ProjectNumber { get; set; } = string.Empty;
-        public string ProjectName   { get; set; } = string.Empty;
-        public string ClientName    { get; set; } = string.Empty;
-        public string EngineerName  { get; set; } = string.Empty;
-        public string Description   { get; set; } = string.Empty;
+        public string ProjectName { get; set; } = string.Empty;
+        public string ClientName { get; set; } = string.Empty;
+        public string EngineerName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
         public ProjectStatus Status { get; set; }
         public UnitSystem UnitSystem { get; set; }
-        public DateTime CreatedAt   { get; set; }
-        public DateTime UpdatedAt   { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
 
         // Designs under this project
         public List<DesignSummaryViewModel> Designs { get; set; } = new();
 
         // Stats
-        public int TotalDesigns     { get; set; }
+        public int TotalDesigns { get; set; }
         public int CompletedDesigns { get; set; }
     }
 
@@ -134,13 +130,13 @@ namespace WetScrubber.Models
     // ============================================================
     public class DesignSummaryViewModel
     {
-        public int    DesignId       { get; set; }
-        public string DesignName     { get; set; } = string.Empty;
-        public string ScrubberType   { get; set; } = string.Empty;
-        public string ShellMaterial  { get; set; } = string.Empty;
-        public bool   HasResults     { get; set; }
+        public int DesignId { get; set; }
+        public string DesignName { get; set; } = string.Empty;
+        public string ScrubberType { get; set; } = string.Empty;
+        public string ShellMaterial { get; set; } = string.Empty;
+        public bool HasResults { get; set; }
         public double RemovalEfficiency { get; set; }
-        public DateTime CreatedAt    { get; set; }
-        public DateTime UpdatedAt    { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
 }

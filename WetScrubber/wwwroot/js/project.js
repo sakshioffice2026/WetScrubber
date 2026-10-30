@@ -95,20 +95,11 @@ $(document).ready(function () {
     // ─────────────────────────────────────────────────────────────
     $('#projectForm').on('submit', function (e) {
         var isValid = true;
-        var $projNum = $('#ProjectNumber');
         var $projName = $('#ProjectName');
 
         // Clear previous errors
         $('.form-group input, .form-group textarea').removeClass('is-invalid');
         $('.field-error').text('');
-
-        // Project number required
-        if (!$projNum.val().trim()) {
-            $projNum.addClass('is-invalid');
-            $projNum.closest('.form-group').find('.field-error')
-                .text('Project number is required.');
-            isValid = false;
-        }
 
         // Project name required
         if (!$projName.val().trim()) {
@@ -155,19 +146,6 @@ $(document).ready(function () {
         }, 4000);
     });
 
-
-    // ─────────────────────────────────────────────────────────────
-    // 8. PROJECT NUMBER AUTO-FORMAT
-    //    Converts input to uppercase and replaces spaces with dashes
-    //    e.g. "ws 2025 001" → "WS-2025-001"
-    // ─────────────────────────────────────────────────────────────
-    $('#ProjectNumber').on('input', function () {
-        var val = $(this).val()
-            .toUpperCase()
-            .replace(/\s+/g, '-')
-            .replace(/[^A-Z0-9\-]/g, '');
-        $(this).val(val);
-    });
 
 
 });

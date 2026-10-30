@@ -51,7 +51,6 @@ namespace WetScrubber.Controllers
                 search = search.Trim().ToLower();
                 query = query.Where(p =>
                     p.ProjectName.ToLower().Contains(search) ||
-                    p.ProjectNumber.ToLower().Contains(search) ||
                     p.ClientName.ToLower().Contains(search));
             }
 
@@ -118,23 +117,15 @@ namespace WetScrubber.Controllers
             var redirect = RedirectIfNotLoggedIn();
             if (redirect != null) return redirect;
 
+            // Project number is generated automatically; the user never enters it
+            ModelState.Remove(nameof(model.ProjectNumber));
+
             if (!ModelState.IsValid)
                 return View(model);
 
-            // Check duplicate project number for this user
-            bool exists = await _dbContext.Projects.AnyAsync(p =>
-                p.ProjectNumber == model.ProjectNumber &&
-                p.CreatedByUserId == GetUserId()!.Value);
-
-            if (exists)
-            {
-                ModelState.AddModelError("ProjectNumber", "This project number already exists.");
-                return View(model);
-            }
-
             var project = new Project
             {
-                ProjectNumber = model.ProjectNumber.Trim(),
+                ProjectNumber = await GenerateProjectNumberAsync(),
                 ProjectName = model.ProjectName.Trim(),
                 ClientName = model.ClientName.Trim(),
                 EngineerName = model.EngineerName.Trim(),
@@ -152,8 +143,30 @@ namespace WetScrubber.Controllers
             _logger.LogInformation("Project {Number} created by user {UserId}.",
                 project.ProjectNumber, project.CreatedByUserId);
 
-            TempData["Success"] = $"Project {project.ProjectNumber} created successfully.";
+            TempData["Success"] = $"Project {project.ProjectName} created successfully.";
             return RedirectToAction(nameof(Detail), new { id = project.ProjectId });
+        }
+
+        // ── Auto-generates the next project number, e.g. WS-2026-0023 ──
+        // Existing numbers are never changed; the sequence continues after
+        // the highest number already used for the current year.
+        private async Task<string> GenerateProjectNumberAsync()
+        {
+            var prefix = $"WS-{DateTime.UtcNow.Year}-";
+
+            var existing = await _dbContext.Projects
+                .Where(p => p.ProjectNumber.StartsWith(prefix))
+                .Select(p => p.ProjectNumber)
+                .ToListAsync();
+
+            int max = 0;
+            foreach (var number in existing)
+            {
+                if (int.TryParse(number.Substring(prefix.Length), out var n) && n > max)
+                    max = n;
+            }
+
+            return $"{prefix}{max + 1:D4}";
         }
 
 
@@ -251,6 +264,9 @@ namespace WetScrubber.Controllers
             var redirect = RedirectIfNotLoggedIn();
             if (redirect != null) return redirect;
 
+            // Project number is system-managed and cannot be edited
+            ModelState.Remove(nameof(model.ProjectNumber));
+
             if (!ModelState.IsValid) return View(model);
 
             var userId = GetUserId()!.Value;
@@ -263,19 +279,6 @@ namespace WetScrubber.Controllers
                 return RedirectToAction(nameof(Index));
             }
 
-            // Per-user duplicate ProjectNumber check (excluding this project)
-            bool duplicate = await _dbContext.Projects.AnyAsync(p =>
-                p.ProjectNumber == model.ProjectNumber &&
-                p.CreatedByUserId == userId &&
-                p.ProjectId != model.ProjectId);
-
-            if (duplicate)
-            {
-                ModelState.AddModelError(nameof(model.ProjectNumber), "You already have a project with this number.");
-                return View(model);
-            }
-
-            project.ProjectNumber = model.ProjectNumber.Trim();
             project.ProjectName = model.ProjectName.Trim();
             project.ClientName = model.ClientName?.Trim() ?? string.Empty;   // null-safe
             project.EngineerName = model.EngineerName?.Trim() ?? string.Empty;   // null-safe
@@ -348,7 +351,7 @@ namespace WetScrubber.Controllers
             _logger.LogInformation("Project {Number} deleted by user {UserId}.",
                 project.ProjectNumber, userId);
 
-            TempData["Success"] = $"Project {project.ProjectNumber} deleted.";
+            TempData["Success"] = $"Project {project.ProjectName} deleted.";
             return RedirectToAction(nameof(Index));
         }
     }

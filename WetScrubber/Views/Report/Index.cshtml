@@ -4,9 +4,9 @@
     ViewData["ActivePage"] = "Reports";
 
     var projects = Model
-        .Select(m => new { m.ProjectNumber, m.ProjectName })
+        .Select(m => new { m.ProjectName })
         .Distinct()
-        .OrderBy(x => x.ProjectNumber)
+        .OrderBy(x => x.ProjectName)
         .ToList();
 
     var types = Model.Select(m => m.ScrubberType).Distinct().OrderBy(t => t).ToList();
@@ -80,7 +80,7 @@
                 <option value="">All Projects</option>
                 @foreach (var p in projects)
                 {
-                    <option value="@p.ProjectNumber">@p.ProjectNumber - @p.ProjectName</option>
+                    <option value="@p.ProjectName">@p.ProjectName</option>
                 }
             </select>
 
@@ -101,7 +101,6 @@
             <thead>
                 <tr>
                     <th class="er-center" style="width:40px;"><input type="checkbox" id="erSelectAll" /></th>
-                    <th>Project #</th>
                     <th>Project Name</th>
                     <th>Design Name</th>
                     <th>Type</th>
@@ -118,13 +117,12 @@
                                   : r.ScrubberType == "ImpingementPlate" ? "plate" : "";
                     <tr class="@(r.IsCalculated ? "" : "er-pending-row")"
                         data-id="@r.DesignId"
-                        data-project="@r.ProjectNumber"
+                        data-project="@r.ProjectName"
                         data-type="@r.ScrubberType"
                         data-design="@r.DesignName.ToLowerInvariant()">
                         <td class="er-center">
                             <input type="checkbox" class="er-check" value="@r.DesignId" @(r.IsCalculated ? "" : "disabled") />
                         </td>
-                        <td class="er-projno">@r.ProjectNumber</td>
                         <td class="er-projname">@r.ProjectName</td>
                         <td>@r.DesignName</td>
                         <td><span class="er-type @typeClass">@r.ScrubberType</span></td>

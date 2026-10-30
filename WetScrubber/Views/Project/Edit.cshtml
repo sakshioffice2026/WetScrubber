@@ -13,7 +13,7 @@
 <div class="breadcrumb">
     <a asp-controller="Project" asp-action="Index">Projects</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
-    <a asp-controller="Project" asp-action="Detail" asp-route-id="@Model.ProjectId">@Model.ProjectNumber</a>
+    <a asp-controller="Project" asp-action="Detail" asp-route-id="@Model.ProjectId">@Model.ProjectName</a>
     <svg viewBox="0 0 16 16"><path d="M6 4l4 4-4 4" stroke="#ccc" stroke-width="1.5" fill="none" stroke-linecap="round" /></svg>
     <span>Edit</span>
 </div>
@@ -39,11 +39,11 @@
             <div class="form-card-body">
                 <div class="form-row">
                     <div class="form-group">
-                        <label asp-for="ProjectNumber">Project Number <span class="req">*</span></label>
-                        <input asp-for="ProjectNumber" id="ProjectNumber"
-                               class="@(ViewData.ModelState["ProjectNumber"]?.Errors.Count > 0 ? "is-invalid" : "")"
-                               placeholder="WS-2025-001" autofocus />
-                        <span class="field-error">@Html.ValidationMessageFor(m => m.ProjectNumber)</span>
+                        <label asp-for="ProjectName">Project Name <span class="req">*</span></label>
+                        <input asp-for="ProjectName" id="ProjectName"
+                               class="@(ViewData.ModelState["ProjectName"]?.Errors.Count > 0 ? "is-invalid" : "")"
+                               placeholder="Cement Plant SO₂ Removal System" autofocus />
+                        <span class="field-error">@Html.ValidationMessageFor(m => m.ProjectName)</span>
                     </div>
                     <div class="form-group">
                         <label asp-for="Status">Status</label>
@@ -54,16 +54,6 @@
                             <option value="4" selected="@(Model.Status == ProjectStatus.Archived   ? "selected" : null)">Archived</option>
                         </select>
                         <span class="field-error">@Html.ValidationMessageFor(m => m.Status)</span>
-                    </div>
-                </div>
-
-                <div class="form-row full">
-                    <div class="form-group">
-                        <label asp-for="ProjectName">Project Name <span class="req">*</span></label>
-                        <input asp-for="ProjectName" id="ProjectName"
-                               class="@(ViewData.ModelState["ProjectName"]?.Errors.Count > 0 ? "is-invalid" : "")"
-                               placeholder="Cement Plant SO₂ Removal System" />
-                        <span class="field-error">@Html.ValidationMessageFor(m => m.ProjectName)</span>
                     </div>
                 </div>
 
