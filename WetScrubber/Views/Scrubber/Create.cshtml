@@ -11,9 +11,29 @@
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap-grid.min.css" />
     <link rel="stylesheet" href="~/css/project.css" />
     <link rel="stylesheet" href="~/css/scrubber.css" />
+    <style>
+        .btn-tour { height:34px; padding:0 14px; font-size:12.5px; font-weight:600; background:#f0fdf9; color:#00a870; border:1px solid #b7f0dc; border-radius:7px; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:6px; margin-right:8px; }
+        .btn-tour:hover { background:#dcfbef; }
+        .tour-box { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); width:min(460px,92vw); background:#fff; border-radius:12px; padding:18px 20px; z-index:1000; box-shadow:0 12px 40px rgba(0,0,0,.35); display:none; }
+        .tour-box h4 { margin:0 0 6px; font-size:15px; color:#0b1120; }
+        .tour-box p { margin:0 0 14px; font-size:13px; color:#444; line-height:1.55; }
+        .tour-box p b { color:#0b1120; }
+        .tour-foot { display:flex; justify-content:space-between; align-items:center; }
+        .tour-count { font-size:11px; color:#888; }
+        .tour-dots { display:flex; gap:4px; margin-top:4px; }
+        .tour-dots i { width:6px; height:6px; border-radius:50%; background:#d5d9e0; display:block; }
+        .tour-dots i.on { background:#00d28c; }
+        .tour-btns { display:flex; gap:8px; }
+        .tour-btns button { border:none; border-radius:6px; padding:7px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+        .tour-skip { background:#eee; color:#444; }
+        .tour-prev { background:#f3f4f6; color:#0b1120; }
+        .tour-next { background:#00d28c; color:#0b1120; }
+        .tour-focus { position:relative; z-index:999; box-shadow:0 0 0 4px #00d28c, 0 0 0 9999px rgba(11,17,32,.55) !important; border-radius:10px; background:#fff; }
+    </style>
 }
 
 @section TopbarActions {
+    <button type="button" class="btn-tour" id="tourStart">❓ Take a tour</button>
     <a asp-controller="Project" asp-action="Detail"
        asp-route-id="@Model.ProjectId"
        class="btn-cancel"
@@ -555,6 +575,22 @@
 </div>
 
 
+<div class="tour-box" id="tourBox">
+    <h4 id="tourTitle"></h4>
+    <p id="tourText"></p>
+    <div class="tour-foot">
+        <div>
+            <span class="tour-count" id="tourCount"></span>
+            <div class="tour-dots" id="tourDots"></div>
+        </div>
+        <div class="tour-btns">
+            <button type="button" class="tour-skip" id="tourSkip">Skip</button>
+            <button type="button" class="tour-prev" id="tourPrev">Back</button>
+            <button type="button" class="tour-next" id="tourNext">Next</button>
+        </div>
+    </div>
+</div>
+
 <template id="pollutantRowTemplate">
     <div class="pollutant-row">
         <div class="form-group">
@@ -640,6 +676,71 @@
             }
             $("#IsLimestoneSlurry").on("change", toggleSlurry);
             toggleSlurry();
+
+            /* ---------- Guided tour ---------- */
+            var steps = [
+                { sel: '.steps-bar', t: 'Welcome to New Design',
+                  x: 'You only need to fill <b>4 simple steps</b>: Type &amp; Name, Gas &amp; Pollutants, Liquid, Materials. Fields marked <b>*</b> are required. Click any step above to jump to it.' },
+                { sel: '#DesignName', t: 'Step 1: Name your design',
+                  x: 'Type any name you will recognise later, for example <b>Packed Tower Design A</b>.' },
+                { sel: '#ScrubberType', t: 'Step 1: Choose scrubber type',
+                  x: '<b>Packed Tower</b>: best for gases like SO₂ and HCl.<br><b>Venturi</b>: dust and sticky gases.<br><b>Spray Tower</b>: low pressure drop, easy upkeep.<br><b>Wet Cyclone</b>: large dust particles.<br><b>Impingement Plate</b>: multi-stage plate column.<br>Not sure? Pick <b>Packed Tower</b>.' },
+                { sel: '.gp-panel:eq(0)', t: 'Step 2: Gas stream',
+                  x: 'Enter how much gas comes in. <b>Normal flow</b> is the gas measured at standard conditions (0°C, 1 atm). <b>Actual flow</b> is the real flow at your plant temperature. Also enter the inlet temperature.' },
+                { sel: '.gp-panel:eq(1)', t: 'Step 2: Pollutants',
+                  x: 'Choose the pollutant, its <b>inlet amount</b>, and either the <b>target outlet</b> or the <b>removal %</b> you want. Molecular weight example: SO₂ is about 64.' },
+                { sel: '#btnAddPollutant', t: 'Step 2: More than one pollutant?',
+                  x: 'If your gas has several pollutants (for example SO₂ and HCl), press this button to add another row.' },
+                { sel: '#sec-liquid', t: 'Step 3: Scrubbing liquid',
+                  x: 'Pick the liquid that washes the gas, for example <b>caustic (NaOH)</b> for SO₂. <b>L/G ratio</b> is how much liquid you spray per m³ of gas. A recommended range is shown under the box.' },
+                { sel: '#sec-materials', t: 'Step 4: Materials',
+                  x: 'Choose what the shell and internals are made of. For acidic gases <b>FRP</b> or <b>PP</b> are common. If unsure, keep the defaults.' },
+                { sel: '#btnSave', t: 'Finish: Save Design',
+                  x: 'Press <b>Save Design</b> to calculate. You will then see the sizing and results for this design.' }
+            ];
+
+            var $box = $('#tourBox'), ti = 0, $focus = null;
+
+            function clearFocus() { if ($focus) { $focus.removeClass('tour-focus'); $focus = null; } }
+
+            function findEl(sel) { return $(sel).filter(':visible').first(); }
+
+            function show(dir) {
+                clearFocus();
+                while (ti >= 0 && ti < steps.length && findEl(steps[ti].sel).length === 0) { ti += dir; }
+                if (ti < 0) { ti = 0; }
+                if (ti >= steps.length) { end(); return; }
+                var s = steps[ti];
+                $focus = findEl(s.sel).addClass('tour-focus');
+                $focus[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                $('#tourTitle').text(s.t);
+                $('#tourText').html(s.x);
+                $('#tourCount').text('Step ' + (ti + 1) + ' of ' + steps.length);
+                var dots = '';
+                for (var i = 0; i < steps.length; i++) { dots += '<i class="' + (i === ti ? 'on' : '') + '"></i>'; }
+                $('#tourDots').html(dots);
+                $('#tourPrev').toggle(ti > 0);
+                $('#tourNext').text(ti === steps.length - 1 ? 'Done' : 'Next');
+                $box.show();
+            }
+
+            function end() {
+                clearFocus();
+                $box.hide();
+                try { localStorage.setItem('sdTourDone', '1'); } catch (e) { }
+            }
+
+            $('#tourStart').on('click', function () { ti = 0; show(1); });
+            $('#tourNext').on('click', function () { ti++; show(1); });
+            $('#tourPrev').on('click', function () { ti--; show(-1); });
+            $('#tourSkip').on('click', end);
+            $(document).on('keydown', function (e) { if (e.key === 'Escape') { end(); } });
+
+            try {
+                if (localStorage.getItem('sdTourDone') !== '1') {
+                    setTimeout(function () { ti = 0; show(1); }, 700);
+                }
+            } catch (e) { }
         });
     </script>
 }

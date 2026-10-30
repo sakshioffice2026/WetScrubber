@@ -4,10 +4,91 @@
     ViewData["Title"] = Model.Name;
     ViewData["ActivePage"] = "Flowsheets";
     var units = Model.UnitOperations.OrderBy(u => u.SequenceOrder).ToList();
+
+    var step1Done = units.Count >= 1;
+    var step2Done = Model.StreamConnections.Count > 0;
+    var currentStep = !step1Done ? 1 : (units.Count >= 2 && !step2Done ? 2 : 3);
 }
 @section Styles {
     <link rel="stylesheet" href="~/css/project.css" />
     <link rel="stylesheet" href="~/css/flowsheet.css" asp-append-version="true" />
+    <style>
+        .guide-bar { background:#f0fdf9; border:1px solid #b7f0dc; border-radius:10px; padding:16px 20px; margin-bottom:18px; }
+        .guide-bar-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+        .guide-bar-title { font-size:14px; font-weight:700; color:#0b1120; }
+        .guide-bar-sub { font-size:12px; color:#555; margin-top:2px; }
+        .guide-toggle { background:none; border:1px solid #b7f0dc; color:#00a870; border-radius:6px; font-size:12px; padding:4px 10px; cursor:pointer; font-family:inherit; }
+        .guide-steps { display:flex; gap:10px; flex-wrap:wrap; }
+        .guide-step { flex:1 1 200px; display:flex; gap:10px; align-items:flex-start; background:#fff; border:1.5px solid #e5e7eb; border-radius:8px; padding:12px; text-decoration:none; color:#0b1120; transition:.15s; }
+        .guide-step:hover { border-color:#00d28c; }
+        .guide-step .num { flex:0 0 28px; height:28px; border-radius:50%; background:#e5e7eb; color:#555; font-weight:700; font-size:13px; display:flex; align-items:center; justify-content:center; }
+        .guide-step .txt b { display:block; font-size:13px; }
+        .guide-step .txt span { font-size:11.5px; color:#666; line-height:1.4; display:block; margin-top:2px; }
+        .guide-step.done { border-color:#00d28c; background:#f6fffb; }
+        .guide-step.done .num { background:#00d28c; color:#0b1120; }
+        .guide-step.current { border-color:#00d28c; box-shadow:0 0 0 3px rgba(0,210,140,.2); }
+        .guide-step.current .num { background:#0b1120; color:#fff; }
+        .guide-step .tag { display:inline-block; font-size:10px; font-weight:700; margin-top:5px; padding:2px 7px; border-radius:10px; background:#0b1120; color:#fff; }
+        .guide-step.done .tag { background:#00d28c; color:#0b1120; }
+
+        .step-head { display:flex; align-items:center; gap:12px; }
+        .step-badge { width:26px; height:26px; border-radius:50%; background:#0b1120; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:0 0 26px; }
+        .step-desc { font-size:12.5px; color:#666; padding:0 20px 12px; line-height:1.5; }
+        .proj-table-card.is-current { box-shadow:0 0 0 2px #00d28c; }
+
+        .help-tip { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:#e5e7eb; color:#555; font-size:10px; font-weight:700; margin-left:5px; cursor:help; position:relative; }
+        .help-tip:hover::after { content:attr(data-tip); position:absolute; left:50%; bottom:22px; transform:translateX(-50%); width:220px; background:#0b1120; color:#fff; font-weight:400; font-size:11.5px; line-height:1.4; padding:8px 10px; border-radius:6px; z-index:60; }
+
+        .field-hint { font-size:11.5px; color:#777; margin-top:4px; line-height:1.4; }
+        .type-hint { background:#f8fafc; border-left:3px solid #00d28c; padding:8px 12px; margin:0 20px 12px; font-size:12.5px; color:#333; border-radius:4px; }
+        .live-preview { margin:0 20px 12px; padding:9px 12px; background:#f8fafc; border-radius:6px; font-size:13px; color:#0b1120; }
+        .live-preview b { color:#00a870; }
+        .empty-guide { text-align:center; color:#555; padding:22px 10px; font-size:13px; }
+        .empty-guide b { display:block; font-size:14px; color:#0b1120; margin-bottom:4px; }
+        .run-locked { margin:0 20px 12px; padding:10px 12px; background:#fff7e6; border:1px solid #ffd591; color:#8a5a00; border-radius:6px; font-size:12.5px; }
+        .adv-box { margin:0 20px 20px; font-size:12.5px; color:#444; }
+        .adv-box summary { cursor:pointer; color:#00a870; font-weight:600; }
+        .btn-predict[disabled] { opacity:.45; cursor:not-allowed; }
+        .guide-hidden .guide-steps { display:none; }
+
+        .eq-title { padding:0 20px 8px; font-size:12.5px; font-weight:700; color:#0b1120; }
+        .eq-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:10px; padding:0 20px 8px; }
+        .eq-card { text-align:left; background:#fff; border:2px solid #e5e7eb; border-radius:10px; padding:12px; cursor:pointer; font-family:inherit; display:flex; flex-direction:column; gap:4px; transition:.15s; }
+        .eq-card:hover { border-color:#00d28c; transform:translateY(-1px); }
+        .eq-card.selected { border-color:#00d28c; background:#f0fdf9; box-shadow:0 0 0 3px rgba(0,210,140,.2); }
+        .eq-card .eq-icon { font-size:22px; }
+        .eq-card b { font-size:13.5px; color:#0b1120; }
+        .eq-card span { font-size:12px; color:#555; line-height:1.4; }
+        .eq-card em { font-size:11px; color:#00a870; font-style:normal; font-weight:600; line-height:1.4; }
+        .eq-order { padding:0 20px 12px; font-size:12px; color:#666; }
+
+        .guide-actions { display:flex; gap:8px; }
+        .btn-example { background:#0b1120; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:600; padding:7px 14px; cursor:pointer; font-family:inherit; }
+        .btn-example:hover { background:#1b2740; }
+        .btn-example[disabled] { opacity:.5; cursor:wait; }
+
+        .plant-flow { display:flex; align-items:center; gap:0; overflow-x:auto; padding:6px 20px 20px; }
+        .plant-node { flex:0 0 auto; min-width:130px; background:#fff; border:2px solid #0b1120; border-radius:10px; padding:10px 14px; text-align:center; }
+        .plant-node .pn-order { font-size:10px; font-weight:700; color:#00a870; }
+        .plant-node .pn-name { font-size:13px; font-weight:700; color:#0b1120; margin:2px 0; }
+        .plant-node .pn-type { font-size:11px; color:#666; }
+        .plant-arrow { flex:0 0 46px; height:2px; background:#00d28c; position:relative; }
+        .plant-arrow::after { content:""; position:absolute; right:-1px; top:-4px; border-left:8px solid #00d28c; border-top:5px solid transparent; border-bottom:5px solid transparent; }
+        .plant-end { flex:0 0 auto; font-size:11px; font-weight:700; color:#555; padding:0 6px; text-align:center; }
+        .plant-recycle { font-size:12px; color:#8a5a00; padding:0 20px 14px; }
+
+        .tour-mask { position:fixed; inset:0; background:rgba(11,17,32,.55); z-index:998; display:none; }
+        .tour-box { position:fixed; left:50%; bottom:28px; transform:translateX(-50%); width:min(440px,92vw); background:#fff; border-radius:12px; padding:18px 20px; z-index:1000; box-shadow:0 12px 40px rgba(0,0,0,.35); display:none; }
+        .tour-box h4 { margin:0 0 6px; font-size:15px; color:#0b1120; }
+        .tour-box p { margin:0 0 14px; font-size:13px; color:#444; line-height:1.5; }
+        .tour-foot { display:flex; justify-content:space-between; align-items:center; }
+        .tour-count { font-size:11px; color:#888; }
+        .tour-btns { display:flex; gap:8px; }
+        .tour-btns button { border:none; border-radius:6px; padding:7px 14px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+        .tour-skip { background:#eee; color:#444; }
+        .tour-next { background:#00d28c; color:#0b1120; }
+        .tour-focus { position:relative; z-index:999; box-shadow:0 0 0 4px #00d28c, 0 0 0 9999px rgba(11,17,32,.55); border-radius:10px; background:#fff; }
+    </style>
 }
 
 <div class="flowsheet-page">
@@ -27,20 +108,98 @@
         <div class="flash-toast flash-error">@TempData["Error"]</div>
     }
 
-    <div class="proj-table-card">
-        <div class="proj-table-header">
-            <div class="proj-table-title">Unit Operations</div>
+    <!-- Guide bar -->
+    <div class="guide-bar" id="guideBar">
+        <div class="guide-bar-head">
+            <div>
+                <div class="guide-bar-title">How to build and run a flowsheet</div>
+                <div class="guide-bar-sub">A flowsheet is your plant on paper: equipment in order, joined by pipes, then calculated. Follow the 3 steps.</div>
+            </div>
+            <div class="guide-actions">
+                <button type="button" class="guide-toggle" id="tourStart">Take a tour</button>
+                <button type="button" class="btn-example" id="btnExample" data-fid="@Model.Id" data-next="@(units.Count + 1)">Load example</button>
+                <button type="button" class="guide-toggle" id="guideToggle">Hide guide</button>
+            </div>
         </div>
+        <div class="guide-steps">
+            <a href="#stepUnits" class="guide-step @(step1Done ? "done" : "") @(currentStep == 1 ? "current" : "")">
+                <div class="num">@(step1Done ? "✓" : "1")</div>
+                <div class="txt">
+                    <b>Add equipment</b>
+                    <span>Add each machine in your plant, e.g. cooler, scrubber, mist eliminator.</span>
+                    @if (currentStep == 1) { <span class="tag">DO THIS NOW</span> }
+                    else if (step1Done) { <span class="tag">@units.Count added</span> }
+                </div>
+            </a>
+            <a href="#stepConnect" class="guide-step @(step2Done ? "done" : "") @(currentStep == 2 ? "current" : "")">
+                <div class="num">@(step2Done ? "✓" : "2")</div>
+                <div class="txt">
+                    <b>Connect equipment (optional)</b>
+                    <span>Tell the system which equipment feeds which. Skip it and they run in Order number.</span>
+                    @if (currentStep == 2) { <span class="tag">DO THIS NOW</span> }
+                    else if (step2Done) { <span class="tag">@Model.StreamConnections.Count connected</span> }
+                </div>
+            </a>
+            <a href="#stepRun" class="guide-step @(currentStep == 3 ? "current" : "")">
+                <div class="num">3</div>
+                <div class="txt">
+                    <b>Run the calculation</b>
+                    <span>Enter your gas details (flow, temperature, pollutants) and press Run to see results.</span>
+                    @if (currentStep == 3) { <span class="tag">DO THIS NOW</span> }
+                </div>
+            </a>
+        </div>
+    </div>
+
+    @if (units.Count > 0)
+    {
+        <div class="proj-table-card" id="plantView">
+            <div class="proj-table-header">
+                <div class="proj-table-title">Your Plant at a Glance</div>
+            </div>
+            <div class="step-desc">Gas enters on the left, passes through each machine in order, and leaves on the right.</div>
+            <div class="plant-flow">
+                <div class="plant-end">Dirty gas<br />IN</div>
+                <div class="plant-arrow"></div>
+                @for (var i = 0; i < units.Count; i++)
+                {
+                    <div class="plant-node">
+                        <div class="pn-order">STEP @units[i].SequenceOrder</div>
+                        <div class="pn-name">@units[i].Name</div>
+                        <div class="pn-type">@units[i].Type</div>
+                    </div>
+                    <div class="plant-arrow"></div>
+                }
+                <div class="plant-end">Clean gas<br />OUT</div>
+            </div>
+            @foreach (var rc in Model.StreamConnections.Where(c => c.StreamType == "recycle"))
+            {
+                var rs = units.FirstOrDefault(u => u.Id == rc.SourceUnitId)?.Name ?? "?";
+                var rk = units.FirstOrDefault(u => u.Id == rc.SinkUnitId)?.Name ?? "?";
+                <div class="plant-recycle">↺ Liquid is recycled from <strong>@rs</strong> back to <strong>@rk</strong>.</div>
+            }
+        </div>
+    }
+
+    <!-- STEP 1 -->
+    <div class="proj-table-card @(currentStep == 1 ? "is-current" : "")" id="stepUnits">
+        <div class="proj-table-header">
+            <div class="step-head">
+                <div class="step-badge">1</div>
+                <div class="proj-table-title">Add Equipment (Unit Operations)</div>
+            </div>
+        </div>
+        <div class="step-desc">Each row below is one machine in your plant. Gas passes through them from Order 1 onwards.</div>
 
         <div style="overflow-x:auto;">
             <table class="proj-table">
                 <thead>
                     <tr>
-                        <th>Order</th>
+                        <th>Order <span class="help-tip" data-tip="The sequence the gas travels. 1 = first machine, 2 = second, and so on.">?</span></th>
                         <th>Name</th>
                         <th>Type</th>
-                        <th>Config</th>
-                        <th>Actions</th>
+                        <th>Config <span class="help-tip" data-tip="The design values of this machine such as tower height or cooling duty.">?</span></th>
+                        <th>Remove</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -65,25 +224,67 @@
                     @if (units.Count == 0)
                     {
                         <tr>
-                            <td colspan="5" style="text-align:center; color:#888;">No unit operations yet.</td>
+                            <td colspan="5">
+                                <div class="empty-guide">
+                                    <b>No equipment added yet</b>
+                                    Start here: fill the form below and press <strong>Add Unit</strong>. Try a Cooler first, then a Scrubber.
+                                </div>
+                            </td>
                         </tr>
                     }
                 </tbody>
             </table>
         </div>
 
+        <div class="eq-title">Available equipment: click one to select it, then give it a name and press Add Unit</div>
+        <div class="eq-grid" id="eqGrid">
+            <button type="button" class="eq-card" data-type="precooler">
+                <span class="eq-icon">🌡️</span>
+                <b>Pre-Cooler</b>
+                <span>Cools hot gas down to a fixed temperature.</span>
+                <em>Use when: gas is very hot at the inlet.</em>
+            </button>
+            <button type="button" class="eq-card" data-type="cooler">
+                <span class="eq-icon">❄️</span>
+                <b>Cooler</b>
+                <span>Removes a set amount of heat from the gas.</span>
+                <em>Use when: you know the cooling power (kW).</em>
+            </button>
+            <button type="button" class="eq-card" data-type="scrubber">
+                <span class="eq-icon">🧪</span>
+                <b>Scrubber</b>
+                <span>Main tower where liquid washes pollutants out of the gas.</span>
+                <em>Use when: you must remove SO2, H2S or other pollutants.</em>
+            </button>
+            <button type="button" class="eq-card" data-type="misteliminator">
+                <span class="eq-icon">💧</span>
+                <b>Mist Eliminator</b>
+                <span>Catches liquid droplets so the outgoing gas is dry.</span>
+                <em>Use when: after a scrubber, before the stack.</em>
+            </button>
+            <button type="button" class="eq-card" data-type="separator">
+                <span class="eq-icon">🔀</span>
+                <b>Separator</b>
+                <span>Splits out part of the stream by efficiency.</span>
+                <em>Use when: part of the flow must be removed.</em>
+            </button>
+        </div>
+        <div class="eq-order">Typical order: <strong>Pre-Cooler / Cooler</strong> → <strong>Scrubber</strong> → <strong>Mist Eliminator</strong></div>
+
+        <div class="type-hint" id="typeHint"></div>
+
         <form asp-action="AddUnit" method="post" class="flowsheet-inline-form">
             @Html.AntiForgeryToken()
             <input type="hidden" name="FlowsheetId" value="@Model.Id" />
 
             <div class="predict-field">
-                <label>Name</label>
-                <input name="Name" class="form-control" required />
+                <label>Name <span class="help-tip" data-tip="Any label you like, e.g. 'Main Scrubber'.">?</span></label>
+                <input name="Name" class="form-control" required placeholder="e.g. Main Scrubber" />
             </div>
 
-            <div class="predict-field">
-                <label>Type</label>
-                <select name="Type" class="form-control">
+            <div class="predict-field" style="display:none;">
+                <label>What is it? <span class="help-tip" data-tip="Pick the kind of machine. Suggested design values are filled in for you.">?</span></label>
+                <select name="Type" id="unitType" class="form-control">
                     <option value="precooler">Pre-Cooler (fixed outlet T)</option>
                     <option value="cooler">Cooler (duty-based)</option>
                     <option value="scrubber">Scrubber (packed tower, RK45)</option>
@@ -93,41 +294,50 @@
             </div>
 
             <div class="predict-field" style="flex:0 1 100px;">
-                <label>Order</label>
+                <label>Order <span class="help-tip" data-tip="Position in the gas path. Already set to the next free number.">?</span></label>
                 <input name="SequenceOrder" type="number" class="form-control" value="@(units.Count + 1)" />
             </div>
 
             <div class="predict-field" style="flex:2 1 320px;">
-                <label>Config JSON</label>
-                <input name="ConfigJson" class="form-control"
-                       placeholder='e.g. {"TowerHeightM":5,"TowerAreaM2":2,"LiquidFlowKgS":50,"LiquidInletTempC":25,"PackingSpecificAreaM2M3":250}' />
+                <label>Design values <span class="help-tip" data-tip="Auto-filled with typical values. Change the numbers only if you know your equipment data.">?</span></label>
+                <input name="ConfigJson" id="unitConfig" class="form-control"
+                       placeholder='Auto-filled when you pick a type' />
+                <div class="field-hint">Auto-filled. Edit only the numbers after the colons.</div>
             </div>
 
             <button type="submit" class="btn-save">Add Unit</button>
         </form>
 
-        <div class="chem-intro-desc" style="padding:0 20px 20px;">
-            Config fields per type — cooler: <code>CoolingDutyKW</code>. separator:
-            <code>SeparationEfficiency</code> (0–1). precooler:
-            <code>OutletTemperatureC</code>. misteliminator:
-            <code>PressureDropPa</code>. scrubber:
-            <code>TowerHeightM, TowerAreaM2, LiquidFlowKgS, LiquidInletTempC, GasDensityKgM3, PackingSpecificAreaM2M3, PackingNominalSizeM</code>.
-        </div>
+        <details class="adv-box">
+            <summary>Need to know what each value means?</summary>
+            <div style="margin-top:8px;line-height:1.7;">
+                Cooler: <code>CoolingDutyKW</code> (heat removed, kW).<br />
+                Separator: <code>SeparationEfficiency</code> (0 to 1, e.g. 0.9 = 90%).<br />
+                Pre-Cooler: <code>OutletTemperatureC</code> (gas temperature leaving).<br />
+                Mist Eliminator: <code>PressureDropPa</code> (pressure lost across it).<br />
+                Scrubber: <code>TowerHeightM, TowerAreaM2, LiquidFlowKgS, LiquidInletTempC, GasDensityKgM3, PackingSpecificAreaM2M3, PackingNominalSizeM</code>.
+            </div>
+        </details>
     </div>
 
-    <div class="proj-table-card">
+    <!-- STEP 2 -->
+    <div class="proj-table-card @(currentStep == 2 ? "is-current" : "")" id="stepConnect">
         <div class="proj-table-header">
-            <div class="proj-table-title">Stream Connections</div>
+            <div class="step-head">
+                <div class="step-badge">2</div>
+                <div class="proj-table-title">Connect Equipment (Stream Connections)</div>
+            </div>
         </div>
+        <div class="step-desc">Draw the pipes: choose what flows out of one machine and into another. Optional if your machines already run in the right Order.</div>
 
         <div style="overflow-x:auto;">
             <table class="proj-table">
                 <thead>
                     <tr>
-                        <th>Source</th>
-                        <th>Sink</th>
+                        <th>From</th>
+                        <th>To</th>
                         <th>Type</th>
-                        <th>Actions</th>
+                        <th>Remove</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -158,8 +368,11 @@
                     @if (Model.StreamConnections.Count == 0)
                     {
                         <tr>
-                            <td colspan="4" style="text-align:center; color:#888;">
-                                No connections yet — units run in Order sequence by default.
+                            <td colspan="4">
+                                <div class="empty-guide">
+                                    <b>No connections yet</b>
+                                    That is fine. Equipment will run one after another in Order number.
+                                </div>
                             </td>
                         </tr>
                     }
@@ -169,13 +382,15 @@
 
         @if (units.Count >= 2)
         {
+            <div class="live-preview" id="connPreview"></div>
+
             <form asp-action="AddConnection" method="post" class="flowsheet-inline-form">
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="FlowsheetId" value="@Model.Id" />
 
                 <div class="predict-field">
-                    <label>Source</label>
-                    <select name="SourceUnitId" class="form-control">
+                    <label>From (leaves this) </label>
+                    <select name="SourceUnitId" id="connSrc" class="form-control">
                         @foreach (var u in units)
                         {
                             <option value="@u.Id">@u.Name</option>
@@ -184,18 +399,18 @@
                 </div>
 
                 <div class="predict-field">
-                    <label>Sink</label>
-                    <select name="SinkUnitId" class="form-control">
+                    <label>To (enters this)</label>
+                    <select name="SinkUnitId" id="connSink" class="form-control">
                         @foreach (var u in units)
                         {
-                            <option value="@u.Id">@u.Name</option>
+                            <option value="@u.Id" selected="@(u == units[1])">@u.Name</option>
                         }
                     </select>
                 </div>
 
                 <div class="predict-field">
-                    <label>Stream Type</label>
-                    <select name="StreamType" class="form-control">
+                    <label>What flows? <span class="help-tip" data-tip="Gas or Liquid for normal pipes. Recycle sends liquid back to an earlier machine.">?</span></label>
+                    <select name="StreamType" id="connType" class="form-control">
                         <option value="gas">Gas</option>
                         <option value="liquid">Liquid</option>
                         <option value="recycle">Recycle (tear stream)</option>
@@ -205,53 +420,233 @@
                 <button type="submit" class="btn-save">Connect</button>
             </form>
         }
+        else
+        {
+            <div class="run-locked">Add at least 2 pieces of equipment in Step 1 to unlock connections.</div>
+        }
     </div>
 
-    <div class="proj-table-card">
+    <!-- STEP 3 -->
+    <div class="proj-table-card @(currentStep == 3 ? "is-current" : "")" id="stepRun">
         <div class="proj-table-header">
-            <div class="proj-table-title">Run Flowsheet</div>
+            <div class="step-head">
+                <div class="step-badge">3</div>
+                <div class="proj-table-title">Run Flowsheet</div>
+            </div>
         </div>
+        <div class="step-desc">Describe the dirty gas entering your plant, then press <strong>Run</strong>. Results open on the next page.</div>
+
+        @if (units.Count == 0)
+        {
+            <div class="run-locked">Add at least one piece of equipment in Step 1 before running.</div>
+        }
 
         <form asp-action="Run" method="post" class="flowsheet-inline-form">
             @Html.AntiForgeryToken()
             <input type="hidden" name="Id" value="@Model.Id" />
 
             <div class="predict-field">
-                <label>Actual Flow (m³/hr)</label>
+                <label>Gas flow (m³/hr) <span class="help-tip" data-tip="How much gas enters the plant per hour at actual conditions.">?</span></label>
                 <input name="ActualFlowM3Hr" type="number" step="any" class="form-control" value="10000" />
             </div>
 
             <div class="predict-field">
-                <label>Inlet Temp (°C)</label>
+                <label>Gas temperature (°C) <span class="help-tip" data-tip="Temperature of the gas at the inlet.">?</span></label>
                 <input name="TemperatureC" type="number" step="any" class="form-control" value="50" />
             </div>
 
             <div class="predict-field">
-                <label>Inlet Pressure (Pa)</label>
+                <label>Gas pressure (Pa) <span class="help-tip" data-tip="Normal atmospheric pressure is 101325 Pa. Leave as is if unsure.">?</span></label>
                 <input name="PressurePa" type="number" step="any" class="form-control" value="101325" />
             </div>
 
             <div class="predict-field" style="flex:2 1 250px;">
-                <label>Pollutants (code:ppm,code:ppm)</label>
+                <label>Pollutants <span class="help-tip" data-tip="Write CODE:ppm, separated by commas. Example: SO2:500,H2S:200 means 500 ppm SO2 and 200 ppm H2S.">?</span></label>
                 <input name="Pollutants" class="form-control" placeholder="SO2:500,H2S:200" />
+                <div class="field-hint">Format: CODE:ppm, comma separated.</div>
             </div>
 
             <div class="predict-field">
-                <label>Liquid Flow (kg/s)</label>
+                <label>Liquid flow (kg/s) <span class="help-tip" data-tip="Leave 0 to use the liquid values set in each scrubber's design values.">?</span></label>
                 <input name="LiquidFlowKgS" type="number" step="any" class="form-control" value="0" title="0 = unwired; each unit falls back to its own configured liquid parameters" />
             </div>
 
             <div class="predict-field">
-                <label>Liquid Temp (°C)</label>
+                <label>Liquid temperature (°C)</label>
                 <input name="LiquidTemperatureC" type="number" step="any" class="form-control" value="25" />
             </div>
 
             <div class="predict-field">
-                <label>Liquid Recycle Fraction</label>
+                <label>Liquid recycle fraction <span class="help-tip" data-tip="0 = fresh liquid only. 0.5 = half of the liquid is reused. Works only if you drew a Recycle connection.">?</span></label>
                 <input name="LiquidRecycleFraction" type="number" step="any" min="0" max="1" class="form-control" value="0" title="Fraction of liquid feed replaced by recirculated outlet liquid each pass. Only applies when a 'recycle' connection is drawn above." />
             </div>
 
-            <button type="submit" class="btn-predict">Run</button>
+            <button type="submit" class="btn-predict" @(units.Count == 0 ? "disabled" : "")>Run</button>
         </form>
     </div>
 </div>
+
+<div class="tour-box" id="tourBox">
+    <h4 id="tourTitle"></h4>
+    <p id="tourText"></p>
+    <div class="tour-foot">
+        <span class="tour-count" id="tourCount"></span>
+        <div class="tour-btns">
+            <button type="button" class="tour-skip" id="tourSkip">Skip</button>
+            <button type="button" class="tour-next" id="tourNext">Next</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        var info = {
+            precooler:      { cfg: '{"OutletTemperatureC":35}', msg: 'Pre-Cooler: cools hot gas down to a fixed temperature before it enters the next machine.' },
+            cooler:         { cfg: '{"CoolingDutyKW":100}', msg: 'Cooler: removes a set amount of heat (kW) from the gas.' },
+            scrubber:       { cfg: '{"TowerHeightM":5,"TowerAreaM2":2,"LiquidFlowKgS":50,"LiquidInletTempC":25,"PackingSpecificAreaM2M3":250}', msg: 'Scrubber: the main tower where liquid washes pollutants out of the gas.' },
+            misteliminator: { cfg: '{"PressureDropPa":200}', msg: 'Mist Eliminator: catches liquid droplets so clean gas leaves dry.' },
+            separator:      { cfg: '{"SeparationEfficiency":0.9}', msg: 'Separator: splits out part of the stream. 0.9 means 90% is separated.' }
+        };
+
+        var type = document.getElementById('unitType');
+        var cfg = document.getElementById('unitConfig');
+        var hint = document.getElementById('typeHint');
+        var lastAuto = '';
+
+        function applyType() {
+            var t = info[type.value];
+            if (!t) return;
+            hint.textContent = t.msg;
+            if (cfg.value === '' || cfg.value === lastAuto) {
+                cfg.value = t.cfg;
+                lastAuto = t.cfg;
+            }
+        }
+        var cards = document.querySelectorAll('.eq-card');
+        function markCard() {
+            for (var i = 0; i < cards.length; i++) {
+                cards[i].classList.toggle('selected', cards[i].getAttribute('data-type') === type.value);
+            }
+        }
+        for (var c = 0; c < cards.length; c++) {
+            cards[c].addEventListener('click', function () {
+                type.value = this.getAttribute('data-type');
+                applyType();
+                markCard();
+                var nm = document.querySelector('#stepUnits input[name="Name"]');
+                if (nm) { nm.focus(); }
+            });
+        }
+        if (type && cfg) {
+            type.addEventListener('change', function () { applyType(); markCard(); });
+            applyType();
+            markCard();
+        }
+
+        var src = document.getElementById('connSrc');
+        var sink = document.getElementById('connSink');
+        var ctype = document.getElementById('connType');
+        var prev = document.getElementById('connPreview');
+        function updatePreview() {
+            if (!src || !sink || !prev) return;
+            var a = src.options[src.selectedIndex].text;
+            var b = sink.options[sink.selectedIndex].text;
+            var what = ctype.value === 'recycle' ? 'Recycled liquid' : (ctype.value === 'liquid' ? 'Liquid' : 'Gas');
+            prev.innerHTML = a === b
+                ? 'Pick two different machines.'
+                : what + ' will flow from <b>' + a + '</b> to <b>' + b + '</b>.';
+        }
+        if (src && sink && ctype) {
+            src.addEventListener('change', updatePreview);
+            sink.addEventListener('change', updatePreview);
+            ctype.addEventListener('change', updatePreview);
+            updatePreview();
+        }
+
+        var bar = document.getElementById('guideBar');
+        var tgl = document.getElementById('guideToggle');
+        function setGuide(hidden) {
+            bar.classList.toggle('guide-hidden', hidden);
+            tgl.textContent = hidden ? 'Show guide' : 'Hide guide';
+        }
+        try { setGuide(localStorage.getItem('fsGuideHidden') === '1'); } catch (e) { }
+        tgl.addEventListener('click', function () {
+            var h = !bar.classList.contains('guide-hidden');
+            setGuide(h);
+            try { localStorage.setItem('fsGuideHidden', h ? '1' : '0'); } catch (e) { }
+        });
+
+        /* ---------- Guided tour ---------- */
+        var tourSteps = [
+            { id: 'guideBar',    t: 'Welcome',            x: 'This page has 3 simple steps. The tracker shows what is done and what to do next.' },
+            { id: 'stepUnits',   t: 'Step 1: Add equipment', x: 'Add each machine of your plant here. Pick a type and the design values fill in automatically.' },
+            { id: 'stepConnect', t: 'Step 2: Connect',    x: 'Choose what flows from one machine to the next. You can skip this if the Order numbers are already right.' },
+            { id: 'stepRun',     t: 'Step 3: Run',        x: 'Enter your gas details and press Run. Results open on the next page with plain-language remarks.' }
+        ];
+        var tourBox = document.getElementById('tourBox');
+        var ti = 0, focused = null;
+
+        function clearFocus() { if (focused) { focused.classList.remove('tour-focus'); focused = null; } }
+        function showTour() {
+            clearFocus();
+            if (ti >= tourSteps.length) { endTour(); return; }
+            var s = tourSteps[ti];
+            var el = document.getElementById(s.id);
+            if (!el) { ti++; showTour(); return; }
+            focused = el;
+            el.classList.add('tour-focus');
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            document.getElementById('tourTitle').textContent = s.t;
+            document.getElementById('tourText').textContent = s.x;
+            document.getElementById('tourCount').textContent = (ti + 1) + ' of ' + tourSteps.length;
+            document.getElementById('tourNext').textContent = ti === tourSteps.length - 1 ? 'Done' : 'Next';
+            tourBox.style.display = 'block';
+        }
+        function endTour() {
+            clearFocus();
+            tourBox.style.display = 'none';
+            try { localStorage.setItem('fsTourDone', '1'); } catch (e) { }
+        }
+        document.getElementById('tourStart').addEventListener('click', function () { ti = 0; showTour(); });
+        document.getElementById('tourNext').addEventListener('click', function () { ti++; showTour(); });
+        document.getElementById('tourSkip').addEventListener('click', endTour);
+        try { if (localStorage.getItem('fsTourDone') !== '1') { setTimeout(function () { ti = 0; showTour(); }, 600); } } catch (e) { }
+
+        /* ---------- Load example ---------- */
+        var ex = document.getElementById('btnExample');
+        ex.addEventListener('click', function () {
+            if (!confirm('Add 3 example machines (Cooler, Scrubber, Mist Eliminator) to this flowsheet?')) return;
+            var tokenEl = document.querySelector('input[name="__RequestVerificationToken"]');
+            if (!tokenEl) return;
+            var fid = ex.getAttribute('data-fid');
+            var n = parseInt(ex.getAttribute('data-next'), 10) || 1;
+            var list = [
+                { Name: 'Gas Cooler',      Type: 'cooler',         ConfigJson: info.cooler.cfg },
+                { Name: 'Main Scrubber',   Type: 'scrubber',       ConfigJson: info.scrubber.cfg },
+                { Name: 'Mist Eliminator', Type: 'misteliminator', ConfigJson: info.misteliminator.cfg }
+            ];
+            ex.disabled = true;
+            ex.textContent = 'Loading...';
+            var chain = Promise.resolve();
+            list.forEach(function (u, i) {
+                chain = chain.then(function () {
+                    var body = new URLSearchParams();
+                    body.append('__RequestVerificationToken', tokenEl.value);
+                    body.append('FlowsheetId', fid);
+                    body.append('Name', u.Name);
+                    body.append('Type', u.Type);
+                    body.append('SequenceOrder', String(n + i));
+                    body.append('ConfigJson', u.ConfigJson);
+                    return fetch('/Flowsheet/AddUnit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body.toString(),
+                        credentials: 'same-origin'
+                    });
+                });
+            });
+            chain.then(function () { window.location.reload(); })
+                 .catch(function () { ex.disabled = false; ex.textContent = 'Load example'; alert('Could not load example. Please try again.'); });
+        });
+    })();
+</script>
