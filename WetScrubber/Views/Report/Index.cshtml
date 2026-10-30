@@ -1,0 +1,265 @@
+@model List<WetScrubber.Models.ReportListItemViewModel>
+@{
+    ViewData["Title"] = "Export Reports";
+    ViewData["ActivePage"] = "Reports";
+
+    var projects = Model
+        .Select(m => new { m.ProjectNumber, m.ProjectName })
+        .Distinct()
+        .OrderBy(x => x.ProjectNumber)
+        .ToList();
+
+    var types = Model.Select(m => m.ScrubberType).Distinct().OrderBy(t => t).ToList();
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/css/project.css" />
+    <style>
+        .er-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 2px rgba(15,23,42,.06); overflow:hidden; }
+        .er-head { padding:20px 24px; border-bottom:1px solid #f1f5f9; }
+        .er-head-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; }
+        .er-title { font-size:16px; font-weight:700; color:#0f172a; margin:0; }
+        .er-sub { font-size:12px; color:#64748b; margin-top:2px; }
+        .er-pill { font-size:12px; font-weight:600; padding:4px 10px; border-radius:999px; background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+        .er-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .er-toolbar { display:flex; flex-wrap:wrap; gap:12px; margin-top:16px; }
+        .er-select, .er-input { height:38px; padding:0 12px; font-size:12.5px; color:#1e293b; background:#fff; border:1px solid #cbd5e1; border-radius:8px; outline:none; }
+        .er-select:focus, .er-input:focus { border-color:#10b981; box-shadow:0 0 0 3px rgba(16,185,129,.18); }
+        .er-select { min-width:240px; }
+        .er-input { flex:1; min-width:220px; }
+        .er-batch { height:36px; padding:0 14px; font-size:12.5px; font-weight:600; color:#fff; background:#059669; border:1px solid #059669; border-radius:8px; cursor:pointer; }
+        .er-batch:disabled { background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0; cursor:not-allowed; }
+        .er-table-wrap { overflow-x:auto; }
+        .er-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+        .er-table th { text-align:left; padding:12px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#64748b; white-space:nowrap; }
+        .er-table td { padding:14px; border-bottom:1px solid #f1f5f9; color:#475569; vertical-align:middle; }
+        .er-table tr:hover td { background:#f8fafc; }
+        .er-right { text-align:right !important; }
+        .er-center { text-align:center !important; }
+        .er-mono { font-family:Consolas, "Courier New", monospace; }
+        .er-projno { font-family:Consolas, "Courier New", monospace; font-weight:600; color:#059669; white-space:nowrap; }
+        .er-projname { font-weight:600; color:#0f172a; }
+        .er-type { display:inline-block; padding:3px 10px; border-radius:6px; font-size:11px; font-weight:500; border:1px solid #e2e8f0; background:#f1f5f9; color:#334155; white-space:nowrap; }
+        .er-type.packed { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+        .er-type.plate { background:#f0f9ff; color:#0369a1; border-color:#bae6fd; }
+        .er-removal { font-weight:700; color:#0f172a; }
+        .er-pending-row td { opacity:.75; }
+        .er-pending { font-style:italic; color:#94a3b8; font-size:12px; }
+        .er-btn { display:inline-block; padding:5px 10px; font-size:11.5px; font-weight:600; color:#334155; background:#fff; border:1px solid #e2e8f0; border-radius:8px; text-decoration:none; margin-right:4px; }
+        .er-btn:hover { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
+        .er-foot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:14px 20px; background:#f8fafc; border-top:1px solid #e2e8f0; font-size:12px; color:#64748b; }
+        .er-pager { display:flex; gap:4px; flex-wrap:wrap; }
+        .er-page { padding:6px 12px; font-size:12px; color:#475569; background:#fff; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer; }
+        .er-page.active { background:#059669; color:#fff; border-color:#059669; font-weight:600; }
+        .er-page:disabled { opacity:.5; cursor:not-allowed; }
+        .er-empty { padding:28px; color:#94a3b8; text-align:center; }
+        .er-hidden { display:none; }
+    </style>
+}
+
+<div class="er-card">
+    <div class="er-head">
+        <div class="er-head-row">
+            <div>
+                <h2 class="er-title">Export Calculation Reports</h2>
+                <div class="er-sub">Select and export design calculation reports.</div>
+            </div>
+            <div class="er-actions">
+                <span class="er-pill"><span id="erTotal">@Model.Count</span> designs</span>
+                <select id="erBatchFormat" class="er-select" style="min-width:110px;height:36px;">
+                    <option value="pdf">PDF</option>
+                    <option value="docx">Word</option>
+                    <option value="xlsx">Excel</option>
+                </select>
+                <button type="button" id="erBatchBtn" class="er-batch" disabled>Export Selected (ZIP) <span id="erSelCount"></span></button>
+            </div>
+        </div>
+
+        <div class="er-toolbar">
+            <select id="erProject" class="er-select">
+                <option value="">All Projects</option>
+                @foreach (var p in projects)
+                {
+                    <option value="@p.ProjectNumber">@p.ProjectNumber - @p.ProjectName</option>
+                }
+            </select>
+
+            <input id="erSearch" type="text" class="er-input" placeholder="Search design name..." />
+
+            <select id="erType" class="er-select" style="min-width:190px;">
+                <option value="">All Scrubber Types</option>
+                @foreach (var t in types)
+                {
+                    <option value="@t">@t</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="er-table-wrap">
+        <table class="er-table">
+            <thead>
+                <tr>
+                    <th class="er-center" style="width:40px;"><input type="checkbox" id="erSelectAll" /></th>
+                    <th>Project #</th>
+                    <th>Project Name</th>
+                    <th>Design Name</th>
+                    <th>Type</th>
+                    <th class="er-right">Removal %</th>
+                    <th class="er-right">Pressure Drop (Pa)</th>
+                    <th class="er-center">Updated</th>
+                    <th class="er-center">Export</th>
+                </tr>
+            </thead>
+            <tbody id="erRows">
+                @foreach (var r in Model)
+                {
+                    var typeClass = r.ScrubberType == "PackedTower" ? "packed"
+                                  : r.ScrubberType == "ImpingementPlate" ? "plate" : "";
+                    <tr class="@(r.IsCalculated ? "" : "er-pending-row")"
+                        data-id="@r.DesignId"
+                        data-project="@r.ProjectNumber"
+                        data-type="@r.ScrubberType"
+                        data-design="@r.DesignName.ToLowerInvariant()">
+                        <td class="er-center">
+                            <input type="checkbox" class="er-check" value="@r.DesignId" @(r.IsCalculated ? "" : "disabled") />
+                        </td>
+                        <td class="er-projno">@r.ProjectNumber</td>
+                        <td class="er-projname">@r.ProjectName</td>
+                        <td>@r.DesignName</td>
+                        <td><span class="er-type @typeClass">@r.ScrubberType</span></td>
+                        <td class="er-right er-mono er-removal">@(r.IsCalculated ? r.RemovalEfficiency.ToString("N2") + "%" : "-")</td>
+                        <td class="er-right er-mono">@(r.IsCalculated ? r.PressureDrop.ToString("N0") : "-")</td>
+                        <td class="er-center" style="white-space:nowrap;">@r.UpdatedAt.ToString("dd MMM yyyy")</td>
+                        <td class="er-center" style="white-space:nowrap;">
+                            @if (r.IsCalculated)
+                            {
+                                <a asp-controller="Report" asp-action="Export" asp-route-designId="@r.DesignId" asp-route-format="pdf" class="er-btn">PDF</a>
+                                <a asp-controller="Report" asp-action="Export" asp-route-designId="@r.DesignId" asp-route-format="docx" class="er-btn">Word</a>
+                                <a asp-controller="Report" asp-action="Export" asp-route-designId="@r.DesignId" asp-route-format="xlsx" class="er-btn">Excel</a>
+                            }
+                            else
+                            {
+                                <span class="er-pending">Calculation Pending</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div id="erEmpty" class="er-empty er-hidden">No designs match the filters.</div>
+    </div>
+
+    <div class="er-foot">
+        <div id="erInfo"></div>
+        <div class="er-pager" id="erPager"></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var PAGE_SIZE = 10;
+            var batchUrl = '@Url.Action("ExportBatch", "Report")';
+
+            var rows = Array.prototype.slice.call(document.querySelectorAll('#erRows tr'));
+            var projSel = document.getElementById('erProject');
+            var typeSel = document.getElementById('erType');
+            var search = document.getElementById('erSearch');
+            var selectAll = document.getElementById('erSelectAll');
+            var batchBtn = document.getElementById('erBatchBtn');
+            var batchFmt = document.getElementById('erBatchFormat');
+            var selCount = document.getElementById('erSelCount');
+            var info = document.getElementById('erInfo');
+            var pager = document.getElementById('erPager');
+            var empty = document.getElementById('erEmpty');
+            var total = document.getElementById('erTotal');
+
+            var page = 1;
+            var filtered = rows.slice();
+
+            function applyFilter() {
+                var proj = projSel.value;
+                var type = typeSel.value;
+                var q = search.value.trim().toLowerCase();
+
+                filtered = rows.filter(function (tr) {
+                    return (!proj || tr.dataset.project === proj) &&
+                           (!type || tr.dataset.type === type) &&
+                           (!q || tr.dataset.design.indexOf(q) !== -1);
+                });
+
+                page = 1;
+                render();
+            }
+
+            function render() {
+                var pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+                if (page > pages) page = pages;
+
+                var start = (page - 1) * PAGE_SIZE;
+                var end = start + PAGE_SIZE;
+
+                rows.forEach(function (tr) { tr.style.display = 'none'; });
+                filtered.slice(start, end).forEach(function (tr) { tr.style.display = ''; });
+
+                total.textContent = filtered.length;
+                empty.classList.toggle('er-hidden', filtered.length !== 0);
+
+                info.textContent = filtered.length === 0
+                    ? 'No design reports'
+                    : 'Showing ' + (start + 1) + '-' + Math.min(end, filtered.length) + ' of ' + filtered.length + ' design reports';
+
+                pager.innerHTML = '';
+                addPageBtn('Previous', page - 1, page === 1, false);
+                for (var i = 1; i <= pages; i++) addPageBtn(String(i), i, false, i === page);
+                addPageBtn('Next', page + 1, page === pages, false);
+            }
+
+            function addPageBtn(label, target, disabled, active) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'er-page' + (active ? ' active' : '');
+                b.textContent = label;
+                b.disabled = disabled;
+                b.addEventListener('click', function () { page = target; render(); });
+                pager.appendChild(b);
+            }
+
+            function checked() {
+                return Array.prototype.slice.call(document.querySelectorAll('.er-check:checked'));
+            }
+
+            function updateBatch() {
+                var n = checked().length;
+                batchBtn.disabled = n === 0;
+                selCount.textContent = n > 0 ? '(' + n + ')' : '';
+            }
+
+            selectAll.addEventListener('change', function () {
+                var visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+                visible.forEach(function (tr) {
+                    var cb = tr.querySelector('.er-check');
+                    if (cb && !cb.disabled) cb.checked = selectAll.checked;
+                });
+                updateBatch();
+            });
+
+            document.getElementById('erRows').addEventListener('change', function (e) {
+                if (e.target.classList.contains('er-check')) updateBatch();
+            });
+
+            batchBtn.addEventListener('click', function () {
+                var ids = checked().map(function (cb) { return cb.value; }).join(',');
+                if (!ids) return;
+                window.location.href = batchUrl + '?ids=' + encodeURIComponent(ids) + '&format=' + encodeURIComponent(batchFmt.value);
+            });
+
+            projSel.addEventListener('change', applyFilter);
+            typeSel.addEventListener('change', applyFilter);
+            search.addEventListener('input', applyFilter);
+
+            applyFilter();
+        })();
+    </script>
+}

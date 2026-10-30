@@ -1,7 +1,7 @@
-@model WetScrubber.Models.ReportReviewViewModel
+﻿@model WetScrubber.Models.ReportReviewViewModel
 @{
     ViewData["Title"] = "Report Review";
-    ViewData["ActivePage"] = "ExportReports";
+    ViewData["ActivePage"] = "Reports";
 
     var statusBadgeClass = Model.Status switch
     {
@@ -57,6 +57,12 @@
 }
 
 @section TopbarActions {
+    <a asp-controller="Report" asp-action="Export" asp-route-designId="@Model.DesignId" asp-route-format="pdf"
+       class="btn-cancel" style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">Export PDF</a>
+    <a asp-controller="Report" asp-action="Export" asp-route-designId="@Model.DesignId" asp-route-format="docx"
+       class="btn-cancel" style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">Export Word</a>
+    <a asp-controller="Report" asp-action="Export" asp-route-designId="@Model.DesignId" asp-route-format="xlsx"
+       class="btn-cancel" style="height:34px;padding:0 14px;font-size:12.5px;display:flex;align-items:center;">Export Excel</a>
     <a asp-controller="Scrubber" asp-action="DesignDetail"
        asp-route-id="@Model.DesignId"
        class="btn-cancel"

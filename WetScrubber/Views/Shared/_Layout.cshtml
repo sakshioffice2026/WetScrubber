@@ -27,6 +27,10 @@
 
     <!-- Page-specific styles injected by each view -->
     @await RenderSectionAsync("Styles", required: false)
+    <style>
+        .topbar-back { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; margin-right:14px; font-size:12.5px; font-weight:600; color:#334155; background:#fff; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; }
+        .topbar-back:hover { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
+    </style>
 </head>
 <body>
 
@@ -94,7 +98,7 @@
                     <span class="sb-item-label">Flowsheets</span>
                 </a>
 
-                <a asp-controller="Project" asp-action="Index"
+                <a asp-controller="Report" asp-action="Index"
                    class="sb-item @(activePage == "Reports" ? "active" : "")">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /><path d="M10 9H8" /><path d="M16 13H8" /><path d="M16 17H8" />
@@ -167,6 +171,14 @@
 
             <!-- Topbar -->
             <div class="topbar">
+                @if (activePage != "Dashboard")
+                {
+                    <button type="button" class="topbar-back" title="Go back"
+                            onclick="if (history.length > 1) { history.back(); } else { window.location.href = '/'; }">
+                        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+                        Back
+                    </button>
+                }
                 <div class="topbar-title">@ViewData["Title"]</div>
                 <div class="topbar-right">
 

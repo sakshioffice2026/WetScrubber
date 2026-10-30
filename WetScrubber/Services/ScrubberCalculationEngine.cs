@@ -3425,6 +3425,9 @@ namespace WetScrubber.Services
         public double ImpingementPlatePressureDropPa { get; set; }
         public double ImpingementPlateRemovalEfficiencyPercent { get; set; }
         public double ImpingementPlateCutDiameterMicron { get; set; }
+        public double ImpingementPlateParticulateEfficiencyPercent { get; set; }
+        public double ImpingementPlatePredictedCutDiameterMicron { get; set; }
+        public bool ImpingementPlateRemovalIsReactiveUpperBound { get; set; }
         public List<string> Warnings { get; set; } = new();
 
         // ── Wet cyclone results (zero / null for other scrubber types) ──
