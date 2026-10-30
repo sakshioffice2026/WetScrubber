@@ -113,6 +113,116 @@
         el.send.disabled = state;
         el.optimize.disabled = state;
         el.input.disabled = state;
+        el.log.setAttribute('aria-busy', state ? 'true' : 'false');
+    }
+
+    // ── Typing / pending / error states ─────────────────────────
+
+    function stopTimers(node) {
+        if (node && node._slowTimer) {
+            clearTimeout(node._slowTimer);
+            node._slowTimer = null;
+        }
+    }
+
+    // Shows an animated "typing" indicator inside an AI message bubble.
+    function showTyping(node, label) {
+        stopTimers(node);
+        clear(node);
+
+        node.classList.remove('msg-error');
+        node.classList.add('msg-pending');
+
+        var dots = document.createElement('span');
+        dots.className = 'typing-dots';
+        dots.setAttribute('aria-hidden', 'true');
+
+        for (var i = 0; i < 3; i++) {
+            dots.appendChild(document.createElement('span'));
+        }
+
+        var text = document.createElement('span');
+        text.className = 'typing-label';
+        text.textContent = label;
+
+        node.appendChild(dots);
+        node.appendChild(text);
+
+        // Reassure the user if the model takes a while.
+        node._slowTimer = setTimeout(function () {
+            text.textContent = label + ' — still working…';
+        }, 8000);
+
+        el.log.scrollTop = el.log.scrollHeight;
+    }
+
+    function finishPending(node) {
+        stopTimers(node);
+        node.classList.remove('msg-pending');
+        node.classList.remove('msg-error');
+    }
+
+    function friendlyError(err) {
+        if (err && err.status === 401) {
+            return 'Your session has expired. Please sign in again.';
+        }
+
+        if (err && err.status === 429) {
+            return 'Too many requests. Please wait a moment and try again.';
+        }
+
+        if (err && err.status >= 500) {
+            return 'The assistant ran into a problem on the server. Please try again.';
+        }
+
+        if (err && err.status) {
+            return err.message || 'The request could not be completed.';
+        }
+
+        return 'Could not reach the server. Check your connection and try again.';
+    }
+
+    // Replaces the bubble content with an error and an optional Retry button.
+    function showError(node, err, retryFn) {
+        stopTimers(node);
+        clear(node);
+
+        node.classList.remove('msg-pending');
+        node.classList.add('msg-error');
+        node.setAttribute('role', 'alert');
+
+        var text = document.createElement('div');
+        text.className = 'msg-error-text';
+        text.textContent = friendlyError(err);
+        node.appendChild(text);
+
+        var canRetry = retryFn && !(err && (err.status === 401 || err.status === 403));
+
+        if (canRetry) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'msg-retry';
+            btn.textContent = 'Retry';
+
+            btn.addEventListener('click', function () {
+                if (busy) {
+                    return;
+                }
+
+                node.removeAttribute('role');
+                retryFn(node);
+            });
+
+            node.appendChild(btn);
+        }
+
+        el.log.scrollTop = el.log.scrollHeight;
+    }
+
+    function afterRequest() {
+        setBusy(false);
+        el.input.focus();
+        el.log.scrollTop = el.log.scrollHeight;
     }
 
     function postJson(url, body) {
@@ -427,16 +537,19 @@
 
         addMessage(text, 'msg-user');
         el.input.value = '';
-        setBusy(true);
 
-        var pending =
-            addMessage('Thinking…', 'msg-ai msg-pending');
+        requestChat(text, addMessage('', 'msg-ai'));
+    }
+
+    function requestChat(text, pending) {
+        setBusy(true);
+        showTyping(pending, 'Thinking');
 
         postJson(cfg.chatUrl, {
             message: text
         })
             .then(function (data) {
-                pending.classList.remove('msg-pending');
+                finishPending(pending);
                 pending.textContent = data.message || '';
 
                 renderDraft(data.draft);
@@ -445,19 +558,11 @@
                 updateConfirm(data);
             })
             .catch(function (err) {
-                pending.classList.remove('msg-pending');
-                pending.classList.add('msg-error');
-
-                pending.textContent =
-                    err.status === 401
-                        ? 'Your session has expired. Please log in again.'
-                        : err.message;
+                showError(pending, err, function (node) {
+                    requestChat(text, node);
+                });
             })
-            .then(function () {
-                setBusy(false);
-                el.input.focus();
-                el.log.scrollTop = el.log.scrollHeight;
-            });
+            .then(afterRequest);
     }
 
     function optimizeDesign() {
@@ -465,16 +570,18 @@
             return;
         }
 
-        setBusy(true);
+        requestOptimize(addMessage('', 'msg-ai'));
+    }
 
-        var pending =
-            addMessage('Optimizing the design…', 'msg-ai msg-pending');
+    function requestOptimize(pending) {
+        setBusy(true);
+        showTyping(pending, 'Optimizing the design');
 
         postJson(cfg.optimizeUrl, {
             projectId: cfg.projectId
         })
             .then(function (data) {
-                pending.classList.remove('msg-pending');
+                finishPending(pending);
                 pending.textContent =
                     data.message || 'Optimization completed.';
 
@@ -491,21 +598,18 @@
                 updateConfirm(data);
             })
             .catch(function (err) {
-                pending.classList.remove('msg-pending');
-                pending.classList.add('msg-error');
-                pending.textContent = err.message;
+                showError(pending, err, requestOptimize);
             })
-            .then(function () {
-                setBusy(false);
-                el.input.focus();
-                el.log.scrollTop = el.log.scrollHeight;
-            });
+            .then(afterRequest);
     }
 
     function resetDesign() {
         if (busy) {
             return;
         }
+
+        setBusy(true);
+        el.reset.disabled = true;
 
         postJson(cfg.resetUrl, {})
             .then(function () {
@@ -527,10 +631,18 @@
                 el.confirm.disabled = true;
             })
             .catch(function (err) {
-                addMessage(
-                    err.message,
-                    'msg-ai msg-error'
-                );
+                var node = addMessage('', 'msg-ai');
+                showError(node, err, function (retryNode) {
+                    if (retryNode.parentNode) {
+                        retryNode.parentNode.removeChild(retryNode);
+                    }
+
+                    resetDesign();
+                });
+            })
+            .then(function () {
+                el.reset.disabled = false;
+                afterRequest();
             });
     }
 
@@ -550,7 +662,10 @@
     }
 
     function saveDesign() {
+        var originalLabel = el.modalSave.textContent;
+
         el.modalSave.disabled = true;
+        el.modalSave.textContent = 'Saving…';
         el.modalError.hidden = true;
 
         postJson(cfg.saveUrl, {
@@ -566,13 +681,13 @@
                 }
             })
             .catch(function (err) {
-                el.modalError.textContent =
-                    err.message;
+                el.modalError.textContent = friendlyError(err);
 
                 el.modalError.hidden = false;
             })
             .then(function () {
                 el.modalSave.disabled = false;
+                el.modalSave.textContent = originalLabel;
             });
     }
 

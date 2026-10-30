@@ -90,7 +90,8 @@
               asp-route-id="@Model.DesignId" method="post" style="margin:0;">
             @Html.AntiForgeryToken()
             <button type="submit" class="btn-delete-project"
-                    onclick="return confirm('Delete this design? This cannot be undone.')">
+                    data-ws-confirm="Delete this design? This cannot be undone."
+                    data-ws-confirm-title="Delete design" data-ws-confirm-ok="Delete" data-ws-confirm-danger="true">
                 <svg viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z" /></svg>
                 Delete
             </button>

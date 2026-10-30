@@ -15,6 +15,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] — WetScrubber Pro</title>
+    <meta name="description" content="WetScrubber Pro — design, simulate and report wet scrubber systems." />
+    <meta name="theme-color" content="#0b1120" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2310b981'/%3E%3Cpath d='M12 4C9 4 7 6.2 7 9c0 3.6 5 9 5 9s5-5.4 5-9c0-2.8-2-5-5-5z' fill='none' stroke='%230b1120' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='9' r='1.8' fill='%230b1120'/%3E%3C/svg%3E" />
 
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,18 +36,23 @@
     <style>
         .topbar-back { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; margin-right:14px; font-size:12.5px; font-weight:600; color:#334155; background:#fff; border:1px solid #e2e8f0; border-radius:8px; cursor:pointer; }
         .topbar-back:hover { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
+        .topbar-back:focus-visible, .sb-item:focus-visible, .sb-logout:focus-visible, .topbar-icon-btn:focus-visible { outline:2px solid #10b981; outline-offset:2px; }
+        .skip-link { position:absolute; left:-9999px; top:8px; z-index:10003; padding:8px 14px; background:#10b981; color:#fff; font-weight:600; font-size:13px; border-radius:8px; text-decoration:none; }
+        .skip-link:focus { left:8px; }
     </style>
 </head>
 <body>
+
+    <a href="#main-content" class="skip-link">Skip to main content</a>
 
     <div class="shell">
 
         <!-- ═══════════════════════════════════════════════
              SIDEBAR  — rendered once here for all pages
         ════════════════════════════════════════════════ -->
-        <nav class="sb" id="sidebar">
+        <nav class="sb" id="sidebar" aria-label="Main navigation">
 
-            <div class="sb-toggle" id="sbToggle">
+            <div class="sb-toggle" id="sbToggle" role="button" tabindex="0" aria-label="Collapse or expand sidebar">
                 <svg viewBox="0 0 10 10" fill="none">
                     <path d="M3 2l4 3-4 3" stroke="#888" stroke-width="1.5"
                           stroke-linecap="round" stroke-linejoin="round" />
@@ -188,7 +196,7 @@
                     @* Each view can inject topbar buttons here *@
                     @await RenderSectionAsync("TopbarActions", required: false)
 
-                    <div class="topbar-icon-btn" title="Notifications">
+                    <div class="topbar-icon-btn" title="Notifications" role="button" tabindex="0" aria-label="Notifications">
                         <svg viewBox="0 0 16 16" fill="currentColor">
                             <path d="M8 1a5 5 0 00-5 5v3L1.5 11.5h13L13 9V6a5 5 0 00-5-5zm0 14a2 2 0 002-2H6a2 2 0 002 2z" />
                         </svg>
@@ -198,28 +206,51 @@
             </div>
 
             <!-- Page body — each view renders here -->
-            <div class="page-body">
+            <main class="page-body" id="main-content" tabindex="-1">
 
-                @* Flash messages — available on every page *@
-                @if (TempData["Success"] != null)
-                {
-                    <div class="flash-toast flash-success">✓ @TempData["Success"]</div>
+                @* Flash messages — shown as toasts by site.js; plain fallback when JS is off *@
+                @{
+                    var flashSuccess = TempData["Success"]?.ToString();
+                    var flashError = TempData["Error"]?.ToString();
                 }
-                @if (TempData["Error"] != null)
-                {
-                    <div class="flash-toast flash-error">⚠ @TempData["Error"]</div>
-                }
+                <noscript>
+                    @if (flashSuccess != null)
+                    {
+                        <div class="flash-toast flash-success">✓ @flashSuccess</div>
+                    }
+                    @if (flashError != null)
+                    {
+                        <div class="flash-toast flash-error">⚠ @flashError</div>
+                    }
+                </noscript>
 
                 @RenderBody()
 
-            </div>
+            </main>
         </div>
 
     </div>
 
     <!-- jQuery + shared JS -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
     <script src="~/js/dashboard.js"></script>
+
+    @if (flashSuccess != null || flashError != null)
+    {
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                @if (flashSuccess != null)
+                {
+                    @:WS.toast(@Json.Serialize(flashSuccess), 'success');
+                }
+                @if (flashError != null)
+                {
+                    @:WS.toast(@Json.Serialize(flashError), 'error');
+                }
+            });
+        </script>
+    }
 
     @* Page-specific scripts injected by each view *@
     @if (Context.Session.GetInt32("UserId") != null)

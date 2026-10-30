@@ -16,7 +16,7 @@
 </div>
 
 <div class="form-page-wrap">
-    <form asp-action="Create" asp-controller="Project" method="post" id="projectForm">
+    <form asp-action="Create" asp-controller="Project" method="post" id="projectForm" data-ws-loading="Creating project…">
         @Html.AntiForgeryToken()
 
         <!-- Card 1: Project Identity -->

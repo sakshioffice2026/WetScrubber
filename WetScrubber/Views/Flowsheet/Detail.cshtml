@@ -211,7 +211,7 @@
                             <td>@u.Type</td>
                             <td><code style="font-size:12px;">@u.ConfigJson</code></td>
                             <td>
-                                <form asp-action="DeleteUnit" method="post" onsubmit="return confirm('Remove unit @u.Name?');">
+                                <form asp-action="DeleteUnit" method="post" data-ws-confirm="Remove unit @u.Name from this flowsheet?" data-ws-confirm-title="Remove unit" data-ws-confirm-ok="Remove" data-ws-confirm-danger="true">
                                     @Html.AntiForgeryToken()
                                     <input type="hidden" name="id" value="@u.Id" />
                                     <input type="hidden" name="flowsheetId" value="@Model.Id" />
@@ -355,7 +355,7 @@
                                 </span>
                             </td>
                             <td>
-                                <form asp-action="DeleteConnection" method="post">
+                                <form asp-action="DeleteConnection" method="post" data-ws-confirm="Remove this connection?" data-ws-confirm-title="Remove connection" data-ws-confirm-ok="Remove" data-ws-confirm-danger="true">
                                     @Html.AntiForgeryToken()
                                     <input type="hidden" name="id" value="@c.Id" />
                                     <input type="hidden" name="flowsheetId" value="@Model.Id" />
@@ -441,7 +441,7 @@
             <div class="run-locked">Add at least one piece of equipment in Step 1 before running.</div>
         }
 
-        <form asp-action="Run" method="post" class="flowsheet-inline-form">
+        <form asp-action="Run" method="post" class="flowsheet-inline-form" data-ws-loading="Solving flowsheet…">
             @Html.AntiForgeryToken()
             <input type="hidden" name="Id" value="@Model.Id" />
 
@@ -615,7 +615,15 @@
         /* ---------- Load example ---------- */
         var ex = document.getElementById('btnExample');
         ex.addEventListener('click', function () {
-            if (!confirm('Add 3 example machines (Cooler, Scrubber, Mist Eliminator) to this flowsheet?')) return;
+            var msg = 'Add 3 example machines (Cooler, Scrubber, Mist Eliminator) to this flowsheet?';
+            if (window.WS && typeof WS.confirm === 'function') {
+                WS.confirm({ title: 'Load example', message: msg, confirmText: 'Add machines' })
+                    .then(function (ok) { if (ok) runExample(); });
+            } else if (window.confirm(msg)) {
+                runExample();
+            }
+        });
+        function runExample() {
             var tokenEl = document.querySelector('input[name="__RequestVerificationToken"]');
             if (!tokenEl) return;
             var fid = ex.getAttribute('data-fid');
@@ -646,7 +654,12 @@
                 });
             });
             chain.then(function () { window.location.reload(); })
-                 .catch(function () { ex.disabled = false; ex.textContent = 'Load example'; alert('Could not load example. Please try again.'); });
-        });
+                 .catch(function () {
+                     ex.disabled = false;
+                     ex.textContent = 'Load example';
+                     if (window.WS && typeof WS.toast === 'function') { WS.toast('Could not load the example. Please try again.', 'error'); }
+                     else { window.alert('Could not load the example. Please try again.'); }
+                 });
+        }
     })();
 </script>

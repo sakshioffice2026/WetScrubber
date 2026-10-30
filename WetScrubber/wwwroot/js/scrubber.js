@@ -110,7 +110,11 @@ $(document).ready(function () {
     $(document).on('click', '.btn-remove-pollutant', function () {
         var rowCount = $('.pollutant-row').length;
         if (rowCount <= 1) {
-            alert('At least one pollutant is required.');
+            if (window.WS && typeof WS.toast === 'function') {
+                WS.toast('At least one pollutant is required.', 'warning');
+            } else {
+                window.alert('At least one pollutant is required.');
+            }
             return;
         }
         $(this).closest('.pollutant-row').remove();

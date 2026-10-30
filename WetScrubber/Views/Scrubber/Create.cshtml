@@ -86,7 +86,7 @@
     </div>
 </div>
 
-<form asp-action="Create" asp-controller="Scrubber" method="post" id="designForm">
+<form asp-action="Create" asp-controller="Scrubber" method="post" id="designForm" data-ws-loading="Saving design and running calculations…">
     @Html.AntiForgeryToken()
 
     <div asp-validation-summary="All"

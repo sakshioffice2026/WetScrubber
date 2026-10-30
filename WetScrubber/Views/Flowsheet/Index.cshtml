@@ -67,7 +67,8 @@
                                     </a>
 
                                     <form asp-action="Delete" asp-route-id="@f.Id" method="post"
-                                          onsubmit="return confirm('Delete flowsheet @f.Name? This removes all its unit operations and connections.');"
+                                          data-ws-confirm="Delete flowsheet @f.Name? This removes all its unit operations and connections."
+                                          data-ws-confirm-title="Delete flowsheet" data-ws-confirm-ok="Delete" data-ws-confirm-danger="true"
                                           style="display:inline;">
                                         @Html.AntiForgeryToken()
                                         <button type="submit" class="action-btn delete" title="Delete">

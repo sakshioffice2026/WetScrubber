@@ -63,14 +63,14 @@ $(document).ready(function () {
 
         var html = '';
         $.each(values, function (i, val) {
-            var barH    = maxVal > 0 ? Math.round((val / maxVal) * maxHeight) : 4;
-            var isLast  = (i === values.length - 1);
-            var active  = isLast ? ' active' : '';
+            var barH = maxVal > 0 ? Math.round((val / maxVal) * maxHeight) : 4;
+            var isLast = (i === values.length - 1);
+            var active = isLast ? ' active' : '';
 
             html += '<div class="bar-col">' +
-                        '<div class="bar-rect' + active + '" style="height:' + barH + 'px" title="' + val + ' designs"></div>' +
-                        '<div class="bar-month">' + months[i] + '</div>' +
-                    '</div>';
+                '<div class="bar-rect' + active + '" style="height:' + barH + 'px" title="' + val + ' designs"></div>' +
+                '<div class="bar-month">' + months[i] + '</div>' +
+                '</div>';
         });
 
         $chart.html(html);
@@ -106,17 +106,38 @@ $(document).ready(function () {
     // ─────────────────────────────────────────────────────────────
     // 5. TABLE ROW CLICK — navigate to project detail
     // ─────────────────────────────────────────────────────────────
-    $('.projects-table tbody tr[data-href]').on('click', function () {
-        window.location.href = $(this).data('href');
-    }).css('cursor', 'pointer');
+    $('.projects-table tbody tr[data-href]')
+        .attr('tabindex', '0')
+        .on('click', function (e) {
+            if ($(e.target).closest('a, button, input, select, textarea, label').length) return;
+            window.location.href = $(this).data('href');
+        })
+        .on('keydown', function (e) {
+            if (e.key === 'Enter' && e.target === this) {
+                window.location.href = $(this).data('href');
+            }
+        })
+        .css('cursor', 'pointer');
 
 
     // ─────────────────────────────────────────────────────────────
-    // 6. LOGOUT CONFIRM
+    // 6. LOGOUT CONFIRM  (styled dialog; falls back to native confirm)
     // ─────────────────────────────────────────────────────────────
     $('#logoutBtn').on('click', function (e) {
-        if (!confirm('Are you sure you want to sign out?')) {
-            e.preventDefault();
+        e.preventDefault();
+        var form = $(this).closest('form')[0];
+
+        if (window.WS && typeof WS.confirm === 'function') {
+            WS.confirm({
+                title: 'Sign out',
+                message: 'Are you sure you want to sign out?',
+                confirmText: 'Sign out',
+                cancelText: 'Stay signed in'
+            }).then(function (ok) {
+                if (ok && form) form.submit();
+            });
+        } else if (window.confirm('Are you sure you want to sign out?') && form) {
+            form.submit();
         }
     });
 

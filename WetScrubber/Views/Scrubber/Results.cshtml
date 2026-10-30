@@ -11,6 +11,32 @@
     var isImpingement = scrubberType.Contains("Impingement", StringComparison.OrdinalIgnoreCase);
         var isParticulateOnly = isVenturi || isWetCyclone;
     var isPreviewType = isImpingement;
+
+    // ── Verdict / severity (drives the banner and KPI colours) ──
+    var verdictTarget = design?.Pollutants?.FirstOrDefault()?.TargetRemovalEfficiency ?? 0.0;
+    var targetApplies = !isParticulateOnly && !isImpingement && verdictTarget > 0;
+    var meetsTarget = calcResult != null && calcResult.RemovalEfficiency >= verdictTarget - 0.005;
+    var noteCount = calcResult?.Warnings?.Count() ?? 0;
+    var verdictReasons = new List<string>();
+    if (calcResult != null)
+    {
+        if (calcResult.ExceedsRecommendedFlood) { verdictReasons.Add("flooding is above the recommended 70% limit"); }
+        if (targetApplies && !meetsTarget) { verdictReasons.Add($"removal efficiency is below the {verdictTarget:F2}% target"); }
+    }
+    var verdictLevel = calcResult == null ? "warn"
+        : !calcResult.IsFeasible ? "crit"
+        : verdictReasons.Count > 0 ? "warn"
+        : (noteCount > 0 || isPreviewType) ? "info"
+        : "ok";
+    var verdictTitle = verdictLevel == "crit" ? "Design not feasible"
+        : verdictLevel == "warn" ? "Review required"
+        : verdictLevel == "info" ? "Acceptable — review notes"
+        : "All checks passed";
+    var verdictIcon = verdictLevel == "crit" ? "✕" : verdictLevel == "warn" ? "!" : verdictLevel == "info" ? "i" : "✓";
+    var verdictText = verdictLevel == "crit" ? (calcResult?.InfeasibilityReason ?? "One or more design checks failed.")
+        : verdictLevel == "warn" ? (verdictReasons.Count > 0 ? "Please review: " + string.Join("; ", verdictReasons) + "." : "Results could not be evaluated.")
+        : verdictLevel == "info" ? "No blocking issues were found. See the calculation notes and limitations below."
+        : "No feasibility or hydraulic issues were detected for this design.";
 }
 
 @section Styles {
@@ -34,11 +60,9 @@
     <span>Results</span>
 </div>
 
-@if (TempData["Success"] != null) { <div style="background:#e8f5e9;border-left:4px solid #00d28c;padding:12px;margin-bottom:16px;border-radius:4px;">✓ @TempData["Success"]</div> }
-@if (TempData["Error"] != null) { <div style="background:#ffebee;border-left:4px solid #ff6b6b;padding:12px;margin-bottom:16px;border-radius:4px;">✗ @TempData["Error"]</div> }
 @if (isPreviewType)
 {
-    <div style="background:#fff8e1;border-left:4px solid #f59e0b;padding:12px;margin-bottom:16px;border-radius:4px;color:#7c4a03;font-size:13px;">
+    <div class="results-alert results-alert-warning" role="note">
         <strong>Preview — not yet validated.</strong>
         @if (isWetCyclone) { <span> Particulate collection only; gas absorption is not modeled for this scrubber type.</span> }
         @if (isImpingement) { <span> Plate hydraulics and stage removal are screening estimates until benchmarks pass.</span> }
@@ -52,18 +76,65 @@
         <div class="results-subtitle">@design.ProjectNumber · @design.ProjectName · Calculated @DateTime.UtcNow.ToString("dd MMM yyyy, hh:mm tt") UTC</div>
     </div>
     <div class="results-header-actions">
-        <form asp-controller="Scrubber" asp-action="RunCalculation" asp-route-id="@design.DesignId" method="post" style="margin:0;">
+        <form asp-controller="Scrubber" asp-action="RunCalculation" asp-route-id="@design.DesignId" method="post" style="margin:0;" data-ws-loading="Re-running calculation…">
             @Html.AntiForgeryToken()
             <button type="submit" class="btn-recalc"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6V2z" /></svg> Re-run</button>
         </form>
     </div>
 </div>
+
+<section class="verdict-banner verdict-@verdictLevel" role="status" aria-label="Design verdict">
+    <div class="verdict-main">
+        <span class="verdict-icon" aria-hidden="true">@verdictIcon</span>
+        <div>
+            <div class="verdict-title">@verdictTitle</div>
+            <div class="verdict-text">@verdictText</div>
+        </div>
+    </div>
+    @if (calcResult != null)
+    {
+        <div class="verdict-stats">
+            <div class="verdict-stat">
+                <span class="verdict-stat-label">@(isParticulateOnly ? "Collection" : "Removal")</span>
+                <span class="verdict-stat-value">@calcResult.RemovalEfficiency.ToString("F2")<small>%</small></span>
+            </div>
+            <div class="verdict-stat">
+                <span class="verdict-stat-label">Pressure drop</span>
+                <span class="verdict-stat-value">@calcResult.PressureDrop.ToString("N0")<small>Pa</small></span>
+            </div>
+            <div class="verdict-stat">
+                <span class="verdict-stat-label">Total power</span>
+                <span class="verdict-stat-value">@calcResult.TotalPowerKW.ToString("F2")<small>kW</small></span>
+            </div>
+            @if (calcResult.UsesFloodingMetrics && (isPackedTower || (isImpingement && calcResult.PercentFlood > 0)))
+            {
+                <div class="verdict-stat">
+                    <span class="verdict-stat-label">Flooding</span>
+                    <span class="verdict-stat-value">@calcResult.PercentFlood.ToString("F1")<small>%</small></span>
+                </div>
+            }
+        </div>
+        <div class="verdict-checks">
+            <span class="check-chip @(calcResult.IsFeasible ? "chip-ok" : "chip-crit")">@(calcResult.IsFeasible ? "✓" : "✕") Feasibility</span>
+            @if (targetApplies)
+            {
+                <span class="check-chip @(meetsTarget ? "chip-ok" : "chip-warn")">@(meetsTarget ? "✓" : "!") Target @verdictTarget.ToString("F2")%</span>
+            }
+            @if (calcResult.UsesFloodingMetrics && (isPackedTower || (isImpingement && calcResult.PercentFlood > 0)))
+            {
+                <span class="check-chip @(calcResult.ExceedsRecommendedFlood ? "chip-warn" : "chip-ok")">@(calcResult.ExceedsRecommendedFlood ? "!" : "✓") Flooding</span>
+            }
+            <span class="check-chip @(noteCount > 0 ? "chip-info" : "chip-ok")">@(noteCount > 0 ? "i" : "✓") @noteCount @(noteCount == 1 ? "note" : "notes")</span>
+        </div>
+    }
+</section>
+
 <partial name="_DesignActionBar" model="design" />
 
 <section class="kpi-section">
     <div class="kpi-section-title">Process &amp; Operating Performance</div>
     <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3 results-kpi-row">
-        <div class="col"><div class="result-kpi h-100 kpi-emerald">
+        <div class="col"><div class="result-kpi h-100 kpi-emerald@(targetApplies ? (meetsTarget ? " kpi-sev-ok" : " kpi-sev-warn") : "")">
             <div class="result-kpi-label">@(isParticulateOnly ? "Particle Collection Estimate" : "Removal Efficiency")</div>
             <div class="result-kpi-value">@calcResult!.RemovalEfficiency.ToString("F2")<span class="result-kpi-unit">%</span></div>
             @{ var targetEff = design.Pollutants.FirstOrDefault()?.TargetRemovalEfficiency ?? 0.0; }
@@ -144,13 +215,19 @@ else if (isSprayTower && calcResult.SprayTowerNTU > 0)
 
 @if (calcResult.Warnings?.Any() == true)
 {
-    <div class="results-data-card" style="margin-bottom:20px;"><div class="results-data-header"><div class="results-data-title">Calculation Notes &amp; Limitations</div></div><div class="results-data-body">
-        @foreach (var warning in calcResult.Warnings) { <p style="margin:0 0 8px;color:#7c4a03;font-size:13px;">• @warning</p> }
-    </div></div>
+    <div class="results-alert results-alert-warning" role="note">
+        <div class="results-alert-title">Calculation Notes &amp; Limitations</div>
+        <ul class="results-alert-list">
+            @foreach (var warning in calcResult.Warnings) { <li>@warning</li> }
+        </ul>
+    </div>
 }
 @if (!calcResult.IsFeasible)
 {
-    <div class="results-data-card" style="margin-bottom:20px;border-left:4px solid #dc3545;"><div class="results-data-header"><div class="results-data-title">Design Feasibility Warning</div></div><div class="results-data-body"><p style="margin:0;color:#842029;">@(calcResult.InfeasibilityReason ?? "One or more design checks failed. Review the calculation notes above.")</p></div></div>
+    <div class="results-alert results-alert-danger" role="alert">
+        <div class="results-alert-title">Design Feasibility Warning</div>
+        <p class="results-alert-text">@(calcResult.InfeasibilityReason ?? "One or more design checks failed. Review the calculation notes above.")</p>
+    </div>
 }
 
 <div class="results-data-card" style="margin-bottom:20px;">
@@ -204,7 +281,6 @@ else if (isSprayTower && calcResult.SprayTowerNTU > 0)
         var effJson = System.Text.Json.JsonSerializer.Serialize(calcResult.SensitivityPoints.Select(s => Math.Round(s.RemovalEfficiency, 1)));
         var htJson = System.Text.Json.JsonSerializer.Serialize(calcResult.SensitivityPoints.Select(s => Math.Round(s.PackingHeight, 2)));
         <script id="chartData" data-labels="@labelsJson" data-eff="@effJson" data-ht="@htJson"></script>
-        <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
         <script>
             $(function () {

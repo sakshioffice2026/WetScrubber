@@ -327,3 +327,282 @@
         text-align: left;
     }
 }
+
+
+/* ============================================================
+   Severity system — verdict banner, alerts, chips, KPI colours
+   ok = green · info = blue · warn = amber · crit = red
+   ============================================================ */
+:root {
+    --sev-ok-fg: #047857;
+    --sev-ok-bg: #ecfdf5;
+    --sev-ok-bd: #a7f3d0;
+    --sev-info-fg: #1d4ed8;
+    --sev-info-bg: #eff6ff;
+    --sev-info-bd: #bfdbfe;
+    --sev-warn-fg: #92400e;
+    --sev-warn-bg: #fffbeb;
+    --sev-warn-bd: #fde68a;
+    --sev-crit-fg: #b91c1c;
+    --sev-crit-bg: #fef2f2;
+    --sev-crit-bd: #fecaca;
+}
+
+/* ── Verdict banner ─────────────────────────────────────────── */
+.verdict-banner {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr);
+    gap: 14px 24px;
+    align-items: center;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+    border: 1px solid var(--sev-ok-bd);
+    border-left-width: 5px;
+    border-radius: 10px;
+    background: var(--sev-ok-bg);
+    color: var(--sev-ok-fg);
+}
+
+.verdict-info {
+    border-color: var(--sev-info-bd);
+    background: var(--sev-info-bg);
+    color: var(--sev-info-fg);
+}
+
+.verdict-warn {
+    border-color: var(--sev-warn-bd);
+    background: var(--sev-warn-bg);
+    color: var(--sev-warn-fg);
+}
+
+.verdict-crit {
+    border-color: var(--sev-crit-bd);
+    background: var(--sev-crit-bg);
+    color: var(--sev-crit-fg);
+}
+
+.verdict-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+}
+
+.verdict-icon {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: currentColor;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.verdict-banner .verdict-icon {
+    color: #ffffff;
+    background: var(--sev-ok-fg);
+}
+
+.verdict-info .verdict-icon {
+    background: var(--sev-info-fg);
+}
+
+.verdict-warn .verdict-icon {
+    background: #d97706;
+}
+
+.verdict-crit .verdict-icon {
+    background: var(--sev-crit-fg);
+}
+
+.verdict-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+}
+
+.verdict-text {
+    margin-top: 2px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: #334155;
+}
+
+.verdict-stats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px 26px;
+}
+
+.verdict-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 84px;
+}
+
+.verdict-stat-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #64748b;
+}
+
+.verdict-stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.4px;
+    color: #0b1120;
+    line-height: 1.1;
+}
+
+    .verdict-stat-value small {
+        margin-left: 3px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #64748b;
+    }
+
+.verdict-checks {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.check-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 11px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 11.5px;
+    font-weight: 600;
+    background: #ffffff;
+}
+
+.chip-ok {
+    color: var(--sev-ok-fg);
+    border-color: var(--sev-ok-bd);
+}
+
+.chip-info {
+    color: var(--sev-info-fg);
+    border-color: var(--sev-info-bd);
+}
+
+.chip-warn {
+    color: var(--sev-warn-fg);
+    border-color: var(--sev-warn-bd);
+}
+
+.chip-crit {
+    color: var(--sev-crit-fg);
+    border-color: var(--sev-crit-bd);
+}
+
+/* ── Alert boxes (notes, feasibility, preview) ──────────────── */
+.results-alert {
+    margin-bottom: 18px;
+    padding: 14px 18px;
+    border: 1px solid var(--sev-warn-bd);
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: var(--sev-warn-bg);
+    color: var(--sev-warn-fg);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.results-alert-danger {
+    border-color: var(--sev-crit-bd);
+    background: var(--sev-crit-bg);
+    color: var(--sev-crit-fg);
+}
+
+.results-alert-title {
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.results-alert-list {
+    margin: 0;
+    padding-left: 18px;
+}
+
+    .results-alert-list li + li {
+        margin-top: 4px;
+    }
+
+.results-alert-text {
+    margin: 0;
+}
+
+/* ── KPI severity colours (override accent variables) ───────── */
+body .result-kpi.kpi-sev-ok {
+    --kpi-accent: #10b981;
+    --kpi-tint: rgba(16, 185, 129, 0.16);
+    --kpi-badge: #d1fae5;
+    --kpi-icon: #047857;
+}
+
+body .result-kpi.kpi-sev-warn {
+    --kpi-accent: #f59e0b;
+    --kpi-tint: rgba(245, 158, 11, 0.18);
+    --kpi-badge: #fef3c7;
+    --kpi-icon: #b45309;
+}
+
+body .result-kpi.kpi-sev-crit {
+    --kpi-accent: #ef4444;
+    --kpi-tint: rgba(239, 68, 68, 0.16);
+    --kpi-badge: #fee2e2;
+    --kpi-icon: #b91c1c;
+}
+
+/* ── Delta pills and signed values used in the outcomes table ── */
+.value-positive {
+    color: #047857;
+}
+
+.value-negative {
+    color: #b91c1c;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .verdict-banner {
+        grid-template-columns: 1fr;
+    }
+
+    .verdict-stats {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 600px) {
+    .verdict-stat-value {
+        font-size: 19px;
+    }
+
+    .verdict-stat {
+        min-width: 72px;
+    }
+}
+
+@media print {
+    .verdict-banner,
+    .results-alert {
+        break-inside: avoid;
+    }
+}
