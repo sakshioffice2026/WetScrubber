@@ -9,7 +9,6 @@
 
     int pipeTotal = Model.DraftCount + Model.UnderReviewCount + Model.ChangesRequestedCount + Model.ApprovedCount;
     int needsAction = Model.ChangesRequestedCount + Model.UnderReviewCount;
-    int approvalRate = pipeTotal > 0 ? (int)Math.Round(Model.ApprovedCount * 100.0 / pipeTotal) : 0;
     int weekDelta = Model.DesignsThisWeek - Model.DesignsLastWeek;
 
     string Pct(int n) => pipeTotal > 0 ? (n * 100.0 / pipeTotal).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "0";
@@ -45,7 +44,7 @@
     .dx-sub { font-size:.78rem; color:var(--muted); margin-top:2px; }
     .dx-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; gap:10px; }
     .dx-grid2 { display:grid; grid-template-columns:1.05fr 1fr; gap:16px; margin-bottom:16px; }
-    .dx-grid2.rev { grid-template-columns:1.35fr 1fr; }
+    .dx-grid2.single { grid-template-columns:1fr; }
     .dx-empty { text-align:center; color:var(--muted); font-size:.85rem; padding:34px 10px; }
 
     /* hero */
@@ -67,7 +66,7 @@
     .dx-btn.primary:hover { background:#27e0a4; }
 
     /* stat tiles */
-    .dx-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:16px; }
+    .dx-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:16px; }
     .dx-stat { padding:16px 18px; }
     .dx-stat .lbl { font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
     .dx-stat .val { font-size:1.9rem; font-weight:800; color:var(--ink); line-height:1.15; margin-top:4px; }
@@ -102,20 +101,6 @@
     .dx-qi .go { font-size:.78rem; font-weight:700; color:var(--c); white-space:nowrap; }
     .dx-qi .body { min-width:0; }
 
-    /* heatmap + waffle + envelope */
-    .dx-svg { width:100%; height:auto; display:block; }
-    .dx-legend { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:10px; font-size:.76rem; color:var(--muted); }
-    .dx-legend i { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
-    .dx-scale { display:flex; align-items:center; gap:4px; font-size:.7rem; color:var(--muted); margin-top:8px; justify-content:flex-end; }
-    .dx-scale i { width:12px; height:12px; border-radius:3px; display:inline-block; }
-    .dx-waffle { display:grid; grid-template-columns:repeat(10,1fr); gap:4px; max-width:260px; }
-    .dx-waffle i { display:block; aspect-ratio:1; border-radius:4px; background:#eef2f6; transition:transform .12s; }
-    .dx-waffle i:hover { transform:scale(1.18); }
-    .dx-mix { display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap; }
-    .dx-mixlist { flex:1; min-width:150px; display:flex; flex-direction:column; gap:8px; }
-    .dx-mixrow { display:flex; align-items:center; gap:8px; font-size:.82rem; color:var(--ink); }
-    .dx-mixrow i { width:10px; height:10px; border-radius:3px; flex:none; }
-    .dx-mixrow span:last-child { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; }
 
     /* recent project cards */
     .dx-recent { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:14px; }
@@ -128,13 +113,8 @@
     .dx-prog span { display:block; height:100%; background:var(--accent); border-radius:999px; }
     .dx-pc .meta { display:flex; justify-content:space-between; font-size:.74rem; color:var(--muted); margin-top:7px; }
 
-    #dx-tip {
-        position:fixed; z-index:9999; pointer-events:none; opacity:0; transition:opacity .1s; background:#0f172a; color:#fff;
-        padding:8px 11px; border-radius:9px; font-size:.78rem; line-height:1.4; max-width:260px; box-shadow:0 8px 24px rgba(0,0,0,.25);
-    }
-
     @@media (max-width: 1100px) {
-        .dx-grid2, .dx-grid2.rev { grid-template-columns:1fr; }
+        .dx-grid2 { grid-template-columns:1fr; }
         .dx-stats { grid-template-columns:repeat(2,1fr); }
     }
     @@media (max-width: 640px) {
@@ -191,11 +171,6 @@
             <div class="val">@Model.FlowsheetCount</div>
             <span class="dx-chip">Process simulations</span>
         </div>
-        <div class="dx-card dx-stat">
-            <div class="lbl">Sign-off rate</div>
-            <div class="val">@approvalRate%</div>
-            <span class="dx-chip @(approvalRate >= 50 ? "up" : "")">@Model.ApprovedCount of @pipeTotal approved</span>
-        </div>
     </div>
 
     <!-- REVIEW PIPELINE -->
@@ -220,12 +195,11 @@
         </div>
         <div class="dx-pipe-foot">
             <span>@pipeTotal design@(pipeTotal == 1 ? "" : "s") tracked</span>
-            <span>@approvalRate% signed off</span>
         </div>
     </div>
 
-    <!-- ACTION QUEUE + HEATMAP -->
-    <div class="dx-grid2">
+    <!-- ACTION QUEUE -->
+    <div class="dx-grid2 single">
         <div class="dx-card">
             <div class="dx-head">
                 <div>
@@ -267,44 +241,6 @@
             {
                 <div class="dx-empty">All clear &mdash; no designs are waiting on action.</div>
             }
-        </div>
-
-        <div class="dx-card">
-            <div class="dx-head">
-                <div>
-                    <div class="dx-title">Engineering activity</div>
-                    <div class="dx-sub" id="dx-heat-sub">Last 26 weeks</div>
-                </div>
-            </div>
-            <div id="dx-heat"></div>
-            <div class="dx-scale">Less
-                <i style="background:#eef2f6"></i><i style="background:#bff0dc"></i><i style="background:#6fe0b4"></i><i style="background:#22c98d"></i><i style="background:#059669"></i>
-                More
-            </div>
-        </div>
-    </div>
-
-    <!-- ENVELOPE + POLLUTANT MIX -->
-    <div class="dx-grid2 rev">
-        <div class="dx-card">
-            <div class="dx-head">
-                <div>
-                    <div class="dx-title">Operating envelope</div>
-                    <div class="dx-sub">Every design by gas flow and target removal &mdash; click a dot to open it</div>
-                </div>
-            </div>
-            <div id="dx-env"></div>
-            <div class="dx-legend" id="dx-env-legend"></div>
-        </div>
-
-        <div class="dx-card">
-            <div class="dx-head">
-                <div>
-                    <div class="dx-title">Pollutant mix</div>
-                    <div class="dx-sub">Each square is 1% of the pollutant streams you design for</div>
-                </div>
-            </div>
-            <div id="dx-mix"></div>
         </div>
     </div>
 
@@ -349,198 +285,6 @@
     </div>
 </div>
 
-<div id="dx-tip"></div>
-<script id="dx-data" type="application/json">@Html.Raw(Model.DataJson)</script>
-
 @section Scripts {
     <script src="~/js/dashboard.js"></script>
-    <script>
-        (function () {
-            var data = JSON.parse(document.getElementById('dx-data').textContent);
-            var tip = document.getElementById('dx-tip');
-            var TYPE_COLORS = {
-                PackedTower: '#3b82f6', VenturiScrubber: '#00d28c', SprayTower: '#f59e0b',
-                WetCyclone: '#ef4444', ImpingementPlate: '#8b5cf6'
-            };
-            var MIX_COLORS = ['#00d28c', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
-
-            function showTip(html, e) {
-                tip.innerHTML = html;
-                tip.style.opacity = 1;
-                var x = e.clientX + 14, y = e.clientY + 14;
-                if (x + 270 > window.innerWidth) x = e.clientX - 270;
-                tip.style.left = x + 'px';
-                tip.style.top = y + 'px';
-            }
-            function hideTip() { tip.style.opacity = 0; }
-            function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
-            function pad(n) { return n < 10 ? '0' + n : '' + n; }
-            function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-            function prettyType(t) { return t.replace(/([a-z])([A-Z])/g, '$1 $2'); }
-
-            // ── Activity heatmap ────────────────────────────────
-            function drawHeat() {
-                var host = document.getElementById('dx-heat');
-                var colors = ['#eef2f6', '#bff0dc', '#6fe0b4', '#22c98d', '#059669'];
-                var weeks = 26, cell = 13, gap = 3, step = cell + gap, left = 30, top = 18;
-                var today = new Date(data.today + 'T00:00:00');
-                var dow = (today.getDay() + 6) % 7;
-                var gridStart = new Date(today);
-                gridStart.setDate(today.getDate() - dow - (weeks - 1) * 7);
-
-                var W = left + weeks * step, H = top + 7 * step;
-                var out = '<svg class="dx-svg" viewBox="0 0 ' + W + ' ' + H + '">';
-                var days = ['Mon', '', 'Wed', '', 'Fri', '', ''];
-                for (var r = 0; r < 7; r++) {
-                    if (days[r]) out += '<text x="0" y="' + (top + r * step + 10) + '" font-size="9" fill="#94a3b8">' + days[r] + '</text>';
-                }
-
-                var total = 0, lastMonth = -1;
-                for (var w = 0; w < weeks; w++) {
-                    for (var d = 0; d < 7; d++) {
-                        var date = new Date(gridStart);
-                        date.setDate(gridStart.getDate() + w * 7 + d);
-                        if (date > today) continue;
-
-                        if (d === 0 && date.getMonth() !== lastMonth) {
-                            lastMonth = date.getMonth();
-                            out += '<text x="' + (left + w * step) + '" y="10" font-size="9" fill="#94a3b8">' +
-                                date.toLocaleString(undefined, { month: 'short' }) + '</text>';
-                        }
-
-                        var key = iso(date);
-                        var n = data.activity[key] || 0;
-                        total += n;
-                        var lvl = n === 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : n <= 4 ? 3 : 4;
-                        out += '<rect x="' + (left + w * step) + '" y="' + (top + d * step) + '" width="' + cell + '" height="' + cell +
-                            '" rx="3" fill="' + colors[lvl] + '" data-k="' + key + '" data-n="' + n + '"></rect>';
-                    }
-                }
-                out += '</svg>';
-                host.innerHTML = out;
-                document.getElementById('dx-heat-sub').textContent =
-                    total + ' design event' + (total === 1 ? '' : 's') + ' in the last 26 weeks';
-
-                host.addEventListener('mousemove', function (e) {
-                    var t = e.target;
-                    if (t.tagName !== 'rect') { hideTip(); return; }
-                    var n = Number(t.getAttribute('data-n'));
-                    var dt = new Date(t.getAttribute('data-k') + 'T00:00:00');
-                    showTip('<b>' + n + ' event' + (n === 1 ? '' : 's') + '</b><br>' +
-                        dt.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }), e);
-                });
-                host.addEventListener('mouseleave', hideTip);
-            }
-
-            // ── Operating envelope ──────────────────────────────
-            function drawEnvelope() {
-                var host = document.getElementById('dx-env');
-                var pts = (data.envelope || []).filter(function (p) { return p.flow > 0; }).map(function (p) {
-                    var r = p.removal;
-                    if (r > 0 && r <= 1) r = r * 100;
-                    p.r = Math.max(0, Math.min(100, r));
-                    return p;
-                });
-                if (!pts.length) {
-                    host.innerHTML = '<div class="dx-empty">Create a design with gas data to see your operating envelope.</div>';
-                    return;
-                }
-
-                var W = 640, H = 300, m = { l: 48, r: 16, t: 14, b: 40 };
-                var flows = pts.map(function (p) { return p.flow; });
-                var lo = Math.floor(Math.log10(Math.min.apply(null, flows)));
-                var hi = Math.ceil(Math.log10(Math.max.apply(null, flows)));
-                if (hi <= lo) hi = lo + 1;
-                var minR = Math.min.apply(null, pts.map(function (p) { return p.r; }));
-                var yMin = minR >= 60 ? 50 : 0, yMax = 100;
-
-                function x(f) { return m.l + (Math.log10(f) - lo) / (hi - lo) * (W - m.l - m.r); }
-                function y(r) { return m.t + (1 - (r - yMin) / (yMax - yMin)) * (H - m.t - m.b); }
-                function fmt(v) { return v >= 1000 ? (v / 1000) + 'k' : String(v); }
-
-                var out = '<svg class="dx-svg" viewBox="0 0 ' + W + ' ' + H + '">';
-                out += '<rect x="' + m.l + '" y="' + y(100) + '" width="' + (W - m.l - m.r) + '" height="' + (y(95) - y(100)) +
-                    '" fill="rgba(0,210,140,.10)"></rect>';
-                out += '<text x="' + (W - m.r - 4) + '" y="' + (y(100) + 11) + '" font-size="9" text-anchor="end" fill="#059669">high-efficiency zone</text>';
-
-                for (var v = yMin; v <= yMax; v += 10) {
-                    out += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="#e8edf3"></line>';
-                    out += '<text x="' + (m.l - 8) + '" y="' + (y(v) + 3) + '" font-size="10" text-anchor="end" fill="#94a3b8">' + v + '</text>';
-                }
-                for (var e = lo; e <= hi; e++) {
-                    var px = x(Math.pow(10, e));
-                    out += '<line x1="' + px + '" x2="' + px + '" y1="' + m.t + '" y2="' + (H - m.b) + '" stroke="#e8edf3"></line>';
-                    out += '<text x="' + px + '" y="' + (H - m.b + 15) + '" font-size="10" text-anchor="middle" fill="#94a3b8">' + fmt(Math.pow(10, e)) + '</text>';
-                }
-                out += '<text x="' + ((W + m.l) / 2) + '" y="' + (H - 6) + '" font-size="10" text-anchor="middle" fill="#64748b">Gas flow (m\u00B3/hr, log scale)</text>';
-                out += '<text transform="translate(12 ' + (H / 2) + ') rotate(-90)" font-size="10" text-anchor="middle" fill="#64748b">Target removal (%)</text>';
-
-                pts.forEach(function (p, i) {
-                    var c = TYPE_COLORS[p.type] || '#64748b';
-                    out += '<circle cx="' + x(p.flow).toFixed(1) + '" cy="' + y(p.r).toFixed(1) + '" r="6.5" fill="' + c +
-                        '" fill-opacity=".72" stroke="#fff" stroke-width="1.5" style="cursor:pointer" data-i="' + i + '"></circle>';
-                });
-                out += '</svg>';
-                host.innerHTML = out;
-
-                host.addEventListener('mousemove', function (ev) {
-                    var t = ev.target;
-                    if (t.tagName !== 'circle') { hideTip(); return; }
-                    var p = pts[Number(t.getAttribute('data-i'))];
-                    showTip('<b>' + esc(p.name) + '</b><br>' + esc(p.project) + '<br>' +
-                        Math.round(p.flow).toLocaleString() + ' m\u00B3/hr &middot; ' + p.r.toFixed(1) + '% removal<br>' +
-                        esc(prettyType(p.type)) + ' &middot; ' + esc(prettyType(p.status)), ev);
-                });
-                host.addEventListener('mouseleave', hideTip);
-                host.addEventListener('click', function (ev) {
-                    var t = ev.target;
-                    if (t.tagName !== 'circle') return;
-                    var p = pts[Number(t.getAttribute('data-i'))];
-                    window.location.href = '/Scrubber/DesignDetail/' + p.id;
-                });
-
-                var seen = {};
-                pts.forEach(function (p) { seen[p.type] = true; });
-                document.getElementById('dx-env-legend').innerHTML = Object.keys(seen).map(function (k) {
-                    return '<span><i style="background:' + (TYPE_COLORS[k] || '#64748b') + '"></i>' + esc(prettyType(k)) + '</span>';
-                }).join('');
-            }
-
-            // ── Pollutant waffle ────────────────────────────────
-            function drawMix() {
-                var host = document.getElementById('dx-mix');
-                var mix = data.mix || [];
-                var total = mix.reduce(function (s, p) { return s + p.count; }, 0);
-                if (!total) {
-                    host.innerHTML = '<div class="dx-empty">No pollutant data yet.</div>';
-                    return;
-                }
-
-                var cells = mix.map(function (p) { return Math.floor(p.count * 100 / total); });
-                var rem = mix.map(function (p, i) { return { i: i, f: (p.count * 100 / total) - cells[i] }; })
-                    .sort(function (a, b) { return b.f - a.f; });
-                var left = 100 - cells.reduce(function (s, c) { return s + c; }, 0);
-                for (var k = 0; k < left; k++) cells[rem[k % rem.length].i]++;
-
-                var squares = '';
-                mix.forEach(function (p, i) {
-                    for (var c = 0; c < cells[i]; c++) {
-                        squares += '<i style="background:' + MIX_COLORS[i % MIX_COLORS.length] + '" title="' + esc(p.name) + '"></i>';
-                    }
-                });
-
-                var list = mix.map(function (p, i) {
-                    return '<div class="dx-mixrow"><i style="background:' + MIX_COLORS[i % MIX_COLORS.length] + '"></i><span>' +
-                        esc(p.name) + ' <small style="color:#94a3b8">' + esc(p.code) + '</small></span><span>' +
-                        Math.round(p.count * 100 / total) + '%</span></div>';
-                }).join('');
-
-                host.innerHTML = '<div class="dx-mix"><div class="dx-waffle">' + squares + '</div><div class="dx-mixlist">' + list + '</div></div>';
-            }
-
-            function init() { drawHeat(); drawEnvelope(); drawMix(); }
-            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-            else init();
-        })();
-    </script>
 }
