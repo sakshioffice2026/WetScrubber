@@ -189,10 +189,9 @@ namespace WetScrubber.Services
                 pollutant.InletConcentration);
 
             double henrysTemp =
-                   GetEffectiveHenrysLawConstant(
+                GetEffectiveHenrysLawConstant(
                     pollutant,
                     vm.LiquidTemperature,
-                    GetSolventMolarConcMolM3(vm),
                     vm.InletPressure / 1000.0);
 
             bool ratingMode =
@@ -633,7 +632,7 @@ namespace WetScrubber.Services
                         vm.GasDensity, vm.InletTemperature + 273.15, vm.InletPressure,
                         multiPollutant.PollutantType, multiPollutant.InletConcentration);
                     double pollutantHenry = GetEffectiveHenrysLawConstant(
-                        multiPollutant, vm.LiquidTemperature, GetSolventMolarConcMolM3(vm), vm.InletPressure / 1000.0);
+                        multiPollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
                     var pollutantReactiveBasis = GetReactiveEquilibriumBasis(multiPollutant, vm);
                     double pollutantEquilibrium = pollutantReactiveBasis.UseReactiveEquilibrium
                         ? HenrysConstantUnits.MinimumH : pollutantHenry;
@@ -849,20 +848,8 @@ namespace WetScrubber.Services
                     liquidDensityKgM3:
                         vm.LiquidDensity,
 
-                                     gasViscosityPas:
-                        vm.GasViscosity,
-
-                    liquidViscosityPas:
-                        vm.LiquidViscosity / 1000.0,
-
-                    surfaceTensionNm:
-                        vm.LiquidSurfaceTensionNM,
-
-                    gasTemperatureK:
-                        vm.InletTemperature + 273.15,
-
-                    gasPressurePa:
-                        vm.InletPressure
+                    gasViscosityPas:
+                        vm.GasViscosity
                 );
 
             result.TowerDiameter =
@@ -1141,11 +1128,10 @@ namespace WetScrubber.Services
             double actualGasVelocity = gasFlowM3S / areaM2;
             double liquidFlowM3S = vm.LiquidToGasRatio * gasFlowM3S / 1000.0;
             double liquidFlux = liquidFlowM3S / areaM2;
-            double dropletDiameterM = DesignBasisSettings.SprayTowerDropletDiameterM;
-            double relativeVelocityMS = DesignBasisSettings.SprayTowerRelativeVelocityMs;
-            double towerHeightCapM = DesignBasisSettings.SprayTowerHeightCapM;
-            double lossCoefficient = DesignBasisSettings.SprayTowerLossCoefficient;
-            
+            const double dropletDiameterM = 0.001;
+            const double relativeVelocityMS = 2.0;
+            const double towerHeightCapM = 15.0;
+            const double lossCoefficient = 1.5;
 
             var pollutantInputs = vm.Pollutants;
             var densityBasisPollutant = pollutantInputs.FirstOrDefault();
@@ -1188,8 +1174,8 @@ namespace WetScrubber.Services
                 double effectiveHenry =
                          GetReactiveEquilibriumBasis(pollutant, vm).UseReactiveEquilibrium
                             ? HenrysConstantUnits.MinimumH
-                                : GetEffectiveHenrysLawConstant(
-                                pollutant, vm.LiquidTemperature, GetSolventMolarConcMolM3(vm), vm.InletPressure / 1000.0);
+                            : GetEffectiveHenrysLawConstant(
+                                pollutant, vm.LiquidTemperature, vm.InletPressure / 1000.0);
                 double molarLG = CalculateMolarLiquidToGasRatio(
                     vm.LiquidToGasRatio, vm.LiquidDensity, vm.InletTemperature,
                     vm.InletPressure, vm.LiquidMolecularWeightGMol);
@@ -1327,35 +1313,6 @@ namespace WetScrubber.Services
         }
 
 
-        // Kremser fractional absorption for absorption factor A and
-        // effective (Murphree-corrected) stage count N. Clamped to 0..1.
-        private static double KremserRemovalFraction(
-            double absorptionFactor,
-            double effectiveStages)
-        {
-            if (!IsPositiveFinite(absorptionFactor))
-                return 0.0;
-
-            double removal;
-
-            if (Math.Abs(absorptionFactor - 1.0) < 1e-9)
-            {
-                removal = effectiveStages / (effectiveStages + 1.0);
-            }
-            else
-            {
-                double aPow =
-                    Math.Pow(absorptionFactor, effectiveStages + 1.0);
-
-                removal = (aPow - absorptionFactor) / (aPow - 1.0);
-            }
-
-            if (double.IsNaN(removal) || double.IsInfinity(removal))
-                return 0.0;
-
-            return Math.Max(0.0, Math.Min(1.0, removal));
-        }
-
         private CalculationResult RunImpingementPlateCalc(
             CreateDesignViewModel vm)
         {
@@ -1373,16 +1330,10 @@ namespace WetScrubber.Services
                     ? vm.ImpingementPlateLiquidFlowM3Hr
                     : gasFlowM3Hr * vm.LiquidToGasRatio / 1000.0;
 
-            var plateDensityPollutant =
-                vm.Pollutants?.FirstOrDefault();
-
             double gasDensity =
-                GetActualGasDensity(
-                    vm.GasDensity,
-                    vm.InletTemperature + 273.15,
-                    vm.InletPressure,
-                    plateDensityPollutant?.PollutantType,
-                    plateDensityPollutant?.InletConcentration ?? 0.0);
+                vm.ImpingementPlateGasDensityKgM3 > 0.0
+                    ? vm.ImpingementPlateGasDensityKgM3
+                    : vm.GasDensity;
 
             double liquidDensity =
                 vm.ImpingementPlateLiquidDensityKgM3 > 0.0
@@ -1421,28 +1372,8 @@ namespace WetScrubber.Services
             double gasFlowM3S = gasFlowM3Hr / 3600.0;
             double liquidFlowM3S = liquidFlowM3Hr / 3600.0;
 
-            // Column diameter: auto-size to the recommended flood fraction
-            // when the input is zero (or negative).
-            bool plateDiameterAutoSized = false;
-
-            if (!(columnDiameterM > 0.0))
-            {
-                columnDiameterM =
-                    ImpingementPlateHydraulics.ColumnDiameterForFloodFractionM(
-                        gasFlowM3S,
-                        liquidDensity,
-                        gasDensity,
-                        DesignBasisSettings.ImpingementPlateCapacityFactorMPerS,
-                        ImpingementPlateHydraulics.DefaultWeirLengthFraction,
-                        DesignBasisSettings.ImpingementPlateRecommendedFloodPercent
-                            / 100.0);
-
-                plateDiameterAutoSized = true;
-            }
-
             // Run the repository's plate hydraulic correlation.
-            // Geometry and correlation values come from DesignBasisSettings
-            // (configuration) and shared ImpingementPlateHydraulics constants.
+            // Geometry correlation defaults are preliminary screening values.
             PlateHydraulicsResult hydraulics =
                 ImpingementPlateHydraulics.Evaluate(
                     new PlateHydraulicsInput
@@ -1452,104 +1383,81 @@ namespace WetScrubber.Services
                         GasDensityKgM3 = gasDensity,
                         LiquidDensityKgM3 = liquidDensity,
                         SurfaceTensionNm = vm.LiquidSurfaceTensionNM,
-                        ColumnDiameterM = columnDiameterM,
-                        OpenAreaFraction =
-                            DesignBasisSettings.ImpingementPlateHoleAreaFraction,
-                        OrificeCoefficient =
-                            DesignBasisSettings.ImpingementPlateDischargeCoefficient,
-                        FloodCapacityFactorMs =
-                            DesignBasisSettings.ImpingementPlateCapacityFactorMPerS,
-                        RecommendedFloodPercent =
-                            DesignBasisSettings.ImpingementPlateRecommendedFloodPercent,
-                        TraySpacingM =
-                            ImpingementPlateHydraulics.DefaultTraySpacingM
+                        ColumnDiameterM = columnDiameterM
                     });
 
             double totalPressureDropPa =
                 hydraulics.PressureDropPerPlatePa * stages;
 
-            // Gas absorption: Kremser equilibrium-stage model with a
-            // Murphree plate efficiency (configurable screening value).
-            double plateMurphreeEfficiency =
-                DesignBasisSettings.ImpingementPlateMurphreeEfficiency;
+            // ── Gas absorption screening (Kremser, equilibrium stages) ──
+            // Fraction absorbed = (A^(N+1) - A) / (A^(N+1) - 1), A = (L/G)molar / H.
+            // N = plate count x assumed stage efficiency. The efficiency is an
+            // UNCONFIRMED screening value; replace with vendor/benchmark data.
+            const double plateStageEfficiency = 0.50;
+            double effectiveStages = stages * plateStageEfficiency;
 
-            double plateEffectiveStages =
-                stages * plateMurphreeEfficiency;
+            double inletTotalAbs = 0.0;
+            double removedTotalAbs = 0.0;
+            bool absorptionComputed = false;
+            var absorptionNotes = new List<string>();
 
-            double plateMolarLG =
-                CalculateMolarLiquidToGasRatio(
-                    gasFlowM3Hr > 0.0
-                        ? liquidFlowM3Hr * 1000.0 / gasFlowM3Hr
-                        : 0.0,
-                    liquidDensity,
-                    vm.InletTemperature,
-                    vm.InletPressure,
-                    vm.LiquidMolecularWeightGMol);
-
-            // Every pollutant is evaluated; the lowest-removal pollutant
-            // governs the reported removal.
-            PollutantInputViewModel[] platePollutants =
-                vm.Pollutants?.ToArray()
-                ?? Array.Empty<PollutantInputViewModel>();
-
-            if (platePollutants.Length == 0)
-                platePollutants = new[] { new PollutantInputViewModel() };
-
-            PollutantInputViewModel platePollutant = platePollutants[0];
-            var plateReactiveBasis =
-                GetReactiveEquilibriumBasis(platePollutant, vm);
-            double plateAbsorptionFactor = 0.0;
-            double plateRemovalFraction = double.MaxValue;
-            var platePollutantNotes = new List<string>();
-
-            foreach (var candidate in platePollutants)
+            if (vm.Pollutants != null &&
+                IsPositiveFinite(vm.LiquidMolecularWeightGMol))
             {
-                double candidateHenry =
-                     GetEffectiveHenrysLawConstant(
-                        candidate,
-                        vm.LiquidTemperature,
-                        GetSolventMolarConcMolM3(vm),
-                        vm.InletPressure / 1000.0);
-                var candidateReactive =
-                    GetReactiveEquilibriumBasis(candidate, vm);
+                double molarLG =
+                    CalculateMolarLiquidToGasRatio(
+                        vm.LiquidToGasRatio,
+                        liquidDensity,
+                        vm.InletTemperature,
+                        vm.InletPressure,
+                        vm.LiquidMolecularWeightGMol);
 
-                if (candidateReactive.UseReactiveEquilibrium)
-                    candidateHenry = HenrysConstantUnits.MinimumH;
-
-                double candidateFactor =
-                    IsPositiveFinite(candidateHenry)
-                        ? plateMolarLG / candidateHenry
-                        : 0.0;
-
-                double candidateRemoval =
-                    KremserRemovalFraction(
-                        candidateFactor,
-                        plateEffectiveStages);
-
-                string candidateCode =
-                    _componentLookup?
-                        .GetByPollutantId(candidate.PollutantType)
-                        ?.Code
-                    ?? $"ID {candidate.PollutantType}";
-
-                platePollutantNotes.Add(
-                    $"{candidateCode}: removal {100.0 * candidateRemoval:F2}%, " +
-                    $"absorption factor {candidateFactor:F4}" +
-                    (candidateReactive.UseReactiveEquilibrium
-                        ? " (reactive)."
-                        : "."));
-
-                if (candidateRemoval < plateRemovalFraction)
+                foreach (var pol in vm.Pollutants)
                 {
-                    plateRemovalFraction = candidateRemoval;
-                    plateAbsorptionFactor = candidateFactor;
-                    platePollutant = candidate;
-                    plateReactiveBasis = candidateReactive;
+                    if (!(pol.InletConcentration > 0.0))
+                        continue;
+
+                    double henry =
+                        GetEffectiveHenrysLawConstant(
+                            pol,
+                            vm.LiquidTemperature,
+                            vm.InletPressure / 1000.0);
+
+                    if (!IsPositiveFinite(henry) || !IsPositiveFinite(molarLG))
+                        continue;
+
+                    double a = molarLG / henry;
+                    double fraction;
+
+                    if (Math.Abs(a - 1.0) < 1e-9)
+                    {
+                        fraction = effectiveStages / (effectiveStages + 1.0);
+                    }
+                    else
+                    {
+                        double aN1 = Math.Pow(a, effectiveStages + 1.0);
+                        fraction = (aN1 - a) / (aN1 - 1.0);
+                    }
+
+                    if (double.IsNaN(fraction) || double.IsInfinity(fraction))
+                        continue;
+
+                    fraction = Math.Max(0.0, Math.Min(1.0, fraction));
+
+                    inletTotalAbs += pol.InletConcentration;
+                    removedTotalAbs += pol.InletConcentration * fraction;
+                    absorptionComputed = true;
+
+                    absorptionNotes.Add(
+                        $"absorption factor A = {a:F2}, effective stages = " +
+                        $"{effectiveStages:F1}, removal = {fraction * 100.0:F1}%");
                 }
             }
 
-            double plateRemovalPercent =
-                Math.Round(100.0 * plateRemovalFraction, 2);
+            double absorptionRemovalPercent =
+                absorptionComputed && inletTotalAbs > 0.0
+                    ? Math.Round(100.0 * removedTotalAbs / inletTotalAbs, 2)
+                    : 0.0;
 
             var result = new CalculationResult
             {
@@ -1576,13 +1484,15 @@ namespace WetScrubber.Services
                 GasVelocity = Math.Round(hydraulics.HoleVelocityMs, 3),
                 PressureDrop = Math.Round(totalPressureDropPa, 2),
                 SystemPressureDrop = Math.Round(totalPressureDropPa, 2),
-                TowerHeight = Math.Round(
-                    stages * ImpingementPlateHydraulics.DefaultTraySpacingM, 2),
+                TowerHeight = Math.Round(stages * 0.45, 2),
 
                 LiquidFlowRateM3Hr = Math.Round(liquidFlowM3Hr, 3),
                 ActualLGRatio = gasFlowM3Hr > 0.0
                     ? liquidFlowM3Hr * 1000.0 / gasFlowM3Hr
                     : 0.0,
+
+                FanPowerKW = Math.Round(CalculateFanPower(gasFlowM3S, totalPressureDropPa), 2),
+                PumpPowerKW = Math.Round(CalculatePumpPower(liquidFlowM3Hr, DesignBasisSettings.SprayTowerPumpHeadM, liquidDensity), 2),
 
                 PercentFlood = Math.Round(hydraulics.PercentFlood, 2),
                 FloodingGasVelocity =
@@ -1598,94 +1508,39 @@ namespace WetScrubber.Services
                 HTU = 0.0,
                 MinLGRatio = 0.0,
 
-                // Gas absorption removal from the Kremser / Murphree screen.
-                RemovalEfficiency = plateRemovalPercent,
-                AbsorptionFactor = plateAbsorptionFactor,
-                ImpingementPlateRemovalEfficiencyPercent = plateRemovalPercent,
+                // No plate removal correlation is connected to the supplied
+                // particle-size distribution or gas-absorption inputs here.
+                RemovalEfficiency = absorptionRemovalPercent,
+                ImpingementPlateRemovalEfficiencyPercent = absorptionRemovalPercent,
                 ImpingementPlateCutDiameterMicron =
                     vm.ImpingementPlateCutDiameterMicron,
 
                 ModelValidationStatus = "NotYetValidated",
-                GasAbsorptionNotModeled = false,
+                GasAbsorptionNotModeled = !absorptionComputed,
 
                 IsFeasible =
                     !hydraulics.IsFlooding &&
                     !hydraulics.ExcessiveBackup
             };
 
-            if (plateReactiveBasis.UseReactiveEquilibrium)
-            {
-                double plateCeilingPercent =
-                    DesignBasisSettings.ImpingementPlateReactiveRemovalCeilingPercent;
-
-                result.ImpingementPlateRemovalIsReactiveUpperBound = true;
-
-                if (result.RemovalEfficiency > plateCeilingPercent)
-                {
-                    result.RemovalEfficiency = plateCeilingPercent;
-                    result.ImpingementPlateRemovalEfficiencyPercent = plateCeilingPercent;
-
-                    result.Warnings.Add(
-                        $"REMOVAL CEILING: reactive upper-bound removal capped at " +
-                        $"{plateCeilingPercent:F2}% (configurable screening ceiling).");
-                }
-            }
-
-            result.FanPowerKW = Math.Round(
-                CalculateFanPower(gasFlowM3S, result.SystemPressureDrop),
-                2);
-
-            result.PumpPowerKW = Math.Round(
-                CalculatePumpPower(
-                    liquidFlowM3Hr,
-                    result.TowerHeight + DesignBasisSettings.PackedPumpHeadOffsetM,
-                    liquidDensity),
-                2);
-
             result.Warnings.Add(
                 "PRELIMINARY PLATE MODEL: hydraulic correlations and default " +
                 "geometry parameters require validation against authoritative " +
                 "design data or vendor benchmarks.");
 
-            result.Warnings.Add(
-                $"REMOVAL EFFICIENCY: gas absorption screened with a Kremser " +
-                $"equilibrium-stage model ({stages} plates x " +
-                $"{plateMurphreeEfficiency:P0} Murphree efficiency, absorption " +
-                $"factor {plateAbsorptionFactor:F3}). Plate efficiency is a " +
-                $"provisional value and requires validation.");
-
-            if (plateReactiveBasis.UseReactiveEquilibrium)
+            if (absorptionComputed)
             {
                 result.Warnings.Add(
-                    "UPPER BOUND: the reagent is treated as instantaneous and " +
-                    "irreversible (effective equilibrium slope at its minimum); " +
-                    "plate removal is optimistic.");
+                    "GAS ABSORPTION SCREEN: Kremser equilibrium-stage estimate with an " +
+                    $"assumed {plateStageEfficiency * 100.0:F0}% plate stage efficiency " +
+                    "(unconfirmed). Liquid-phase reaction, gas-film resistance and " +
+                    "entrainment are not modeled; " + string.Join("; ", absorptionNotes) + ".");
             }
-
-            string? plateCode =
-                _componentLookup?
-                    .GetByPollutantId(platePollutant.PollutantType)
-                    ?.Code;
-
-            if (string.IsNullOrWhiteSpace(plateCode))
+            else
             {
                 result.Warnings.Add(
-                    $"POLLUTANT NOT RESOLVED: pollutant ID " +
-                    $"{platePollutant.PollutantType} did not map to a known " +
-                    $"component. Generic Henry's-law temperature coefficient " +
-                    $"(2000 K) and no activity-coefficient data were used.");
-            }
-
-            if (!plateReactiveBasis.UseReactiveEquilibrium &&
-                plateAbsorptionFactor < 1.0)
-            {
-                result.Warnings.Add(
-                    $"EQUILIBRIUM LIMIT: absorption factor " +
-                    $"{plateAbsorptionFactor:F4} is below 1, so removal is " +
-                    $"capped near {100.0 * plateAbsorptionFactor:F2}% " +
-                    $"regardless of plate count. Verify the Henry's law " +
-                    $"constant (dimensionless Cg/Cl) or use a reactive " +
-                    $"reagent (NaOH at pH 8 or above).");
+                    "REMOVAL EFFICIENCY: gas absorption could not be computed from the " +
+                    "supplied inputs, so removal is reported as 0 (not calculated).");
             }
 
             result.Warnings.Add(
@@ -1730,118 +1585,6 @@ namespace WetScrubber.Services
                     "fraction of plate spacing.";
 
                 result.Warnings.Add(result.InfeasibilityReason);
-            }
-
-            if (plateDiameterAutoSized)
-            {
-                result.Warnings.Add(
-                    $"COLUMN DIAMETER AUTO-SIZED: {columnDiameterM:F2} m for " +
-                    $"{DesignBasisSettings.ImpingementPlateRecommendedFloodPercent:F0}% " +
-                    $"of flooding (input diameter was zero).");
-            }
-
-            if (platePollutants.Length > 1)
-            {
-                foreach (string note in platePollutantNotes)
-                    result.Warnings.Add("PLATE POLLUTANT " + note);
-
-                result.Warnings.Add(
-                    "GOVERNING POLLUTANT: the lowest-removal pollutant sets " +
-                    "the reported removal efficiency.");
-            }
-
-            if (totalPressureDropPa >
-                DesignBasisSettings.ImpingementPlatePressureDropCeilingPa)
-            {
-                result.Warnings.Add(
-                    $"PRESSURE DROP: plate-bank drop {totalPressureDropPa:F0} Pa " +
-                    $"exceeds the screening ceiling of " +
-                    $"{DesignBasisSettings.ImpingementPlatePressureDropCeilingPa:F0} Pa.");
-            }
-
-            // Particulate impaction screen (hole velocity and hole diameter
-            // as characteristic velocity and length). The size distribution is
-            // an assumed log-normal centred on the requested cut diameter.
-            if (vm.ImpingementPlateCutDiameterMicron > 0.0 &&
-                vm.GasViscosity > 0.0)
-            {
-                try
-                {
-                    var plateParticulate =
-                        ImpingementPlateParticulate.Evaluate(
-                            new PlateParticulateInput
-                            {
-                                GasFlowM3s = gasFlowM3S,
-                                GasDensityKgM3 = gasDensity,
-                                GasViscosityPas = vm.GasViscosity,
-                                ParticleDensityKgM3 =
-                                    DesignBasisSettings.ImpingementPlateParticleDensityKgM3,
-                                CharacteristicLengthM =
-                                    ImpingementPlateHydraulics.DefaultHoleDiameterM,
-                                CharacteristicGasVelocityMs =
-                                    hydraulics.HoleVelocityMs,
-                                Distribution =
-                                    ParticleSizeDistribution.LogNormal(
-                                        vm.ImpingementPlateCutDiameterMicron * 1e-6,
-                                        DesignBasisSettings.ImpingementPlateParticleGeometricStdDev,
-                                        DesignBasisSettings.CycloneSizeBinCount),
-                                StokesNumberAt50Percent =
-                                    DesignBasisSettings.ImpingementPlateStokesNumberAt50Percent,
-                                ApplyCunninghamSlip = true,
-                                TemperatureK = vm.InletTemperature + 273.15,
-                                PressurePa = vm.InletPressure,
-                                GasMolarMassKgMol =
-                                    vm.CarrierGasMolecularWeightGMol / 1000.0
-                            });
-
-                    result.ImpingementPlateParticulateEfficiencyPercent =
-                        Math.Round(plateParticulate.OverallEfficiencyPercent, 2);
-
-                    if (plateParticulate.CutDiameterM.HasValue)
-                    {
-                        double predictedCutMicron =
-                            plateParticulate.CutDiameterM.Value * 1e6;
-
-                        result.ImpingementPlatePredictedCutDiameterMicron =
-                            Math.Round(predictedCutMicron, 3);
-
-                        if (predictedCutMicron > vm.ImpingementPlateCutDiameterMicron)
-                        {
-                            result.Warnings.Add(
-                                $"CUT DIAMETER NOT MET: predicted 50% cut " +
-                                $"diameter {predictedCutMicron:F2} um exceeds the " +
-                                $"requested {vm.ImpingementPlateCutDiameterMicron:F2} um.");
-                        }
-                    }
-
-                    result.Warnings.Add(
-                        "PARTICULATE SCREEN: Stokes-number impaction screen " +
-                        "(unvalidated); efficiency is for an assumed log-normal " +
-                        "size distribution centred on the requested cut diameter.");
-                }
-                catch (ArgumentException ex)
-                {
-                    result.Warnings.Add(
-                        "PARTICULATE SCREEN SKIPPED: " + ex.Message);
-                }
-            }
-
-            if (vm.ImpingementPlateTargetRemovalPercent > 0.0 &&
-                plateRemovalPercent < vm.ImpingementPlateTargetRemovalPercent)
-            {
-                result.IsFeasible = false;
-
-                if (string.IsNullOrEmpty(result.InfeasibilityReason))
-                {
-                    result.InfeasibilityReason =
-                        $"Predicted removal {plateRemovalPercent:F2}% is below " +
-                        $"the target {vm.ImpingementPlateTargetRemovalPercent:F2}%.";
-                }
-
-                result.Warnings.Add(
-                    $"TARGET NOT MET: predicted removal " +
-                    $"{plateRemovalPercent:F2}% is below the target " +
-                    $"{vm.ImpingementPlateTargetRemovalPercent:F2}%.");
             }
 
             return result;
@@ -2432,8 +2175,7 @@ namespace WetScrubber.Services
                         InletGasMoleFraction = y1,
                         OutletGasMoleFraction = y2,
                         GasKmolPerM3 = gasKmolPerM3,
-                        LiquidToGasLPerM3 = vm.LiquidToGasRatio,
-                        PollutantCode = code
+                        LiquidToGasLPerM3 = vm.LiquidToGasRatio
                     });
 
             return new ReactiveEquilibriumBasis(
@@ -2708,10 +2450,9 @@ namespace WetScrubber.Services
                         throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                     double effectiveHenry =
-                      GetEffectiveHenrysLawConstant(
+                        GetEffectiveHenrysLawConstant(
                             pollutant,
                             vm.LiquidTemperature,
-                            GetSolventMolarConcMolM3(vm),
                             vm.InletPressure / 1000.0);
 
                     double molarVolume =
@@ -2887,10 +2628,9 @@ namespace WetScrubber.Services
                         throw new InvalidOperationException($"No component code found for pollutant type {pollutant.PollutantType}.");
 
                     double effectiveHenry =
-                          GetEffectiveHenrysLawConstant(
+                        GetEffectiveHenrysLawConstant(
                             pollutant,
                             vm.LiquidTemperature,
-                            GetSolventMolarConcMolM3(vm),
                             vm.InletPressure / 1000.0);
 
                     double molarVolume =
@@ -3202,11 +2942,7 @@ namespace WetScrubber.Services
             double particleDensityKgM3,
             double particleDiameterMicron,
             double liquidDensityKgM3 = 1000,
-                        double gasViscosityPas = 1.81e-5,
-            double liquidViscosityPas = 1.0e-3,
-            double surfaceTensionNm = 0.072,
-            double gasTemperatureK = 293.15,
-            double gasPressurePa = 101325.0)
+            double gasViscosityPas = 1.81e-5)
         {
             RequirePositiveInput(nameof(gasFlowRateM3S), gasFlowRateM3S);
             RequirePositiveInput(nameof(throatVelocityMs), throatVelocityMs);
@@ -3215,10 +2951,6 @@ namespace WetScrubber.Services
             RequirePositiveInput(nameof(particleDensityKgM3), particleDensityKgM3);
             RequirePositiveInput(nameof(particleDiameterMicron), particleDiameterMicron);
             RequirePositiveInput(nameof(liquidDensityKgM3), liquidDensityKgM3);
-            RequirePositiveInput(nameof(liquidViscosityPas), liquidViscosityPas);
-            RequirePositiveInput(nameof(surfaceTensionNm), surfaceTensionNm);
-            RequirePositiveInput(nameof(gasTemperatureK), gasTemperatureK);
-            RequirePositiveInput(nameof(gasPressurePa), gasPressurePa);
             RequirePositiveInput(nameof(gasViscosityPas), gasViscosityPas);
 
             double throatArea = gasFlowRateM3S / throatVelocityMs;
@@ -3226,19 +2958,15 @@ namespace WetScrubber.Services
 
             // Johnstone efficiency, Calvert pressure drop and Nukiyama-Tanasawa
             // droplet size (see VenturiCollectionModel for the correlations).
-                        var collection =
-                            VenturiCollectionModel.Calculate(
-                                throatVelocityMs: throatVelocityMs,
-                                liquidToGasRatioLM3: liquidToGasRatioLM3,
-                                particleDiameterM: particleDiameterMicron * 1e-6,
-                                particleDensityKgM3: particleDensityKgM3,
-                                gasViscosityPas: gasViscosityPas,
-                                liquidDensityKgM3: liquidDensityKgM3,
-                                liquidViscosityPas: liquidViscosityPas,
-                                surfaceTensionNm: surfaceTensionNm,
-                                gasTemperatureK: gasTemperatureK,
-                                gasPressurePa: gasPressurePa > 0.0 ? gasPressurePa : VenturiCollectionModel.DefaultPressurePa,
-                                geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
+            var collection =
+                VenturiCollectionModel.Calculate(
+                    throatVelocityMs: throatVelocityMs,
+                    liquidToGasRatioLM3: liquidToGasRatioLM3,
+                    particleDiameterM: particleDiameterMicron * 1e-6,
+                    particleDensityKgM3: particleDensityKgM3,
+                    gasViscosityPas: gasViscosityPas,
+                    liquidDensityKgM3: liquidDensityKgM3,
+                    geometricStdDev: DesignBasisSettings.VenturiParticleGeometricStdDev);
             if (!double.IsFinite(collection.CollectionEfficiencyPercent) ||
                 collection.CollectionEfficiencyPercent < 0.0 ||
                 collection.CollectionEfficiencyPercent > 100.0)
@@ -3286,10 +3014,9 @@ namespace WetScrubber.Services
         //  PHASE 1 — effective Henry's Law
         // ════════════════════════════════════════════════════════════
         private double GetEffectiveHenrysLawConstant(
-    PollutantInputViewModel pollutant,
-    double liquidTemperatureC,
-    double solventMolarConcMolM3,
-    double pressureKPa = 101.325)
+            PollutantInputViewModel pollutant,
+            double liquidTemperatureC,
+            double pressureKPa = 101.325)
         {
             string? pollutantCode =
                 _componentLookup?
@@ -3319,38 +3046,38 @@ namespace WetScrubber.Services
                         H_T * gamma,
                         liquidTemperatureC +
                             273.15,
-                        pressureKPa,
-                        solventMolarConcMolM3);
-        }
-
-        private static double GetSolventMolarConcMolM3(CreateDesignViewModel vm)
-        {
-            if (!IsPositiveFinite(vm.LiquidDensity) ||
-                !IsPositiveFinite(vm.LiquidMolecularWeightGMol))
-            {
-                throw new InvalidOperationException(
-                    "Liquid density and liquid molecular weight must be positive and finite.");
-            }
-
-            return 1000.0 * vm.LiquidDensity / vm.LiquidMolecularWeightGMol;
+                        pressureKPa);
         }
 
         private double GetVanTHoffTempCoeff(
-    string? pollutantCode,
-    double defaultTempCoeff)
+            string? pollutantCode,
+            double defaultTempCoeff)
         {
-            if (pollutantCode == null)
+            if (_henrysLawLookup == null ||
+                pollutantCode == null)
+            {
                 return defaultTempCoeff;
+            }
 
-            double? heatOfSolutionKJmol =
-                _henrysLawLookup?.GetByPollutantCode(pollutantCode)?.HeatOfSolutionKJmol
-                ?? HeatOfAbsorption.TryGetKJPerMol(pollutantCode);
+            {
+                var data =
+                    _henrysLawLookup
+                        .GetByPollutantCode(
+                            pollutantCode);
 
-            return heatOfSolutionKJmol.HasValue
-                ? -(heatOfSolutionKJmol.Value * 1000.0) / GasConstant
-                : defaultTempCoeff;
+                if (data?.HeatOfSolutionKJmol == null)
+                    return defaultTempCoeff;
+
+                return
+                    -(
+                        data
+                            .HeatOfSolutionKJmol
+                            .Value *
+                        1000.0
+                    ) /
+                    GasConstant;
+            }
         }
-        
 
         private double GetSoluteActivityCoefficient(
             string? pollutantCode,
@@ -3364,8 +3091,8 @@ namespace WetScrubber.Services
             }
 
             {
-                const double xSolute = 1.0e-6;
-                Math.Min(
+                double xSolute =
+                    Math.Min(
                         Math.Max(
                             inletConcentrationPpm,
                             0.0) /
@@ -3698,9 +3425,6 @@ namespace WetScrubber.Services
         public double ImpingementPlatePressureDropPa { get; set; }
         public double ImpingementPlateRemovalEfficiencyPercent { get; set; }
         public double ImpingementPlateCutDiameterMicron { get; set; }
-        public double ImpingementPlatePredictedCutDiameterMicron { get; set; }
-        public double ImpingementPlateParticulateEfficiencyPercent { get; set; }
-        public bool ImpingementPlateRemovalIsReactiveUpperBound { get; set; }
         public List<string> Warnings { get; set; } = new();
 
         // ── Wet cyclone results (zero / null for other scrubber types) ──

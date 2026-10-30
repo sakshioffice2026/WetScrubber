@@ -27,13 +27,11 @@ namespace WetScrubber.Business.Diagnostics
         // PROVISIONAL screening ceilings for types 4–6. Not source-verified;
         // each needs a cited source and range before the validation gate.
         private const double WetCyclonePressureDropCeilingPa = 2500.0;
-        private const double ImpingementPlatePressureDropCeilingPa =
-            WetScrubber.Business.Plate.ImpingementPlateHydraulics.DefaultPressureDropCeilingPa;
+        private const double ImpingementPlatePressureDropCeilingPa = 3000.0;
 
 
         // Same recommended flooding limit the Results view already displays.
-        private const double ImpingementPlateRecommendedFloodPercent =
-            WetScrubber.Business.Plate.ImpingementPlateHydraulics.RecommendedFloodPercent;
+        private const double ImpingementPlateRecommendedFloodPercent = 70.0;
 
         private const double PackingHeightSuggestionMultiple = 1.5;
         private const double AbsorptionFactorSuggestionMargin = 1.05;
@@ -91,8 +89,9 @@ namespace WetScrubber.Business.Diagnostics
         private static bool IsWetCyclone(DesignMetrics m) => TypeContains(m, "Cyclone");
         private static bool IsImpingementPlate(DesignMetrics m) => TypeContains(m, "Impingement");
 
+
         private static bool IsPreviewType(DesignMetrics m) =>
-                   m.IsPreview || IsImpingementPlate(m);
+            m.IsPreview || IsWetCyclone(m) || IsImpingementPlate(m);
 
         private static void EvaluatePreviewAndScope(
             DesignMetrics m,
@@ -349,7 +348,7 @@ namespace WetScrubber.Business.Diagnostics
                     IsWetCyclone(m)
                         ? "Reduce the cut diameter by raising inlet velocity (within limits), using a smaller-diameter cyclone, or adding cyclones in parallel, then re-run the calculation."
                     : IsImpingementPlate(m)
-                        ? "Increase the L/G ratio (absorption factor must exceed 1 for high removal), add plates, or use a more soluble reagent, then re-run the calculation."
+                        ? "Add plates and/or increase the L/G ratio, then re-run the calculation."
                                        : "Increase NTU through additional effective packing height and/or increase the L/G ratio, then re-run the calculation.";
 
                 findings.Add(new DesignFinding
